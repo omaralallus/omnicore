@@ -79,6 +79,8 @@ std::vector<TransactionRestriction> CConsensusParams::GetRestrictions() const
 
         { MSC_TYPE_SEND_NONFUNGIBLE,          MP_TX_PKT_V0,  false,   MSC_NONFUNGIBLE_BLOCK  },
         { MSC_TYPE_NONFUNGIBLE_DATA,          MP_TX_PKT_V0,  false,   MSC_NONFUNGIBLE_BLOCK  },
+
+        { MSC_TYPE_SEND_TO_MANY,              MP_TX_PKT_V0,  false,   MSC_SEND_TO_MANY_BLOCK  },
     };
 
     const size_t nSize = sizeof(vTxRestrictions) / sizeof(vTxRestrictions[0]);
@@ -255,6 +257,7 @@ CMainConsensusParams::CMainConsensusParams()
     MSC_ANYDATA_BLOCK = 0;
     MSC_NONFUNGIBLE_BLOCK = 999999;
     MSC_DELEGATED_ISSUANCE_BLOCK = 999999;
+    MSC_SEND_TO_MANY_BLOCK = 999999;
     // Other feature activations:
     GRANTEFFECTS_FEATURE_BLOCK = 394500;
     DEXMATH_FEATURE_BLOCK = 395000;
@@ -301,6 +304,7 @@ CTestNetConsensusParams::CTestNetConsensusParams()
     MSC_ANYDATA_BLOCK = 0;
     MSC_NONFUNGIBLE_BLOCK = 0;
     MSC_DELEGATED_ISSUANCE_BLOCK = 0;
+    MSC_SEND_TO_MANY_BLOCK = 0;
     // Other feature activations:
     GRANTEFFECTS_FEATURE_BLOCK = 0;
     DEXMATH_FEATURE_BLOCK = 0;
@@ -347,6 +351,7 @@ CRegTestConsensusParams::CRegTestConsensusParams()
     MSC_ANYDATA_BLOCK = 0;
     MSC_NONFUNGIBLE_BLOCK = 0;
     MSC_DELEGATED_ISSUANCE_BLOCK = 0;
+    MSC_SEND_TO_MANY_BLOCK = 0;
     // Other feature activations:
     GRANTEFFECTS_FEATURE_BLOCK = 999999;
     DEXMATH_FEATURE_BLOCK = 999999;
@@ -533,6 +538,9 @@ bool ActivateFeature(uint16_t featureId, int activationBlock, uint32_t minClient
         case FEATURE_DELEGATEDISSUANCE:
             MutableConsensusParams().MSC_DELEGATED_ISSUANCE_BLOCK = activationBlock;
         break;
+        case FEATURE_SEND_TO_MANY:
+            MutableConsensusParams().MSC_SEND_TO_MANY_BLOCK = activationBlock;
+        break;
         default:
             supported = false;
         break;
@@ -616,6 +624,9 @@ bool DeactivateFeature(uint16_t featureId, int transactionBlock)
         case FEATURE_DELEGATEDISSUANCE:
             MutableConsensusParams().MSC_DELEGATED_ISSUANCE_BLOCK = 999999;
         break;
+        case FEATURE_SEND_TO_MANY:
+            MutableConsensusParams().MSC_SEND_TO_MANY_BLOCK = 999999;
+        break;
         default:
             return false;
         break;
@@ -651,6 +662,7 @@ std::string GetFeatureName(uint16_t featureId)
         case FEATURE_NONFUNGIBLE: return "Uniquely identifiable tokens";
         case FEATURE_NONFUNGIBLE_ISSUER: return "NFT issuer data update by issuers only";
         case FEATURE_DELEGATEDISSUANCE: return "Activate delegated issuance of tokens";
+        case FEATURE_SEND_TO_MANY: return "Activate send-to-many transactions";
 
         default: return "Unknown feature";
     }
@@ -709,6 +721,9 @@ bool IsFeatureActivated(uint16_t featureId, int transactionBlock)
             break;
         case FEATURE_DELEGATEDISSUANCE:
             activationBlock = params.MSC_DELEGATED_ISSUANCE_BLOCK;
+        break;
+        case FEATURE_SEND_TO_MANY:
+            activationBlock = params.MSC_SEND_TO_MANY_BLOCK;
         break;
         default:
             return false;

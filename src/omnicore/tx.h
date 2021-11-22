@@ -14,7 +14,10 @@ class CTransaction;
 #include <stdint.h>
 #include <string.h>
 
+#include <map>
 #include <string>
+#include <tuple>
+#include <vector>
 
 using mastercore::strTransactionType;
 
@@ -46,12 +49,14 @@ private:
 
     // SimpleSend, SendToOwners, TradeOffer, MetaDEx, AcceptOfferBTC,
     // CreatePropertyFixed, CreatePropertyVariable, GrantTokens, RevokeTokens
+    // SendToMany
     uint64_t nValue;
     uint64_t nNewValue;
 
     // SimpleSend, SendToOwners, TradeOffer, MetaDEx, AcceptOfferBTC,
     // CreatePropertyFixed, CreatePropertyVariable, CloseCrowdsale,
     // CreatePropertyMananged, GrantTokens, RevokeTokens, ChangeIssuer
+    // SendToMany
     unsigned int property;
 
     // SendToOwners v1
@@ -89,6 +94,11 @@ private:
     uint8_t nonfungible_data_type; // Issuer (1) or holder (0)
     char nonfungible_data[SP_STRING_FIELD_LEN]; // GrantData, IssuerData or HolderData
 
+    // Send To Many
+    uint8_t numberOfSTMReceivers;
+    std::vector<std::tuple<uint8_t, uint64_t>> outputValuesForSTM;
+    std::map<uint8_t, std::string> validOutputAddressesForSTM;
+
     // Alert
     uint16_t alert_type;
     uint32_t alert_expiry;
@@ -113,6 +123,7 @@ private:
     bool interpret_SendToOwners();
     bool interpret_SendAll();
     bool interpret_SendNonFungible();
+    bool interpret_SendToMany();
     bool interpret_TradeOffer();
     bool interpret_MetaDExTrade();
     bool interpret_MetaDExCancelPrice();
@@ -145,6 +156,7 @@ private:
     int logicMath_SendToOwners();
     int logicMath_SendAll();
     int logicMath_SendNonFungible();
+    int logicMath_SendToMany();
     int logicMath_TradeOffer();
     int logicMath_AcceptOffer_BTC();
     int logicMath_MetaDExTrade();
@@ -232,6 +244,32 @@ public:
     uint64_t getNonFungibleDataType() const { return nonfungible_data_type; }
     std::string getNonFungibleData() const { return nonfungible_data; }
 
+    // Send To Many
+    uint8_t getStmNumberOfReceivers() const {
+        return numberOfSTMReceivers;
+    }
+
+    /** Returns output valies. */
+    std::vector<std::tuple<uint8_t, uint64_t>> getStmOutputValues() const {
+        return outputValuesForSTM;
+    }
+
+    /** Adds an address at position output. */
+    void addValidStmAddress(uint8_t output, const std::string& address) {
+        validOutputAddressesForSTM[output] = address;
+    }
+
+    /** Return an output address, if it's considered as valid Omni destination. */
+    bool getValidStmAddressAt(uint8_t output, std::string& addressOut) {
+        if (validOutputAddressesForSTM.find(output) != validOutputAddressesForSTM.end()) {
+            addressOut = validOutputAddressesForSTM[output];
+            return true;
+        }
+
+        addressOut.clear();
+        return false;
+    }
+
     /** Creates a new CMPTransaction object. */
     CMPTransaction()
     {
@@ -285,6 +323,9 @@ public:
         nonfungible_token_start = 0;
         nonfungible_token_end = 0;
         memset(&nonfungible_data, 0, sizeof(nonfungible_data));
+        numberOfSTMReceivers = 0;
+        outputValuesForSTM.clear();
+        validOutputAddressesForSTM.clear();
     }
 
     /** Sets the given values. */

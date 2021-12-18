@@ -14,6 +14,7 @@ All available commands can be listed with `"help"`, and information about a spec
 
 - [Transaction creation](#transaction-creation)
   - [omni_send](#omni_send)
+  - [omni_sendall](#omni_sendall)
   - [omni_sendnewdexorder](#omni_sendnewdexorder)
   - [omni_sendupdatedexorder](#omni_sendupdatedexorder)
   - [omni_sendcanceldexorder](#omni_sendcanceldexorder)
@@ -31,7 +32,6 @@ All available commands can be listed with `"help"`, and information about a spec
   - [omni_sendcanceltradesbypair](#omni_sendcanceltradesbypair)
   - [omni_sendcancelalltrades](#omni_sendcancelalltrades)
   - [omni_sendchangeissuer](#omni_sendchangeissuer)
-  - [omni_sendall](#omni_sendall)
   - [omni_sendenablefreezing](#omni_sendenablefreezing)
   - [omni_senddisablefreezing](#omni_senddisablefreezing)
   - [omni_sendfreeze](#omni_sendfreeze)
@@ -156,6 +156,33 @@ Create and broadcast a simple send transaction.
 
 ```bash
 $ omnicore-cli "omni_send" "3M9qvHKtgARhqcMtM5cRT9VaiDJ5PSfQGY" "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa" 1 "100.0"
+```
+
+---
+
+### omni_sendall
+
+Transfers all available tokens in the given ecosystem to the recipient.
+
+**Arguments:**
+
+| Name                | Type    | Presence | Description                                                                                  |
+|---------------------|---------|----------|----------------------------------------------------------------------------------------------|
+| `fromaddress`       | string  | required | the address to send from                                                                     |
+| `toaddress  `       | string  | required | the address of the receiver                                                                  |
+| `ecosystem`         | number  | required | the ecosystem of the tokens to send (`1` for main ecosystem, `2` for test ecosystem)         |
+| `redeemaddress`     | string  | optional | an address that can spend the transaction dust (sender by default)                           |
+| `referenceamount`   | string  | optional | a bitcoin amount that is sent to the receiver (minimal by default)                           |
+
+**Result:**
+```js
+"hash"  // (string) the hex-encoded transaction hash
+```
+
+**Example:**
+
+```bash
+$ omnicore-cli "omni_sendall" "3M9qvHKtgARhqcMtM5cRT9VaiDJ5PSfQGY" "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa" 2
 ```
 
 ---
@@ -666,33 +693,6 @@ Change the issuer on record of the given tokens.
 ```bash
 $ omnicore-cli "omni_sendchangeissuer" \
     "1ARjWDkZ7kT9fwjPrjcQyvbXDkEySzKHwu" "3HTHRxu3aSDV4deakjC7VmsiUp7c6dfbvs" 3
-```
-
----
-
-### omni_sendall
-
-Transfers all available tokens in the given ecosystem to the recipient.
-
-**Arguments:**
-
-| Name                | Type    | Presence | Description                                                                                  |
-|---------------------|---------|----------|----------------------------------------------------------------------------------------------|
-| `fromaddress`       | string  | required | the address to send from                                                                     |
-| `toaddress  `       | string  | required | the address of the receiver                                                                  |
-| `ecosystem`         | number  | required | the ecosystem of the tokens to send (`1` for main ecosystem, `2` for test ecosystem)         |
-| `redeemaddress`     | string  | optional | an address that can spend the transaction dust (sender by default)                           |
-| `referenceamount`   | string  | optional | a bitcoin amount that is sent to the receiver (minimal by default)                           |
-
-**Result:**
-```js
-"hash"  // (string) the hex-encoded transaction hash
-```
-
-**Example:**
-
-```bash
-$ omnicore-cli "omni_sendall" "3M9qvHKtgARhqcMtM5cRT9VaiDJ5PSfQGY" "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa" 2
 ```
 
 ---

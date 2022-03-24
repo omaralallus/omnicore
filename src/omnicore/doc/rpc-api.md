@@ -14,6 +14,8 @@ All available commands can be listed with `"help"`, and information about a spec
 
 - [Transaction creation](#transaction-creation)
   - [omni_send](#omni_send)
+  - [omni_sendall](#omni_sendall)
+  - [omni_sendtomany](#omni_sendtomany)
   - [omni_sendnewdexorder](#omni_sendnewdexorder)
   - [omni_sendupdatedexorder](#omni_sendupdatedexorder)
   - [omni_sendcanceldexorder](#omni_sendcanceldexorder)
@@ -31,7 +33,6 @@ All available commands can be listed with `"help"`, and information about a spec
   - [omni_sendcanceltradesbypair](#omni_sendcanceltradesbypair)
   - [omni_sendcancelalltrades](#omni_sendcancelalltrades)
   - [omni_sendchangeissuer](#omni_sendchangeissuer)
-  - [omni_sendall](#omni_sendall)
   - [omni_sendenablefreezing](#omni_sendenablefreezing)
   - [omni_senddisablefreezing](#omni_senddisablefreezing)
   - [omni_sendfreeze](#omni_sendfreeze)
@@ -91,6 +92,7 @@ All available commands can be listed with `"help"`, and information about a spec
   - [omni_createrawtx_change](#omni_createrawtx_change)
   - [omni_createpayload_simplesend](#omni_createpayload_simplesend)
   - [omni_createpayload_sendall](#omni_createpayload_sendall)
+  - [omni_createpayload_sendtomany](#omni_createpayload_sendtomany)
   - [omni_createpayload_dexsell](#omni_createpayload_dexsell)
   - [omni_createpayload_dexaccept](#omni_createpayload_dexaccept)
   - [omni_createpayload_sto](#omni_createpayload_sto)
@@ -156,6 +158,58 @@ Create and broadcast a simple send transaction.
 
 ```bash
 $ omnicore-cli "omni_send" "3M9qvHKtgARhqcMtM5cRT9VaiDJ5PSfQGY" "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa" 1 "100.0"
+```
+
+---
+
+### omni_sendall
+
+Transfers all available tokens in the given ecosystem to the recipient.
+
+**Arguments:**
+
+| Name                | Type    | Presence | Description                                                                                  |
+|---------------------|---------|----------|----------------------------------------------------------------------------------------------|
+| `fromaddress`       | string  | required | the address to send from                                                                     |
+| `toaddress  `       | string  | required | the address of the receiver                                                                  |
+| `ecosystem`         | number  | required | the ecosystem of the tokens to send (`1` for main ecosystem, `2` for test ecosystem)         |
+| `redeemaddress`     | string  | optional | an address that can spend the transaction dust (sender by default)                           |
+| `referenceamount`   | string  | optional | a bitcoin amount that is sent to the receiver (minimal by default)                           |
+
+**Result:**
+```js
+"hash"  // (string) the hex-encoded transaction hash
+```
+
+**Example:**
+
+```bash
+$ omnicore-cli "omni_sendall" "3M9qvHKtgARhqcMtM5cRT9VaiDJ5PSfQGY" "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa" 2
+```
+
+---
+
+### omni_sendtomany
+
+Create and broadcast a send-to-many transaction, which allows to transfer tokens from one source to multiple receivers.
+
+**Arguments:**
+
+| Name                | Type    | Presence | Description                                                                                  |
+|---------------------|---------|----------|----------------------------------------------------------------------------------------------|
+| `fromaddress`       | string  | required | the address to send from                                                                     |
+| `propertyid`        | number  | required | the identifier of the tokens to send                                                         |
+| `mapping`           | array   | required | an array with the receiving address "address" and the "amount" to send                       |
+
+**Result:**
+```js
+"hash"  // (string) the hex-encoded transaction hash
+```
+
+**Example:**
+
+```bash
+$ omnicore-cli "omni_sendtomany" 1 '[{"address": "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa", "amount": "10.5"}, {"address": "3HsJvhr9qzgRe3ss97b1QHs38rmaLExLcH", "amount": "0.5"}]'
 ```
 
 ---
@@ -666,33 +720,6 @@ Change the issuer on record of the given tokens.
 ```bash
 $ omnicore-cli "omni_sendchangeissuer" \
     "1ARjWDkZ7kT9fwjPrjcQyvbXDkEySzKHwu" "3HTHRxu3aSDV4deakjC7VmsiUp7c6dfbvs" 3
-```
-
----
-
-### omni_sendall
-
-Transfers all available tokens in the given ecosystem to the recipient.
-
-**Arguments:**
-
-| Name                | Type    | Presence | Description                                                                                  |
-|---------------------|---------|----------|----------------------------------------------------------------------------------------------|
-| `fromaddress`       | string  | required | the address to send from                                                                     |
-| `toaddress  `       | string  | required | the address of the receiver                                                                  |
-| `ecosystem`         | number  | required | the ecosystem of the tokens to send (`1` for main ecosystem, `2` for test ecosystem)         |
-| `redeemaddress`     | string  | optional | an address that can spend the transaction dust (sender by default)                           |
-| `referenceamount`   | string  | optional | a bitcoin amount that is sent to the receiver (minimal by default)                           |
-
-**Result:**
-```js
-"hash"  // (string) the hex-encoded transaction hash
-```
-
-**Example:**
-
-```bash
-$ omnicore-cli "omni_sendall" "3M9qvHKtgARhqcMtM5cRT9VaiDJ5PSfQGY" "37FaKponF7zqoMLUjEiko25pDiuVH5YLEa" 2
 ```
 
 ---
@@ -2646,6 +2673,32 @@ Create the payload for a send all transaction.
 
 ```bash
 $ omnicore-cli "omni_createpayload_sendall" 2
+```
+
+---
+
+### omni_createpayload_sendtomany
+
+Create the payload for a send-to-many transaction.
+
+Note: if the server is not synchronized, amounts are considered as divisible, even if the token may have indivisible units!
+
+**Arguments:**
+
+| Name                | Type    | Presence | Description                                                                                  |
+|---------------------|---------|----------|----------------------------------------------------------------------------------------------|
+| `propertyid`        | number  | required | the identifier of the tokens to send                                                         |
+| `mapping`           | array   | required | an array with output index "output" starting at 0 and the "amount" to send                   |
+
+**Result:**
+```js
+"payload"  // (string) the hex-encoded payload
+```
+
+**Example:**
+
+```bash
+$ omnicore-cli "omni_createpayload_sendtomany" 1 '[{"output": 2, "amount": "10.5"}, {"output": 3, "amount": "0.5"}, {"output": 5, "amount": "15.0"}]'
 ```
 
 ---

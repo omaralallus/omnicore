@@ -118,6 +118,7 @@ enum TransactionType {
 #define PKT_ERROR_TOKENS      (-82000)
 #define PKT_ERROR_SEND_ALL    (-83000)
 #define PKT_ERROR_ANYDATA     (-84000)
+#define PKT_ERROR_NFT         (-85000)
 
 #define OMNI_PROPERTY_BTC   0
 #define OMNI_PROPERTY_MSC   1

@@ -23,18 +23,18 @@ BOOST_AUTO_TEST_CASE(version_comparison)
 
 BOOST_AUTO_TEST_CASE(version_string)
 {
-    BOOST_CHECK_EQUAL(OmniCoreVersion(), "0.11.0");
+    BOOST_CHECK_EQUAL(OmniCoreVersion(), "0.12.0");
 }
 
 BOOST_AUTO_TEST_CASE(version_number)
 {
-    BOOST_CHECK_EQUAL(OMNICORE_VERSION, 110000000);
+    BOOST_CHECK_EQUAL(OMNICORE_VERSION, 120000000);
 }
 
 BOOST_AUTO_TEST_CASE(config_package_version)
 {
     // the package version is used in the file names:
-    BOOST_CHECK_EQUAL(PACKAGE_VERSION, "0.11.0");
+    BOOST_CHECK_EQUAL(PACKAGE_VERSION, "0.12.0");
 }
 
 

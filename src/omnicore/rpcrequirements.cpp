@@ -263,3 +263,10 @@ void RequireNonFungibleTokenOwner(const std::string& address, uint32_t propertyI
         throw JSONRPCError(RPC_TYPE_ERROR, "Sender does not own the range");
     }
 }
+
+void RequireBoundedStmReceiverNumber(size_t numberOfOutputs)
+{
+    if (numberOfOutputs > std::numeric_limits<uint8_t>::max() + 1) { // index = 0 included
+        throw JSONRPCError(RPC_TYPE_ERROR, "Too many send-to-many receivers");
+    }
+}

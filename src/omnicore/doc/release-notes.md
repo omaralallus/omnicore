@@ -1,11 +1,11 @@
-Omni Core v0.11.0
+r Omni Core v0.12.0
 ================
 
-v0.11.0 is a major release and adds the ability to issue non-fungible token and to delegate the management of a token.
+v0.12.0 is a major release and adds the ability to send tokens from one address to multiple receivers within one transaction.
 
 This release is mandatory and changes the rules of the Omni Layer protocol. An upgrade is required.
 
-Upgrading from 0.9.0, 0.8.2, 0.8.1 or 0.8.0 does not require a rescan and can be done very fast without interruption.
+Upgrading from Omni Core 0.11 does not require a rescan and can be done very fast with minimal interruption.
 
 Please report bugs using the issue tracker on GitHub:
 
@@ -15,15 +15,13 @@ Please report bugs using the issue tracker on GitHub:
 Table of contents
 =================
 
-- [Omni Core v0.11.0](#omni-core-v082)
+- [Omni Core v0.12.0](#omni-core-v082)
 - [Upgrading and downgrading](#upgrading-and-downgrading)
   - [How to upgrade](#how-to-upgrade)
   - [Downgrading](#downgrading)
   - [Compatibility with Bitcoin Core](#compatibility-with-bitcoin-core)
 - [Improvements](#improvements)
-  - [Non-fungible tokens](#non-fungible-tokens)
-  - [Delegate management of tokens](#delegate-management-of-tokens)
-  - [Move CI test builds to Cirrus](#move-ci-test-builds-to-cirrus)
+  - [Send to many](#send-to-many)
 - [Change log](#change-log)
 - [Credits](#credits)
 
@@ -38,109 +36,213 @@ If you are running Bitcoin Core or an older version of Omni Core, shut it down. 
 
 When upgrading from a version older than 0.8.0, the database of Omni Core is reconstructed, which can easily consume several hours. During the first startup historical Omni Layer transactions are reprocessed and Omni Core will not be usable for several hours up to more than a day. The progress of the initial scan is reported on the console, the GUI and written to the `debug.log`. The scan may be interrupted and can be resumed.
 
-Upgrading from 0.9.0, 0.8.2, 0.8.1 or 0.8.0 does not require a rescan and can be done very fast without interruption.
+Upgrading from 0.11 does not require a rescan and can be done very fast with minimal interruption.
 
 Downgrading
 -----------
 
-Downgrading to an Omni Core version prior to 0.11.0 is not supported.
+Downgrading to an Omni Core version prior to 0.12.0 is not supported.
 
 Compatibility with Bitcoin Core
 -------------------------------
 
-Omni Core is based on Bitcoin Core 0.20.1 and can be used as replacement for Bitcoin Core. Switching between Omni Core and Bitcoin Core may be supported.
+Omni Core is based on Bitcoin Core 0.20.1 and can be used as replacement for Bitcoin Core. Switching between Omni Core and Bitcoin Core is supported.
 
-However, it is not advised to upgrade or downgrade to versions other than Bitcoin Core 0.18. When switching to Omni Core, it may be necessary to reprocess Omni Layer transactions.
+However, it is not advised to upgrade or downgrade to versions other than Bitcoin Core 0.18. When switching to Omni Core, it can be necessary to reprocess Omni Layer transactions.
 
 
 Improvements
 ============
 
-Non-fungible tokens
+Send to many
 -------------------
 
-This release adds the ability to create managed tokens with a unique index, grant data, issuer data and holder data. Grant data is set on issuance, issuer data and holder data can be set at any point by the current issuer or holder respectively.  Grant data repurposes the memo field used in grant transactions that were not previously used other than to set data on the blockchain.
+This change adds the ability to construct and send send-to-many transactions.
 
-This feature needs to be enabled with an activation transaction.
+Please note, this transaction type is not available on mainnet until after its activation. A notice will be posted on [Twitter](https://twitter.com/Omni_layer)  and the Omni Layer mailing list. Testing on testnet and regtest mode is available from the start.
 
-Two new transaction types were added:
+**What can you do?**
 
-- `5`: "Unique Send"
-- `201`: "Set Non-Fungible Token Data"
+- Send send-to-many transactions
+- Construct payloads for send-to-many transactions
+- Parse and retrieve data of send-to-many transactions
 
-#### Overview
+**What's new?**
 
-A new token type "unique" was added, which can be specified when creating a new managed token with ["omni_sendissuancemanaged"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendissuancemanaged). Unique, or non-fungible tokens, can individually be identified, sent or enhanced with extra data. This can be useful to represent art, real estate or other digital or real world items on the blockchain. Individual units of a non-fungible token can be transferred with ["omni_sendnonfungible"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendnonfungible).
+A new transaction type 7 is introduced to transfer multiple tokens of one property id to multiple receivers. [Check out this link for a more detailed view.](https://gist.github.com/dexX7/1138fd1ea084a9db56798e9bce50d0ef)
 
-#### RPC changes
+Two new RPCs were added to facilitate the new feature:
 
-New RPCs:
+- [omni_sendtomany](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendtomany) to send send-to-many transactions via the user's wallet.
+- [omni_createpayload_sendtomany](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_createpayload_sendtomany) to construct the plain payload. Note however, the rest of the transaction, in particular actually adding outputs for each receiver is still necessary.
 
-- ["omni_sendnonfungible"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendnonfungible)
-- ["omni_setnonfungibledata"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_setnonfungibledata)
-- ["omni_getnonfungibletokens"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_getnonfungibletokens)
-- ["omni_getnonfungibletokendata"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_getnonfungibletokendata)
-- ["omni_getnonfungibletokenranges"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_getnonfungibletokenranges)
-- ["omni_createpayload_sendnonfungible"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_createpayload_sendnonfungible)
-- ["omni_createpayload_setnonfungibledata"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_createpayload_setnonfungibledata)
+**What else is affected?**
 
-Updated RPC:
+- [omni_gettransaction](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_gettransaction) can be used to retrieve information about send-to- many transactions. The new fields `receivers`, which provides a list for every receiver, and `totalamount` are most relevant for this transaction. See the examples below.
+- The change output of Omni transactions is no longer random, but added to the end of the transaction. This affects all Omni transactions generated by this version of Omni Core.
+- The transaction history window of the Qt client properly shows send-to-many transactions.
 
-- ["omni_sendissuancemanaged"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendissuancemanaged) "type" can be set to `5` to create new NFTs.
-- ["omni_sendgrant"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendgrant) "memo" field is changed into "grantdata".
+---
 
+**Example 1:**
 
-Delegate management of tokens
------------------------------
+You are a low level developer and want to manually craft transactions, then you can use the [raw transaction interface](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#raw-transactions) of Omni Core. To construct the payload for a send-to-many transaction:
 
-This release adds the delegation of issuance authority to a new address, for the issuance, freezing or unfreezing of units of a managed token.
+```
+omni_createpayload_sendtomany 31 '[{"output": 2, "amount": "10.5"}, {"output": 3, "amount": "0.5"}, {"output": 5, "amount": "15.0"}]'
+```
+```
+000000070000001f0302000000003e95ba80030000000002faf080050000000059682f00
+```
 
-This feature needs to be enabled with an activation transaction.
+---
 
-Two new transaction types were added:
+**Example 2:**
 
-- `73`: "Add delegate"
-- `74`: "Remove delegate"
+You have tokens in your wallet, which you want to transfer to two receivers, three units to one, five units to the other one:
 
-#### Overview
+```
+omni_sendtomany "2N9UopnCBgbC6wAjMaiqrBZjmgNFiZccY7C" 3 '[{"address": "mnM5bS3qQTxZSHkgpp2LDcKYL5thWtqCD6", "amount": "3"}, {"address": "2N9UopnCBgbC6wAjMaiqrBZjmgNFiZccY7C", "amount": "5"}]'
+```
+```
+55d9f3eb56a5de5afef6b1d5dcdc2300d26d0aafcacbbfe387cba0983e0644fa
+```
 
-Alice is the issuer of token and wants to delegate the issuance of new token units to Bob. She then uses ["omni_sendadddelegate"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendadddelegate) to empower Bob. Alice won't be able to issue new units until she removes Bob as delegate. She doesn't give up her ability to name or remove delegates and she remains to be the one who can enable or disable freezing of units. On a more practical level, this feature can be useful, if a token was issued from a regular non-multisig address and a multisig-address is used as delegate.
+---
 
-#### Rules overview
+**Example 3:**
 
-When adding a delegate:
+To then retrieve information about the transaction, you can use [omni_gettransaction](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_gettransaction), which has the new fields `receivers` and `totalamount`.
 
-- The property must be managed.
-- The sender of the transaction must be the issuer.
-- When adding a delegate, when there is already one, the old one is overwritten.
-- When a delegate is set, only the delegate can issue, revoke, freeze or unfreeze units.
-- Only the issuer can enable or disable freezing.
+```
+omni_gettransaction 55d9f3eb56a5de5afef6b1d5dcdc2300d26d0aafcacbbfe387cba0983e0644fa
+```
+```
+{
+  "txid": "55d9f3eb56a5de5afef6b1d5dcdc2300d26d0aafcacbbfe387cba0983e0644fa",
+  "fee": "0.00002420",
+  "sendingaddress": "2N9UopnCBgbC6wAjMaiqrBZjmgNFiZccY7C",
+  "ismine": true,
+  "version": 0,
+  "type_int": 7,
+  "type": "Send To Many",
+  "propertyid": 3,
+  "divisible": false,
+  "receivers": [
+    {
+      "output": 1,
+      "address": "mnM5bS3qQTxZSHkgpp2LDcKYL5thWtqCD6",
+      "amount": "3"
+    },
+    {
+      "output": 2,
+      "address": "2N9UopnCBgbC6wAjMaiqrBZjmgNFiZccY7C",
+      "amount": "5"
+    }
+  ],
+  "totalamount": "8",
+  "valid": false,
+  "invalidreason": "Not enough funds in user address",
+  "blockhash": "1ca23be7bee5dc915e76292e78aa1b42d75e4a3819d91871e69b24d292930687",
+  "blocktime": 1648120618,
+  "positioninblock": 2,
+  "block": 112,
+  "confirmations": 1
+}
+```
 
-When removing a delegate:
+---
 
-- To remove a delegate, the property must be managed
-- The sender of the transaction can be the issuer or the delegate itself.
-- The property has a delegate and the delegate matches the one to remove.
-- The delegate to remove must be named explicitly.
+**Example 4:**
 
-#### RPC changes
+Say you are a developer again and want to take a look at the above created transaction on a Bitcoin protocol level, then:
 
-New RPCs:
+```
+getrawtransaction 55d9f3eb56a5de5afef6b1d5dcdc2300d26d0aafcacbbfe387cba0983e0644fa 1
+```
+```
+{
+  "txid": "55d9f3eb56a5de5afef6b1d5dcdc2300d26d0aafcacbbfe387cba0983e0644fa",
+  "hash": "d74b35b379f4796c918cc2475d4942f0a2e3caf9ae345488f56bac92384145ef",
+  "version": 2,
+  "size": 323,
+  "vsize": 242,
+  "weight": 965,
+  "locktime": 0,
+  "vin": [
+    {
+      "txid": "2a89b07484fe8aa2b3038d32e2888b9b30de4553e23136e324502a0f049ed6b1",
+      "vout": 3,
+      "scriptSig": {
+        "asm": "00149cae6190b0802e646e93b9006b7239b036002ca0",
+        "hex": "1600149cae6190b0802e646e93b9006b7239b036002ca0"
+      },
+      "txinwitness": [
+        "30440220651224e5c625d8163cb6e2971f58b191109b5dc02fb821694ada765ab424b23602206cd8787258b3538f78f157ac6d1d520a21d3e1febda9477d77120e171d0225a301",
+        "02d0c8e0f374949dae9c0855d56af23b4d64c3c128fe336cd36a5270b2898a9964"
+      ],
+      "sequence": 4294967294
+    }
+  ],
+  "vout": [
+    {
+      "value": 0.00000000,
+      "n": 0,
+      "scriptPubKey": {
+        "asm": "OP_RETURN 6f6d6e69000000070000000302010000000000000003020000000000000005",
+        "hex": "6a1f6f6d6e69000000070000000302010000000000000003020000000000000005",
+        "type": "nulldata"
+      }
+    },
+    {
+      "value": 0.00000546,
+      "n": 1,
+      "scriptPubKey": {
+        "asm": "OP_DUP OP_HASH160 4aead0759e716330b6c76ffaa4be6d27124efcef OP_EQUALVERIFY OP_CHECKSIG",
+        "hex": "76a9144aead0759e716330b6c76ffaa4be6d27124efcef88ac",
+        "reqSigs": 1,
+        "type": "pubkeyhash",
+        "addresses": [
+          "mnM5bS3qQTxZSHkgpp2LDcKYL5thWtqCD6"
+        ]
+      }
+    },
+    {
+      "value": 0.00000540,
+      "n": 2,
+      "scriptPubKey": {
+        "asm": "OP_HASH160 b213aa3f6789fa2dca904d41d2bc4877d8437aa4 OP_EQUAL",
+        "hex": "a914b213aa3f6789fa2dca904d41d2bc4877d8437aa487",
+        "reqSigs": 1,
+        "type": "scripthash",
+        "addresses": [
+          "2N9UopnCBgbC6wAjMaiqrBZjmgNFiZccY7C"
+        ]
+      }
+    },
+    {
+      "value": 4.99981210,
+      "n": 3,
+      "scriptPubKey": {
+        "asm": "OP_HASH160 b213aa3f6789fa2dca904d41d2bc4877d8437aa4 OP_EQUAL",
+        "hex": "a914b213aa3f6789fa2dca904d41d2bc4877d8437aa487",
+        "reqSigs": 1,
+        "type": "scripthash",
+        "addresses": [
+          "2N9UopnCBgbC6wAjMaiqrBZjmgNFiZccY7C"
+        ]
+      }
+    }
+  ],
+  "hex": "02000000000101b1d69e040f2a5024e33631e25345de309b8b88e2328d03b3a28afe8474b0892a03000000171600149cae6190b0802e646e93b9006b7239b036002ca0feffffff040000000000000000216a1f6f6d6e6900000007000000030201000000000000000302000000000000000522020000000000001976a9144aead0759e716330b6c76ffaa4be6d27124efcef88ac1c0200000000000017a914b213aa3f6789fa2dca904d41d2bc4877d8437aa4879a1bcd1d0000000017a914b213aa3f6789fa2dca904d41d2bc4877d8437aa487024730440220651224e5c625d8163cb6e2971f58b191109b5dc02fb821694ada765ab424b23602206cd8787258b3538f78f157ac6d1d520a21d3e1febda9477d77120e171d0225a3012102d0c8e0f374949dae9c0855d56af23b4d64c3c128fe336cd36a5270b2898a996400000000",
+  "blockhash": "1ca23be7bee5dc915e76292e78aa1b42d75e4a3819d91871e69b24d292930687",
+  "confirmations": 1,
+  "time": 1648120618,
+  "blocktime": 1648120618
+}
+```
 
-- ["omni_sendadddelegate"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendadddelegate)
-- ["omni_sendremovedelegate"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_sendremovedelegate)
-- ["omni_createpayload_adddelegate"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_createpayload_adddelegate)
-- ["omni_createpayload_removedelegate"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_createpayload_removedelegate)
-
-Updated RPC:
-
-- ["omni_getproperty"](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/rpc-api.md#omni_getproperty) add "delegate" field.
-
-
-Move CI test builds to Cirrus
------------------------------
-
-Automated testing was moved from Travis CI to Cirrus CI.
+The above examples were created locally in regtest mode.
 
 
 Change log
@@ -148,22 +250,21 @@ Change log
 
 The following list includes relevant pull requests merged into this release:
 
-```
-- #1219 Trim Gitian build targets
-- #1220 Move test builds to Cirrus
-- #1223 Show Omni version in Qt and CLI
-- #1207 Feature Non-Fungible Tokens
-- #1224 Add opcode when calculating Omni class
-- #1227 Query address for all NFTs without specifying property ID
-- #1228 Add support to add a delegate for managed issuance
-- #1231 Gitian Linux confi8g: replace arm 32-bit with arm64 (aarch64)
-- #1232 Bump release version to 0.11
-- #1234 Update RPC docs for delegated issuance
-- #1233 Update release notes for Omni Core 0.11
-```
+
+- [#1237 Fix edge case, where no fee is selected](https://github.com/OmniLayer/omnicore/pull/1237)
+- [#1238 Remove previous releases build from Cirrus CI](https://github.com/OmniLayer/omnicore/pull/1238)
+- [#1246 Extract Dev OMNI/MSC calculations to calculate_devmsc() a standalone, "pure" function](https://github.com/OmniLayer/omnicore/pull/1246)
+- [#1248 Add RPC for "omni_sendtomany" and "omni_createpayload_sendtomany"](https://github.com/OmniLayer/omnicore/pull/1248)
+- [#1251 Fix non issuer data and other RPC bugs](https://github.com/OmniLayer/omnicore/pull/1251)
+- [#1252 Add ability to send and parse send-to-many transactions](https://github.com/OmniLayer/omnicore/pull/1252)
+- [#1254 Bump version to Omni Core 0.12.0](https://github.com/OmniLayer/omnicore/pull/1254)
+- [#1256 Only send all of non-fungible tokens](https://github.com/OmniLayer/omnicore/pull/1256)
+- [#1258 Bundle activations of NFT adjustments and send-to-many](https://github.com/OmniLayer/omnicore/pull/1258)
+- [#1259 Update release notes for Omni Core 0.12.0](https://github.com/OmniLayer/omnicore/pull/1259)
+
 
 
 Credits
 =======
 
-Thanks to everyone who contributed to this release, especially to Peter Bushnell and Sean Gilligan.
+Thanks to everyone who contributed to this release, especially to Peter Bushnell, Sean Gilligan and Marv Schneider.

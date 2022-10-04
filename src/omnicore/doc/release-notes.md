@@ -1,4 +1,4 @@
-r Omni Core v0.12.0
+Omni Core v0.12.0
 ================
 
 v0.12.0 is a major release and adds the ability to send tokens from one address to multiple receivers within one transaction.
@@ -22,6 +22,7 @@ Table of contents
   - [Compatibility with Bitcoin Core](#compatibility-with-bitcoin-core)
 - [Improvements](#improvements)
   - [Send to many](#send-to-many)
+  - [Blocktime in RPCs](#blocktime-in-rpcs)
 - [Change log](#change-log)
 - [Credits](#credits)
 
@@ -245,6 +246,12 @@ getrawtransaction 55d9f3eb56a5de5afef6b1d5dcdc2300d26d0aafcacbbfe387cba0983e0644
 The above examples were created locally in regtest mode.
 
 
+Blocktime in RPCs
+-------------------
+
+The attribute `"blocktime"` was added to the matches of MetaDEx trades, when using the RPCs `"omni_gettrade"`, `"omni_gettradehistoryforaddress"` and `"omni_gettradehistoryforpair"`.
+
+
 Change log
 ==========
 
@@ -261,6 +268,10 @@ The following list includes relevant pull requests merged into this release:
 - [#1256 Only send all of non-fungible tokens](https://github.com/OmniLayer/omnicore/pull/1256)
 - [#1258 Bundle activations of NFT adjustments and send-to-many](https://github.com/OmniLayer/omnicore/pull/1258)
 - [#1259 Update release notes for Omni Core 0.12.0](https://github.com/OmniLayer/omnicore/pull/1259)
+- [#1262 rpc-api.md: omni_listtransactions 1st param is address](https://github.com/OmniLayer/omnicore/pull/1262)
+- [#1269 Disable NFTs for now](https://github.com/OmniLayer/omnicore/pull/1269)
+- [#1270 Add blocktime to MetaDEx RPCs](https://github.com/OmniLayer/omnicore/pull/1270)
+- [#1271 Update release notes for 0.12](https://github.com/OmniLayer/omnicore/pull/1271)
 
 
 

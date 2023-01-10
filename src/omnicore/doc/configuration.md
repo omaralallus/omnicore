@@ -43,6 +43,7 @@ More information about the general configuration and Bitcoin Core specific optio
 | `omnitxcache`                | number       | `500000`       | the maximum number of transactions in the input transaction cache               |
 | `omniprogressfrequency`      | number       | `30`           | time in seconds after which the initial scanning progress is reported           |
 | `omniseedblockfilter`        | boolean      | `1`            | set skipping of blocks without Omni transactions during initial scan            |
+| `omniskipstoringstate`       | number       | `622000`       | don't store state during initial synchronization until block n (faster, but may have to restart syncing after a shutdown) |
 | `omnishowblockconsensushash` | number       | `0`            | calculate and log the consensus hash for the specified block                    |
 | `experimental-btc-balances`  | boolean      | `0`            | maintain a full address index to query any Bitcoin balance                      |
 

@@ -272,7 +272,8 @@ The following list includes relevant pull requests merged into this release:
 - [#1269 Disable NFTs for now](https://github.com/OmniLayer/omnicore/pull/1269)
 - [#1270 Add blocktime to MetaDEx RPCs](https://github.com/OmniLayer/omnicore/pull/1270)
 - [#1271 Update release notes for 0.12](https://github.com/OmniLayer/omnicore/pull/1271)
-
+- [#1285 Add option to skip storing state of earlier blocks during sync](https://github.com/OmniLayer/omnicore/pull/1285)
+- [#1271 Extend release notes for 0.12](https://github.com/OmniLayer/omnicore/pull/1286)
 
 
 Credits

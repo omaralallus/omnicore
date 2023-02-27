@@ -70,7 +70,7 @@ Please note, this transaction type is not available on mainnet until after its a
 
 **What's new?**
 
-A new transaction type 7 is introduced to transfer multiple tokens of one property id to multiple receivers. [Check out this link for a more detailed view.](https://gist.github.com/dexX7/1138fd1ea084a9db56798e9bce50d0ef)
+A new transaction type 7 is introduced to transfer multiple tokens of one property id to multiple receivers. [Check out this link for a more detailed view.](https://github.com/OmniLayer/omnicore/blob/develop/src/omnicore/doc/send-to-many.md)
 
 Two new RPCs were added to facilitate the new feature:
 
@@ -274,9 +274,11 @@ The following list includes relevant pull requests merged into this release:
 - [#1271 Update release notes for 0.12](https://github.com/OmniLayer/omnicore/pull/1271)
 - [#1285 Add option to skip storing state of earlier blocks during sync](https://github.com/OmniLayer/omnicore/pull/1285)
 - [#1271 Extend release notes for 0.12](https://github.com/OmniLayer/omnicore/pull/1286)
+- [#1287 NFT db records optimizations](https://github.com/OmniLayer/omnicore/pull/1287)
+- [#1288 Change version to 0.12.0.1](https://github.com/OmniLayer/omnicore/pull/1288)
 
 
 Credits
 =======
 
-Thanks to everyone who contributed to this release, especially to Peter Bushnell, Sean Gilligan and Marv Schneider.
+Thanks to everyone who contributed to this release, especially to Sean Gilligan, Marv Schneider and Antoniy Shumanov.

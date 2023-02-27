@@ -1573,10 +1573,8 @@ int CMPTransaction::logicMath_SendNonFungible()
         return (PKT_ERROR_NFT -32);
     }
 
-    std::string rangeStartOwner = pDbNFT->GetNonFungibleTokenOwner(property, nonfungible_token_start);
-    std::string rangeEndOwner = pDbNFT->GetNonFungibleTokenOwner(property, nonfungible_token_end);
-    bool contiguous = pDbNFT->IsRangeContiguous(property, nonfungible_token_start, nonfungible_token_end);
-    if (rangeStartOwner != sender || rangeEndOwner != sender || !contiguous) {
+    std::string rangeStartOwner = pDbNFT->GetNonFungibleTokenValueInRange(property, nonfungible_token_start, nonfungible_token_end);
+    if (rangeStartOwner != sender) {
         PrintToLog("%s(): rejected: sender %s does not own the range being sent\n",
                 __func__,
                 sender);
@@ -2980,10 +2978,8 @@ int CMPTransaction::logicMath_NonFungibleData()
 
     if (type == NonFungibleStorage::HolderData)
     {
-        std::string rangeStartOwner = pDbNFT->GetNonFungibleTokenOwner(property, nonfungible_token_start);
-        std::string rangeEndOwner = pDbNFT->GetNonFungibleTokenOwner(property, nonfungible_token_end);
-        bool contiguous = pDbNFT->IsRangeContiguous(property, nonfungible_token_start, nonfungible_token_end);
-        if (rangeStartOwner != sender || rangeEndOwner != sender || !contiguous) {
+        std::string rangeStartOwner = pDbNFT->GetNonFungibleTokenValueInRange(property, nonfungible_token_start, nonfungible_token_end);
+        if (rangeStartOwner != sender) {
             PrintToLog("%s(): rejected: sender %s does not own the range data is being set on\n",
                     __func__,
                     sender);

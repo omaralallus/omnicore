@@ -36,9 +36,7 @@
 #include <stdexcept>
 #include <string>
 
-using std::runtime_error;
 using namespace mastercore;
-
 
 static UniValue omni_funded_send(const JSONRPCRequest& request)
 {
@@ -77,6 +75,10 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SimpleSend(propertyId, amount);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // create the raw transaction
     uint256 retTxid;
@@ -120,6 +122,10 @@ static UniValue omni_funded_sendall(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SendAll(ecosystem);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // create the raw transaction
     uint256 retTxid;
     int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), *g_rpc_node);
@@ -158,6 +164,10 @@ static UniValue omni_sendrawtx(const JSONRPCRequest& request)
     std::string toAddress = (request.params.size() > 2) ? ParseAddressOrEmpty(request.params[2]): "";
     std::string redeemAddress = (request.params.size() > 3) ? ParseAddressOrEmpty(request.params[3]): "";
     int64_t referenceAmount = (request.params.size() > 4) ? ParseAmount(request.params[4], true): 0;
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     //some sanity checking of the data supplied?
     uint256 newTX;
@@ -216,6 +226,10 @@ static UniValue omni_send(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SimpleSend(propertyId, amount);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -269,6 +283,10 @@ static UniValue omni_sendall(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SendAll(ecosystem);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -335,6 +353,10 @@ static UniValue omni_sendnonfungible(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SendNonFungible(propertyId, tokenStart, tokenEnd);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -412,6 +434,10 @@ static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SetNonFungibleData(propertyId, tokenStart, tokenEnd, issuer, data);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -536,6 +562,10 @@ static UniValue omni_sendtomany(const JSONRPCRequest& request)
         propertyId,
         outputValues);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -624,6 +654,10 @@ static UniValue omni_senddexsell(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_DExSell(propertyIdForSale, amountForSale, amountDesired, paymentWindow, minAcceptFee, action);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -696,6 +730,10 @@ static UniValue omni_senddexaccept(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_DExAccept(propertyId, amount);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -761,6 +799,10 @@ static UniValue omni_sendnewdexorder(const JSONRPCRequest& request)
         paymentWindow,
         minAcceptFee,
         action);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -828,6 +870,10 @@ static UniValue omni_sendupdatedexorder(const JSONRPCRequest& request)
         minAcceptFee,
         action);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -888,6 +934,10 @@ static UniValue omni_sendcanceldexorder(const JSONRPCRequest& request)
         paymentWindow,
         minAcceptFee,
         action);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -972,6 +1022,10 @@ static UniValue omni_senddexpay(const JSONRPCRequest& request)
         }
     }
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     uint256 txid;
     int result = CreateDExTransaction(pwallet.get(), buyerAddress, sellerAddress, nAmount, txid);
 
@@ -1039,6 +1093,10 @@ static UniValue omni_sendissuancecrowdsale(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_IssuanceVariable(ecosystem, type, previousId, category, subcategory, name, url, data, propertyIdDesired, numTokens, deadline, earlyBonus, issuerPercentage);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -1101,6 +1159,10 @@ static UniValue omni_sendissuancefixed(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_IssuanceFixed(ecosystem, type, previousId, category, subcategory, name, url, data, amount);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1167,6 +1229,10 @@ static UniValue omni_sendissuancemanaged(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_IssuanceManaged(ecosystem, type, previousId, category, subcategory, name, url, data);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -1219,6 +1285,10 @@ static UniValue omni_sendsto(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SendToOwners(propertyId, amount, distributionPropertyId);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1276,6 +1346,10 @@ static UniValue omni_sendgrant(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_Grant(propertyId, amount, info);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -1329,6 +1403,10 @@ static UniValue omni_sendrevoke(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_Revoke(propertyId, amount, memo);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -1378,6 +1456,10 @@ static UniValue omni_sendclosecrowdsale(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_CloseCrowdsale(propertyId);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1436,6 +1518,10 @@ static UniValue omni_sendtrade(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_MetaDExTrade(propertyIdForSale, amountForSale, propertyIdDesired, amountDesired);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -1493,6 +1579,10 @@ static UniValue omni_sendcanceltradesbyprice(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_MetaDExCancelPrice(propertyIdForSale, amountForSale, propertyIdDesired, amountDesired);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1553,6 +1643,10 @@ static UniValue omni_sendcanceltradesbypair(const JSONRPCRequest& request)
     std::string rawHex;
     int result = WalletTxBuilder(fromAddress, "", "", 0, payload, txid, rawHex, autoCommit, pwallet.get());
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // check error and return the txid (or raw hex depending on autocommit)
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
@@ -1595,6 +1689,10 @@ static UniValue omni_sendcancelalltrades(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_MetaDExCancelEcosystem(ecosystem);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1647,6 +1745,10 @@ static UniValue omni_sendchangeissuer(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_ChangeIssuer(propertyId);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -1695,6 +1797,10 @@ static UniValue omni_sendenablefreezing(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_EnableFreezing(propertyId);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1745,6 +1851,10 @@ static UniValue omni_senddisablefreezing(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_DisableFreezing(propertyId);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1799,6 +1909,10 @@ static UniValue omni_sendfreeze(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_FreezeTokens(propertyId, amount, refAddress);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     // Note: no ref address is sent to WalletTxBuilder as the ref address is contained within the payload
@@ -1855,6 +1969,10 @@ static UniValue omni_sendunfreeze(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_UnfreezeTokens(propertyId, amount, refAddress);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     // Note: no ref address is sent to WalletTxBuilder as the ref address is contained within the payload
     uint256 txid;
@@ -1906,6 +2024,10 @@ static UniValue omni_sendadddelegate(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_AddDelegate(propertyId);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -1960,6 +2082,10 @@ static UniValue omni_sendremovedelegate(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_RemoveDelegate(propertyId);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -2008,6 +2134,10 @@ static UniValue omni_sendanydata(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_AnyData(data);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -2058,6 +2188,10 @@ static UniValue omni_sendactivation(const JSONRPCRequest& request)
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_ActivateFeature(featureId, activationBlock, minClientVersion);
 
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
+
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
     std::string rawHex;
@@ -2102,6 +2236,10 @@ static UniValue omni_senddeactivation(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_DeactivateFeature(featureId);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;
@@ -2159,6 +2297,10 @@ static UniValue omni_sendalert(const JSONRPCRequest& request)
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_OmniCoreAlert(alertType, expiryValue, alertMessage);
+
+    if (wallet) {
+        wallet->BlockUntilSyncedToCurrentChain();
+    }
 
     // request the wallet build the transaction (and if needed commit it)
     uint256 txid;

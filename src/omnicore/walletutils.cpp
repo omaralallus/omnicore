@@ -206,7 +206,7 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
 {
     // total output funds collected
     int64_t nTotal = 0;
-    int nHeight = ::ChainActive().Height();
+    int nHeight = mastercore::GetHeight();
 
     std::map<uint256, interfaces::WalletTxStatus> tx_status;
     const std::vector<interfaces::WalletTx>& transactions = iWallet.getWalletTxsDetails(tx_status);
@@ -286,7 +286,7 @@ int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddre
 {
     // total output funds collected
     int64_t nTotal = 0;
-    int nHeight = ::ChainActive().Height();
+    int nHeight = mastercore::GetHeight();
 
     std::map<uint256, interfaces::WalletTxStatus> tx_status;
     const std::vector<interfaces::WalletTx>& transactions = iWallet.getWalletTxsDetails(tx_status);

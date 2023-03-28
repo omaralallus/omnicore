@@ -5,7 +5,7 @@
 #include <omnicore/omnicore.h>
 #include <omnicore/tx.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <hash.h>
 #include <tinyformat.h>
 #include <uint256.h>

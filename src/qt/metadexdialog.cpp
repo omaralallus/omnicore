@@ -26,7 +26,7 @@
 #include <omnicore/wallettxbuilder.h>
 #include <omnicore/walletutils.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <key_io.h>
 #include <sync.h>
 #include <uint256.h>

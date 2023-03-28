@@ -1,6 +1,7 @@
-#include <omnicore/dbtxlist.h>
 
 #include <omnicore/activation.h>
+#include <omnicore/convert.h>
+#include <omnicore/dbtxlist.h>
 #include <omnicore/dbtransaction.h>
 #include <omnicore/dex.h>
 #include <omnicore/log.h>
@@ -34,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+using mastercore::atoi;
 using mastercore::AddAlert;
 using mastercore::CheckAlertAuthorization;
 using mastercore::CheckExpiredAlerts;
@@ -150,7 +152,7 @@ void CMPTxList::recordMetaDExCancelTX(const uint256& txidMaster, const uint256& 
     }
 
     // Step 3 - Create new/update master record for cancel tx in TXList
-    const std::string key = txidMasterStr;
+    const std::string& key = txidMasterStr;
     const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, refNumber);
     PrintToLog("METADEXCANCELDEBUG : Writing master record %s(%s, valid=%s, block= %d, type= %d, number of affected transactions= %d)\n", __func__, txidMaster.ToString(), fValid ? "YES" : "NO", nBlock, type, refNumber);
     status = pdb->Put(writeoptions, key, value);
@@ -269,7 +271,7 @@ bool CMPTxList::getPurchaseDetails(const uint256 txid, int purchaseNumber, std::
             *vout = atoi(vstr[0]);
             *buyer = vstr[1];
             *seller = vstr[2];
-            *propertyId = atoi64(vstr[3]);
+            *propertyId = boost::lexical_cast<uint64_t>(vstr[3]);
             *nValue = boost::lexical_cast<boost::uint64_t>(vstr[4]);
             return true;
         }
@@ -340,7 +342,7 @@ int CMPTxList::GetOmniTxsInBlockRange(int blockFirst, int blockLast, std::set<ui
 {
     int count = 0;
     leveldb::Iterator* it = NewIterator();
-    
+
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         const leveldb::Slice& sKey = it->key();
         const leveldb::Slice& sValue = it->value();
@@ -352,7 +354,7 @@ int CMPTxList::GetOmniTxsInBlockRange(int blockFirst, int blockLast, std::set<ui
             if (4 == vStr.size()) {
                 int blockCurrent = atoi(vStr[1]);
                 if (blockCurrent >= blockFirst && blockCurrent <= blockLast) {
-                    retTxs.insert(uint256S(sKey.ToString()));                    
+                    retTxs.insert(uint256S(sKey.ToString()));
                     ++count;
                 }
             }
@@ -488,7 +490,7 @@ bool CMPTxList::getValidMPTX(const uint256& txid, int* block, unsigned int* type
 
     if (nAmended) {
         if (4 <= vstr.size()) *nAmended = boost::lexical_cast<boost::uint64_t>(vstr[3]);
-        else nAmended = 0;
+        else *nAmended = 0;
     }
 
     if (msc_debug_txdb) printStats();
@@ -801,7 +803,6 @@ void CMPTxList::printAll()
 bool CMPTxList::isMPinBlockRange(int starting_block, int ending_block, bool bDeleteFound)
 {
     leveldb::Slice skey, svalue;
-    unsigned int count = 0;
     std::vector<std::string> vstr;
     int block;
     unsigned int n_found = 0;
@@ -811,8 +812,6 @@ bool CMPTxList::isMPinBlockRange(int starting_block, int ending_block, bool bDel
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         skey = it->key();
         svalue = it->value();
-
-        ++count;
 
         std::string strvalue = it->value().ToString();
 

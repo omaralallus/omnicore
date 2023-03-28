@@ -1,12 +1,13 @@
-#include <omnicore/dbtradelist.h>
 
+#include <omnicore/convert.h>
+#include <omnicore/dbtradelist.h>
 #include <omnicore/log.h>
 #include <omnicore/mdex.h>
 #include <omnicore/sp.h>
 
-#include <amount.h>
 #include <chain.h>
 #include <chainparams.h>
+#include <consensus/amount.h>
 #include <fs.h>
 #include <uint256.h>
 #include <util/strencodings.h>
@@ -30,6 +31,7 @@
 #include <utility>
 #include <vector>
 
+using mastercore::atoi;
 using mastercore::isPropertyDivisible;
 
 CMPTradeList::CMPTradeList(const fs::path& path, bool fWipe)
@@ -70,7 +72,6 @@ void CMPTradeList::recordNewTrade(const uint256& txid, const std::string& addres
 int CMPTradeList::deleteAboveBlock(int blockNum)
 {
     leveldb::Slice skey, svalue;
-    unsigned int count = 0;
     std::vector<std::string> vstr;
     int block = 0;
     unsigned int n_found = 0;
@@ -78,7 +79,6 @@ int CMPTradeList::deleteAboveBlock(int blockNum)
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         skey = it->key();
         svalue = it->value();
-        ++count;
         std::string strvalue = it->value().ToString();
         boost::split(vstr, strvalue, boost::is_any_of(":"), boost::token_compress_on);
         if (7 == vstr.size()) block = atoi(vstr[6]); // trade matches have 7 tokens, key is txid+txid, only care about block
@@ -89,7 +89,7 @@ int CMPTradeList::deleteAboveBlock(int blockNum)
             pdb->Delete(writeoptions, skey);
         }
     }
-    
+
     delete it;
 
     PrintToLog("%s(%d); tradedb n_found= %d\n", __func__, blockNum, n_found);

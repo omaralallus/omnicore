@@ -1,7 +1,6 @@
 #ifndef BITCOIN_OMNICORE_WALLETFETCHTXS_H
 #define BITCOIN_OMNICORE_WALLETFETCHTXS_H
 
-class CWallet;
 class uint256;
 
 namespace interfaces {

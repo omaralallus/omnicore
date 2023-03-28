@@ -4,6 +4,7 @@
  * This file contains RPC calls for creating and sending Omni transactions.
  */
 
+#include <memory>
 #include <omnicore/createpayload.h>
 #include <omnicore/dex.h>
 #include <omnicore/errors.h>
@@ -22,9 +23,10 @@
 #include <init.h>
 #include <key_io.h>
 #include <validation.h>
-#include <wallet/rpcwallet.h>
+#include <wallet/rpc/util.h>
 #include <rpc/blockchain.h>
 #include <rpc/server.h>
+#include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <sync.h>
 #include <util/moneystr.h>
@@ -37,11 +39,30 @@
 #include <string>
 
 using namespace mastercore;
+using namespace wallet;
+
+std::pair<std::shared_ptr<CWallet>, std::unique_ptr<interfaces::Wallet>> GetWalletFromContextForJSONRPCRequest(const JSONRPCRequest& request)
+{
+    if (request.mode != JSONRPCRequest::EXECUTE) {
+        return {nullptr, nullptr};
+    }
+    auto& node_context = EnsureAnyNodeContext(request.context);
+    if (!node_context.wallet_loader) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Wallet loader not found");
+    }
+    auto wallet_context = node_context.wallet_loader->context();
+    if (!wallet_context) {
+        throw JSONRPCError(RPC_INTERNAL_ERROR, "Wallet context not found");
+    }
+    auto wallet_request = request;
+    wallet_request.context = wallet_context;
+    auto wallet = GetWalletForJSONRPCRequest(wallet_request);
+    return std::make_pair(wallet, interfaces::MakeWallet(*wallet_context, wallet));
+}
 
 static UniValue omni_funded_send(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_funded_send",
        "\nCreates and sends a funded simple send transaction.\n"
@@ -82,7 +103,7 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
 
     // create the raw transaction
     uint256 retTxid;
-    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), *g_rpc_node);
+    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), g_context->get());
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
     }
@@ -92,8 +113,7 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
 
 static UniValue omni_funded_sendall(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_funded_sendall",
        "\nCreates and sends a transaction that transfers all available tokens in the given ecosystem to the recipient.\n"
@@ -128,7 +148,7 @@ static UniValue omni_funded_sendall(const JSONRPCRequest& request)
 
     // create the raw transaction
     uint256 retTxid;
-    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), *g_rpc_node);
+    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), g_context->get());
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
     }
@@ -138,8 +158,7 @@ static UniValue omni_funded_sendall(const JSONRPCRequest& request)
 
 static UniValue omni_sendrawtx(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendrawtx",
        "\nBroadcasts a raw Omni Layer transaction.\n",
@@ -188,8 +207,7 @@ static UniValue omni_sendrawtx(const JSONRPCRequest& request)
 
 static UniValue omni_send(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_send",
        "\nCreate and broadcast a simple send transaction.\n",
@@ -250,8 +268,7 @@ static UniValue omni_send(const JSONRPCRequest& request)
 
 static UniValue omni_sendall(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendall",
        "\nTransfers all available tokens in the given ecosystem to the recipient.\n",
@@ -308,8 +325,7 @@ static UniValue omni_sendall(const JSONRPCRequest& request)
 
 static UniValue omni_sendnonfungible(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendnonfungible",
        "\nCreate and broadcast a non-fungible send transaction.\n",
@@ -379,8 +395,7 @@ static UniValue omni_sendnonfungible(const JSONRPCRequest& request)
 // sets data for a specific token
 static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_setnonfungibledata",
         "\nSets either the issuer or holder data field in a non-fungible tokem. Holder data can only be\n"
@@ -458,8 +473,7 @@ static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
 
 static UniValue omni_sendtomany(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendtomany",
        "\nCreate and broadcast a send-to-many transaction, which allows to transfer tokens from one source to multiple receivers.\n",
@@ -586,8 +600,7 @@ static UniValue omni_sendtomany(const JSONRPCRequest& request)
 
 static UniValue omni_senddexsell(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_senddexsell",
        "\nPlace, update or cancel a sell offer on the distributed token/BTC exchange.\n",
@@ -679,8 +692,7 @@ static UniValue omni_senddexsell(const JSONRPCRequest& request)
 
 static UniValue omni_senddexaccept(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_senddexaccept",
        "\nCreate and broadcast an accept offer for the specified token and amount.\n",
@@ -753,8 +765,7 @@ static UniValue omni_senddexaccept(const JSONRPCRequest& request)
 
 static UniValue omni_sendnewdexorder(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendnewdexorder",
        "\nCreates a new sell offer on the distributed token/BTC exchange.\n",
@@ -823,8 +834,7 @@ static UniValue omni_sendnewdexorder(const JSONRPCRequest& request)
 
 static UniValue omni_sendupdatedexorder(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendupdatedexorder",
        "\nUpdates an existing sell offer on the distributed token/BTC exchange.\n",
@@ -893,8 +903,7 @@ static UniValue omni_sendupdatedexorder(const JSONRPCRequest& request)
 
 static UniValue omni_sendcanceldexorder(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendcanceldexorder",
        "\nCancels existing sell offer on the distributed token/BTC exchange.\n",
@@ -958,8 +967,7 @@ static UniValue omni_sendcanceldexorder(const JSONRPCRequest& request)
 
 static UniValue omni_senddexpay(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_senddexpay",
        "\nCreate and broadcast payment for an accept offer.\n",
@@ -1039,8 +1047,7 @@ static UniValue omni_senddexpay(const JSONRPCRequest& request)
 
 static UniValue omni_sendissuancecrowdsale(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendissuancecrowdsale",
        "Create new tokens as crowdsale.",
@@ -1116,8 +1123,7 @@ static UniValue omni_sendissuancecrowdsale(const JSONRPCRequest& request)
 
 static UniValue omni_sendissuancefixed(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendissuancefixed",
        "\nCreate new tokens with fixed supply.\n",
@@ -1183,8 +1189,7 @@ static UniValue omni_sendissuancefixed(const JSONRPCRequest& request)
 
 static UniValue omni_sendissuancemanaged(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendissuancemanaged",
        "\nCreate new tokens with manageable supply.\n",
@@ -1252,8 +1257,7 @@ static UniValue omni_sendissuancemanaged(const JSONRPCRequest& request)
 
 static UniValue omni_sendsto(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendsto",
        "\nCreate and broadcast a send-to-owners transaction.\n",
@@ -1310,8 +1314,7 @@ static UniValue omni_sendsto(const JSONRPCRequest& request)
 
 static UniValue omni_sendgrant(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendgrant",
        "\nIssue or grant new units of managed tokens.\n",
@@ -1369,8 +1372,7 @@ static UniValue omni_sendgrant(const JSONRPCRequest& request)
 
 static UniValue omni_sendrevoke(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendrevoke",
        "\nRevoke units of managed tokens.\n",
@@ -1426,8 +1428,7 @@ static UniValue omni_sendrevoke(const JSONRPCRequest& request)
 
 static UniValue omni_sendclosecrowdsale(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendclosecrowdsale",
        "\nManually close a crowdsale.\n",
@@ -1480,8 +1481,7 @@ static UniValue omni_sendclosecrowdsale(const JSONRPCRequest& request)
 
 static UniValue omni_sendtrade(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendtrade",
        "\nPlace a trade offer on the distributed token exchange.\n",
@@ -1542,8 +1542,7 @@ static UniValue omni_sendtrade(const JSONRPCRequest& request)
 
 static UniValue omni_sendcanceltradesbyprice(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendcanceltradesbyprice",
        "\nCancel offers on the distributed token exchange with the specified price.\n",
@@ -1604,8 +1603,7 @@ static UniValue omni_sendcanceltradesbyprice(const JSONRPCRequest& request)
 
 static UniValue omni_sendcanceltradesbypair(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendcanceltradesbypair",
        "\nCancel all offers on the distributed token exchange with the given currency pair.\n",
@@ -1662,8 +1660,7 @@ static UniValue omni_sendcanceltradesbypair(const JSONRPCRequest& request)
 
 static UniValue omni_sendcancelalltrades(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendcancelalltrades",
        "\nCancel all offers on the distributed token exchange.\n",
@@ -1714,8 +1711,7 @@ static UniValue omni_sendcancelalltrades(const JSONRPCRequest& request)
 
 static UniValue omni_sendchangeissuer(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendchangeissuer",
        "\nChange the issuer on record of the given tokens.\n",
@@ -1768,8 +1764,7 @@ static UniValue omni_sendchangeissuer(const JSONRPCRequest& request)
 
 static UniValue omni_sendenablefreezing(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendenablefreezing",
        "\nEnables address freezing for a centrally managed property.\n",
@@ -1821,8 +1816,7 @@ static UniValue omni_sendenablefreezing(const JSONRPCRequest& request)
 
 static UniValue omni_senddisablefreezing(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_senddisablefreezing",
        "\nDisables address freezing for a centrally managed property.\n"
@@ -1875,8 +1869,7 @@ static UniValue omni_senddisablefreezing(const JSONRPCRequest& request)
 
 static UniValue omni_sendfreeze(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendfreeze",
        "\nFreeze an address for a centrally managed token.\n"
@@ -1934,8 +1927,7 @@ static UniValue omni_sendfreeze(const JSONRPCRequest& request)
 
 static UniValue omni_sendunfreeze(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendunfreeze",
        "\nUnfreezes an address for a centrally managed token.\n"
@@ -1993,8 +1985,7 @@ static UniValue omni_sendunfreeze(const JSONRPCRequest& request)
 
 static UniValue omni_sendadddelegate(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendadddelegate",
        "\nAdds a delegate for the issuance of tokens of a managed property.\n",
@@ -2048,8 +2039,7 @@ static UniValue omni_sendadddelegate(const JSONRPCRequest& request)
 
 static UniValue omni_sendremovedelegate(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendremovedelegate",
        "\nRemoves a delegate for the issuance of tokens of a managed property.\n",
@@ -2105,8 +2095,7 @@ static UniValue omni_sendremovedelegate(const JSONRPCRequest& request)
 
 static UniValue omni_sendanydata(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendanydata",
        "\nCreate and broadcast a transaction with an arbitrary payload.\nWhen no receiver is specified, the sender is also considered as receiver.\n",
@@ -2158,8 +2147,7 @@ static UniValue omni_sendanydata(const JSONRPCRequest& request)
 
 static UniValue omni_sendactivation(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendactivation",
        "\nActivate a protocol feature.\n"
@@ -2211,8 +2199,7 @@ static UniValue omni_sendactivation(const JSONRPCRequest& request)
 
 static UniValue omni_senddeactivation(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_senddeactivation",
        "\nDeactivate a protocol feature.  For Emergency Use Only.\n"
@@ -2260,8 +2247,7 @@ static UniValue omni_senddeactivation(const JSONRPCRequest& request)
 
 static UniValue omni_sendalert(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pwallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pwallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_sendalert",
        "\nCreates and broadcasts an Omni Core alert.\n"

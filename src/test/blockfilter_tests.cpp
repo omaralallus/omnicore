@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019 The Bitcoin Core developers
+// Copyright (c) 2018-2020 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -42,14 +42,14 @@ BOOST_AUTO_TEST_CASE(gcsfilter_test)
 BOOST_AUTO_TEST_CASE(gcsfilter_default_constructor)
 {
     GCSFilter filter;
-    BOOST_CHECK_EQUAL(filter.GetN(), 0);
-    BOOST_CHECK_EQUAL(filter.GetEncoded().size(), 1);
+    BOOST_CHECK_EQUAL(filter.GetN(), 0U);
+    BOOST_CHECK_EQUAL(filter.GetEncoded().size(), 1U);
 
     const GCSFilter::Params& params = filter.GetParams();
-    BOOST_CHECK_EQUAL(params.m_siphash_k0, 0);
-    BOOST_CHECK_EQUAL(params.m_siphash_k1, 0);
+    BOOST_CHECK_EQUAL(params.m_siphash_k0, 0U);
+    BOOST_CHECK_EQUAL(params.m_siphash_k1, 0U);
     BOOST_CHECK_EQUAL(params.m_P, 0);
-    BOOST_CHECK_EQUAL(params.m_M, 1);
+    BOOST_CHECK_EQUAL(params.m_M, 1U);
 }
 
 BOOST_AUTO_TEST_CASE(blockfilter_basic_test)
@@ -137,7 +137,7 @@ BOOST_AUTO_TEST_CASE(blockfilters_json_test)
 
     const UniValue& tests = json.get_array();
     for (unsigned int i = 0; i < tests.size(); i++) {
-        UniValue test = tests[i];
+        const UniValue& test = tests[i];
         std::string strTest = test.write();
 
         if (test.size() == 1) {
@@ -148,7 +148,7 @@ BOOST_AUTO_TEST_CASE(blockfilters_json_test)
         }
 
         unsigned int pos = 0;
-        /*int block_height =*/ test[pos++].get_int();
+        /*int block_height =*/ test[pos++].getInt<int>();
         uint256 block_hash;
         BOOST_CHECK(ParseHashStr(test[pos++].get_str(), block_hash));
 

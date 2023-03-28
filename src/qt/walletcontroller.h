@@ -1,4 +1,4 @@
-// Copyright (c) 2019 The Bitcoin Core developers
+// Copyright (c) 2019-2021 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -8,6 +8,7 @@
 #include <qt/sendcoinsrecipient.h>
 #include <support/allocators/secure.h>
 #include <sync.h>
+#include <util/translation.h>
 
 #include <map>
 #include <memory>
@@ -21,6 +22,7 @@
 #include <QTimer>
 #include <QString>
 
+class ClientModel;
 class OptionsModel;
 class PlatformStyle;
 class WalletModel;
@@ -30,6 +32,10 @@ class Handler;
 class Node;
 class Wallet;
 } // namespace interfaces
+
+namespace fs {
+class path;
+}
 
 class AskPassphraseDialog;
 class CreateWalletActivity;
@@ -47,11 +53,8 @@ class WalletController : public QObject
     void removeAndDeleteWallet(WalletModel* wallet_model);
 
 public:
-    WalletController(interfaces::Node& node, const PlatformStyle* platform_style, OptionsModel* options_model, QObject* parent);
+    WalletController(ClientModel& client_model, const PlatformStyle* platform_style, QObject* parent);
     ~WalletController();
-
-    //! Returns wallet models currently open.
-    std::vector<WalletModel*> getOpenWallets() const;
 
     WalletModel* getOrCreateWallet(std::unique_ptr<interfaces::Wallet> wallet);
 
@@ -60,6 +63,7 @@ public:
     std::map<std::string, bool> listWalletDir() const;
 
     void closeWallet(WalletModel* wallet_model, QWidget* parent = nullptr);
+    void closeAllWallets(QWidget* parent = nullptr);
 
 Q_SIGNALS:
     void walletAdded(WalletModel* wallet_model);
@@ -70,6 +74,7 @@ Q_SIGNALS:
 private:
     QThread* const m_activity_thread;
     QObject* const m_activity_worker;
+    ClientModel& m_client_model;
     interfaces::Node& m_node;
     const PlatformStyle* const m_platform_style;
     OptionsModel* const m_options_model;
@@ -86,7 +91,7 @@ class WalletControllerActivity : public QObject
 
 public:
     WalletControllerActivity(WalletController* wallet_controller, QWidget* parent_widget);
-    virtual ~WalletControllerActivity();
+    virtual ~WalletControllerActivity() = default;
 
 Q_SIGNALS:
     void finished();
@@ -95,15 +100,13 @@ protected:
     interfaces::Node& node() const { return m_wallet_controller->m_node; }
     QObject* worker() const { return m_wallet_controller->m_activity_worker; }
 
-    void showProgressDialog(const QString& label_text);
-    void destroyProgressDialog();
+    void showProgressDialog(const QString& title_text, const QString& label_text);
 
     WalletController* const m_wallet_controller;
     QWidget* const m_parent_widget;
-    QProgressDialog* m_progress_dialog{nullptr};
     WalletModel* m_wallet_model{nullptr};
-    std::string m_error_message;
-    std::vector<std::string> m_warning_message;
+    bilingual_str m_error_message;
+    std::vector<bilingual_str> m_warning_message;
 };
 
 
@@ -141,6 +144,32 @@ public:
 
 Q_SIGNALS:
     void opened(WalletModel* wallet_model);
+
+private:
+    void finish();
+};
+
+class LoadWalletsActivity : public WalletControllerActivity
+{
+    Q_OBJECT
+
+public:
+    LoadWalletsActivity(WalletController* wallet_controller, QWidget* parent_widget);
+
+    void load();
+};
+
+class RestoreWalletActivity : public WalletControllerActivity
+{
+    Q_OBJECT
+
+public:
+    RestoreWalletActivity(WalletController* wallet_controller, QWidget* parent_widget);
+
+    void restore(const fs::path& backup_file, const std::string& wallet_name);
+
+Q_SIGNALS:
+    void restored(WalletModel* wallet_model);
 
 private:
     void finish();

@@ -1,15 +1,13 @@
 #ifndef BITCOIN_OMNICORE_NFTDB_H
 #define BITCOIN_OMNICORE_NFTDB_H
 
-#include <cstdint>
 #include <omnicore/dbbase.h>
 
 #include <omnicore/log.h>
 #include <omnicore/persistence.h>
 
+#include <fs.h>
 #include <stdint.h>
-#include <unordered_map>
-#include <boost/filesystem.hpp>
 
 enum class NonFungibleStorage : unsigned char
 {
@@ -40,7 +38,7 @@ class CMPNonFungibleTokensDB : public CDBBase
     void StoreBlockCache(const std::string& key);
 
 public:
-    CMPNonFungibleTokensDB(const boost::filesystem::path& path, bool fWipe)
+    CMPNonFungibleTokensDB(const fs::path& path, bool fWipe)
     {
         leveldb::Status status = Open(path, fWipe);
         PrintToConsole("Loading non-fungible tokens database: %s\n", status.ToString());

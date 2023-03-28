@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>606</width>
-    <height>342</height>
+    <width>798</width>
+    <height>318</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -74,7 +74,7 @@
               </property>
               <property name="maximumSize">
                <size>
-                <width>30</width>
+                <width>45</width>
                 <height>16777215</height>
                </size>
               </property>
@@ -97,9 +97,6 @@
                 <width>24</width>
                 <height>24</height>
                </size>
-              </property>
-              <property name="flat">
-               <bool>true</bool>
               </property>
              </widget>
             </item>
@@ -181,7 +178,7 @@
               </property>
               <property name="maximumSize">
                <size>
-                <width>30</width>
+                <width>45</width>
                 <height>16777215</height>
                </size>
               </property>
@@ -205,9 +202,6 @@
                 <height>24</height>
                </size>
               </property>
-              <property name="flat">
-               <bool>true</bool>
-              </property>
              </widget>
             </item>
             <item>
@@ -226,7 +220,7 @@
            </layout>
           </item>
           <item>
-           <widget class="QListView" name="listTransactions">
+           <widget class="TransactionOverviewWidget" name="listTransactions">
             <property name="styleSheet">
              <string notr="true">QListView { background: transparent; }</string>
             </property>
@@ -239,49 +233,46 @@
             <property name="horizontalScrollBarPolicy">
              <enum>Qt::ScrollBarAlwaysOff</enum>
             </property>
+            <property name="sizeAdjustPolicy">
+             <enum>QAbstractScrollArea::AdjustToContents</enum>
+            </property>
             <property name="selectionMode">
              <enum>QAbstractItemView::NoSelection</enum>
             </property>
+            <property name="uniformItemSizes">
+             <bool>true</bool>
+            </property>
            </widget>
-          </item>
-          <item>
-           <spacer name="verticalSpacer_2">
-            <property name="orientation">
-             <enum>Qt::Vertical</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>20</width>
-              <height>40</height>
-             </size>
-            </property>
-           </spacer>
           </item>
          </layout>
         </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_2">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
        </item>
       </layout>
      </item>
     </layout>
    </item>
-   <item>
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeType">
-      <enum>QSizePolicy::Fixed</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>1</width>
-       <height>1</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
   </layout>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>TransactionOverviewWidget</class>
+   <extends>QListView</extends>
+   <header>qt/transactionoverviewwidget.h</header>
+  </customwidget>
+ </customwidgets>
  <resources/>
  <connections/>
 </ui>

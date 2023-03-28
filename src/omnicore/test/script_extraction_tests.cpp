@@ -24,9 +24,9 @@ BOOST_AUTO_TEST_CASE(extract_pubkey_test)
     script << ToByteVector(pubKey) << OP_CHECKSIG;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_PUBKEY);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::PUBKEY);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -48,9 +48,9 @@ BOOST_AUTO_TEST_CASE(extract_pubkeyhash_test)
     script << OP_DUP << OP_HASH160 << ToByteVector(keyId) << OP_EQUALVERIFY << OP_CHECKSIG;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_PUBKEYHASH);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::PUBKEYHASH);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -80,9 +80,9 @@ BOOST_AUTO_TEST_CASE(extract_multisig_test)
     script << OP_CHECKMULTISIG;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_MULTISIG);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::MULTISIG);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -122,9 +122,9 @@ BOOST_AUTO_TEST_CASE(extract_multisig_with_skip_test)
     script << OP_CHECKMULTISIG;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_MULTISIG);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::MULTISIG);
 
     // Confirm extracted data, and skip first public key
     std::vector<std::string> vstrSolutions;
@@ -153,9 +153,9 @@ BOOST_AUTO_TEST_CASE(extract_scripthash_test)
     script << OP_HASH160 << ToByteVector(innerId) << OP_EQUAL;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_SCRIPTHASH);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::SCRIPTHASH);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -171,9 +171,9 @@ BOOST_AUTO_TEST_CASE(extract_no_nulldata_test)
     script << OP_RETURN;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_NULL_DATA);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::NULL_DATA);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -188,9 +188,9 @@ BOOST_AUTO_TEST_CASE(extract_empty_nulldata_test)
     script << OP_RETURN << ParseHex("");
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_NULL_DATA);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::NULL_DATA);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -209,9 +209,9 @@ BOOST_AUTO_TEST_CASE(extract_nulldata_test)
     script << OP_RETURN << vchPayload;
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_NULL_DATA);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::NULL_DATA);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -242,9 +242,9 @@ BOOST_AUTO_TEST_CASE(extract_nulldata_multipush_test)
     }
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_NULL_DATA);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::NULL_DATA);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;
@@ -273,9 +273,9 @@ BOOST_AUTO_TEST_CASE(extract_anypush_test)
     script << vvchPayloads[4];
 
     // Check script type
-    txnouttype outtype;
+    TxoutType outtype;
     BOOST_CHECK(!GetOutputType(script, outtype));
-    BOOST_CHECK_EQUAL(outtype, TX_NONSTANDARD);
+    BOOST_CHECK_EQUAL(outtype, TxoutType::NONSTANDARD);
 
     // Confirm extracted data
     std::vector<std::string> vstrSolutions;

@@ -3,7 +3,6 @@
 
 class CPubKey;
 class CTransaction;
-class CWallet;
 struct CMutableTransaction;
 struct PrevTxsEntry;
 

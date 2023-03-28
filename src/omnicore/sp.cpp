@@ -14,7 +14,6 @@
 #include <util/time.h>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 
 #include <stdint.h>

@@ -23,7 +23,6 @@
 #include <omnicore/sp.h>
 #include <omnicore/tx.h>
 #include <omnicore/utilsbitcoin.h>
-#include <omnicore/walletcache.h>
 #include <omnicore/walletfetchtxs.h>
 #include <omnicore/walletutils.h>
 
@@ -199,7 +198,7 @@ int TXHistoryDialog::PopulateHistoryMap()
     // obtain a sorted list of Omni layer wallet transactions (including STO receipts and pending) - default last 65535
     std::map<std::string,uint256> walletTransactions;
     if (walletModel)
-        walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetArg("-omniuiwalletscope", 65535L));
+        walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetIntArg("-omniuiwalletscope", 65535L));
 
     // reverse iterate over (now ordered) transactions and populate history map for each one
     for (std::map<std::string,uint256>::reverse_iterator it = walletTransactions.rbegin(); it != walletTransactions.rend(); it++) {
@@ -239,7 +238,7 @@ int TXHistoryDialog::PopulateHistoryMap()
             const CMPPending& pending = pending_it->second;
             HistoryTXObject htxo;
             htxo.blockHeight = 0;
-            if (it->first.length() == 16) htxo.blockByteOffset = atoi(it->first.substr(6)); // use wallet position from key in lieu of block position
+            if (it->first.length() == 16) htxo.blockByteOffset = std::stoi(it->first.substr(6)); // use wallet position from key in lieu of block position
             htxo.valid = true; // all pending transactions are assumed to be valid prior to confirmation (wallet would not send them otherwise)
             htxo.address = pending.src;
             htxo.amount = "-" + FormatShortMP(pending.prop, pending.amount) + getTokenLabel(pending.prop);
@@ -262,8 +261,8 @@ int TXHistoryDialog::PopulateHistoryMap()
         int parseRC = ParseTransaction(*wtx, blockHeight, 0, mp_obj);
         HistoryTXObject htxo;
         if (it->first.length() == 16) {
-            htxo.blockHeight = atoi(it->first.substr(0,6));
-            htxo.blockByteOffset = atoi(it->first.substr(6));
+            htxo.blockHeight = std::stoi(it->first.substr(0,6));
+            htxo.blockByteOffset = std::stoi(it->first.substr(6));
         }
 
         // positive RC means payment, potential DEx purchase

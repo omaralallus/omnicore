@@ -1,6 +1,7 @@
 #ifndef BITCOIN_OMNICORE_RULES_H
 #define BITCOIN_OMNICORE_RULES_H
 
+#include <script/standard.h>
 #include <uint256.h>
 
 #include <stdint.h>
@@ -196,10 +197,10 @@ public:
     virtual ~CMainConsensusParams() {}
 
     /** Returns consensus checkpoints for mainnet, used to verify transaction processing. */
-    virtual std::vector<ConsensusCheckpoint> GetCheckpoints() const;
+    std::vector<ConsensusCheckpoint> GetCheckpoints() const override;
 
     /** Returns transactions checkpoints for mainnet, used to verify DB consistency. */
-    virtual std::vector<TransactionCheckpoint> GetTransactions() const;
+    std::vector<TransactionCheckpoint> GetTransactions() const override;
 };
 
 /** Consensus parameters for testnet.
@@ -243,9 +244,9 @@ bool DeactivateFeature(uint16_t featureId, int transactionBlock);
 /** Checks, whether a feature is activated at the given block. */
 bool IsFeatureActivated(uint16_t featureId, int transactionBlock);
 /** Checks, if the script type is allowed as input. */
-bool IsAllowedInputType(int whichType, int nBlock);
+bool IsAllowedInputType(TxoutType whichType, int nBlock);
 /** Checks, if the script type qualifies as output. */
-bool IsAllowedOutputType(int whichType, int nBlock);
+bool IsAllowedOutputType(TxoutType whichType, int nBlock);
 /** Checks, if the transaction type and version is supported and enabled. */
 bool IsTransactionTypeAllowed(int txBlock, uint32_t txProperty, uint16_t txType, uint16_t version);
 

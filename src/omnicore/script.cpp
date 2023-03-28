@@ -1,6 +1,6 @@
 #include <omnicore/script.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <script/script.h>
@@ -32,20 +32,20 @@ int64_t OmniGetDustThreshold(const CScript& scriptPubKey)
 /**
  * Identifies standard output types based on a scriptPubKey.
  *
- * Note: whichTypeRet is set to TX_NONSTANDARD, if no standard script was found.
+ * Note: whichTypeRet is set to TxoutType::NONSTANDARD, if no standard script was found.
  *
  * @param scriptPubKey[in]   The script
  * @param whichTypeRet[out]  The output type
  * @return True if a standard script was found
  */
-bool GetOutputType(const CScript& scriptPubKey, txnouttype& whichTypeRet)
+bool GetOutputType(const CScript& scriptPubKey, TxoutType& whichTypeRet)
 {
     std::vector<std::vector<unsigned char> > vSolutions;
 
     if (SafeSolver(scriptPubKey, whichTypeRet, vSolutions)) {
         return true;
     }
-    whichTypeRet = TX_NONSTANDARD;
+    whichTypeRet = TxoutType::NONSTANDARD;
 
     return false;
 }
@@ -86,23 +86,23 @@ bool GetScriptPushes(const CScript& script, std::vector<std::string>& vstrRet, b
  * @param vSolutionsRet[out]  The extracted public keys or hashes
  * @return True if a standard script was found
  */
-bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
+bool SafeSolver(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
 {
     // Templates
-    static std::multimap<txnouttype, CScript> mTemplates;
+    static std::multimap<TxoutType, CScript> mTemplates;
     if (mTemplates.empty())
     {
         // Standard tx, sender provides pubkey, receiver adds signature
-        mTemplates.insert(std::make_pair(TX_PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TxoutType::PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG));
 
         // Bitcoin address tx, sender provides hash of pubkey, receiver provides signature and pubkey
-        mTemplates.insert(std::make_pair(TX_PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
+        mTemplates.insert(std::make_pair(TxoutType::PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
 
         // Sender provides N pubkeys, receivers provides M signatures
-        mTemplates.insert(std::make_pair(TX_MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
+        mTemplates.insert(std::make_pair(TxoutType::MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
 
         // Empty, provably prunable, data-carrying output
-        mTemplates.insert(std::make_pair(TX_NULL_DATA, CScript() << OP_RETURN));
+        mTemplates.insert(std::make_pair(TxoutType::NULL_DATA, CScript() << OP_RETURN));
     }
 
     vSolutionsRet.clear();
@@ -111,7 +111,7 @@ bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<st
     // it is always OP_HASH160 20 [20 byte hash] OP_EQUAL
     if (scriptPubKey.IsPayToScriptHash())
     {
-        typeRet = TX_SCRIPTHASH;
+        typeRet = TxoutType::SCRIPTHASH;
         std::vector<unsigned char> hashBytes(scriptPubKey.begin()+2, scriptPubKey.begin()+22);
         vSolutionsRet.push_back(hashBytes);
         return true;
@@ -121,12 +121,12 @@ bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<st
     std::vector<unsigned char> witnessprogram;
     if (scriptPubKey.IsWitnessProgram(witnessversion, witnessprogram)) {
         if (witnessversion == 0 && witnessprogram.size() == 20) {
-            typeRet = TX_WITNESS_V0_KEYHASH;
+            typeRet = TxoutType::WITNESS_V0_KEYHASH;
             vSolutionsRet.push_back(witnessprogram);
             return true;
         }
         if (witnessversion == 0 && witnessprogram.size() == 32) {
-            typeRet = TX_WITNESS_V0_SCRIPTHASH;
+            typeRet = TxoutType::WITNESS_V0_SCRIPTHASH;
             vSolutionsRet.push_back(witnessprogram);
             return true;
         }
@@ -142,7 +142,7 @@ bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<st
     {
         CScript script(scriptPubKey.begin()+1, scriptPubKey.end());
         if (script.IsPushOnly()) {
-            typeRet = TX_NULL_DATA;
+            typeRet = TxoutType::NULL_DATA;
             return true;
         }
     }
@@ -166,9 +166,9 @@ bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<st
             {
                 // Found a match
                 typeRet = tplate.first;
-                if (typeRet == TX_MULTISIG)
+                if (typeRet == TxoutType::MULTISIG)
                 {
-                    // Additional checks for TX_MULTISIG:
+                    // Additional checks for TxoutType::MULTISIG:
                     unsigned char m = vSolutionsRet.front()[0];
                     unsigned char n = vSolutionsRet.back()[0];
                     if (m < 1 || n < 1 || m > n || vSolutionsRet.size()-2 != n)
@@ -228,6 +228,6 @@ bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<st
     }
 
     vSolutionsRet.clear();
-    typeRet = TX_NONSTANDARD;
+    typeRet = TxoutType::NONSTANDARD;
     return false;
 }

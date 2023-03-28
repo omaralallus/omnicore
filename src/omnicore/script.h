@@ -12,13 +12,13 @@ class CScript;
 int64_t OmniGetDustThreshold(const CScript& scriptPubKey);
 
 /** Identifies standard output types based on a scriptPubKey. */
-bool GetOutputType(const CScript& scriptPubKey, txnouttype& whichTypeRet);
+bool GetOutputType(const CScript& scriptPubKey, TxoutType& whichTypeRet);
 
 /** Extracts the pushed data as hex-encoded string from a script. */
 bool GetScriptPushes(const CScript& script, std::vector<std::string>& vstrRet, bool fSkipFirst = false);
 
 /** Returns public keys or hashes from scriptPubKey, for standard transaction types. */
-bool SafeSolver(const CScript& scriptPubKey, txnouttype& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet);
+bool SafeSolver(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet);
 
 
 #endif // BITCOIN_OMNICORE_SCRIPT_H

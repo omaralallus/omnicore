@@ -1,4 +1,3 @@
-
 #include <omnicore/dbbase.h>
 #include <omnicore/log.h>
 
@@ -57,7 +56,7 @@ void CDBBase::Close()
 {
     if (pdb) {
         delete pdb;
-        pdb = NULL;
+        pdb = nullptr;
     }
 }
 

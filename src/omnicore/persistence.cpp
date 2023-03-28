@@ -6,6 +6,7 @@
 
 #include <omnicore/persistence.h>
 
+#include <omnicore/convert.h>
 #include <omnicore/dex.h>
 #include <omnicore/log.h>
 #include <omnicore/mdex.h>
@@ -23,7 +24,6 @@
 #include <util/system.h>
 
 #include <boost/algorithm/string.hpp>
-#include <boost/filesystem.hpp>
 #include <boost/lexical_cast.hpp>
 
 #include <stdint.h>
@@ -401,7 +401,8 @@ static int input_mp_mdexorder_string(const std::string& s)
 
 static int write_state_file(const CBlockIndex* pBlockIndex, int what)
 {
-    fs::path path = pathStateFiles / strprintf("%s-%s.dat", statePrefix[what], pBlockIndex->GetBlockHash().ToString());
+    auto fileName = strprintf("%s-%s.dat", statePrefix[what], pBlockIndex->GetBlockHash().ToString());
+    fs::path path = pathStateFiles / fileName.c_str();
     const std::string strFile = path.string();
 
     std::ofstream file;
@@ -439,7 +440,7 @@ static int write_state_file(const CBlockIndex* pBlockIndex, int what)
 
     // generate and write the double hash of all the contents written
     uint256 hash;
-    hasher.Finalize(hash.begin());
+    hasher.Finalize(hash);
     file << "!" << hash.ToString() << std::endl;
 
     file.flush();
@@ -482,8 +483,7 @@ static void prune_state_files(const CBlockIndex* topIndex)
         CBlockIndex const *curIndex = GetBlockIndex(*iter);
 
         // if we have nothing int the index, or this block is too old..
-        if (nullptr == curIndex || (((topIndex->nHeight - curIndex->nHeight) > MAX_STATE_HISTORY)
-                && (curIndex->nHeight % STORE_EVERY_N_BLOCK != 0))) {
+        if (nullptr == curIndex || topIndex->nHeight > curIndex->nHeight) {
             if (msc_debug_persistence) {
                 if (curIndex) {
                     PrintToLog("State from Block:%s is no longer need, removing files (age-from-tip: %d)\n", (*iter).ToString(), topIndex->nHeight - curIndex->nHeight);
@@ -495,7 +495,8 @@ static void prune_state_files(const CBlockIndex* topIndex)
             // destroy the associated files!
             std::string strBlockHash = iter->ToString();
             for (int i = 0; i < NUM_FILETYPES; ++i) {
-                fs::path path = pathStateFiles / strprintf("%s-%s.dat", statePrefix[i], strBlockHash);
+                auto fileName = strprintf("%s-%s.dat", statePrefix[i], strBlockHash);
+                fs::path path = pathStateFiles / fileName.c_str();
                 fs::remove(path);
             }
         }
@@ -507,13 +508,8 @@ static void prune_state_files(const CBlockIndex* topIndex)
  */
 static int GetWrapModeHeight()
 {
-    static int nSkipBlocksUntil = gArgs.GetArg("-omniskipstoringstate", DONT_STORE_MAINNET_STATE_UNTIL);
-    
-    if (MainNet()) {
-        return nSkipBlocksUntil;
-    } else {
-        return 0;
-    }
+    static const int nSkipBlocksUntil = gArgs.GetIntArg("-omniskipstoringstate", DONT_STORE_MAINNET_STATE_UNTIL);
+    return nSkipBlocksUntil;
 }
 
 /**
@@ -521,21 +517,14 @@ static int GetWrapModeHeight()
  */
 bool IsPersistenceEnabled(int blockHeight)
 {
-    static int nWarpModeHeight = GetWrapModeHeight();
-
-    int nMinHeight = nWarpModeHeight;
-
-    if (nWarpModeHeight == 0) {
-        nMinHeight = GetHeight();
-    }
-
-    // if too far away from the top -- do not write
-    if (nMinHeight > (blockHeight + MAX_STATE_HISTORY)
-            && (blockHeight % STORE_EVERY_N_BLOCK != 0)) {
+    // do not store on any network different from main
+    if (!MainNet()) {
         return false;
     }
 
-    return true;
+    int nMinHeight = GetWrapModeHeight();
+    // if too far away from the top -- do not write
+    return blockHeight > nMinHeight && (blockHeight % STORE_EVERY_N_BLOCK == 0);
 }
 
 /**
@@ -656,7 +645,7 @@ int RestoreInMemoryState(const std::string& filename, int what, bool verifyHash)
     if (verifyHash && res == 0) {
         // generate and write the double hash of all the contents written
         uint256 hash;
-        hasher.Finalize(hash.begin());
+        hasher.Finalize(hash);
 
         if (false == boost::iequals(hash.ToString(), fileHash)) {
             PrintToLog("File %s loaded, but failed hash validation!\n", filename);
@@ -799,7 +788,8 @@ int LoadMostRelevantInMemoryState()
             if (persistedBlocks.find(curTip->GetBlockHash()) != persistedBlocks.end()) {
                 int success = -1;
                 for (int i = 0; i < NUM_FILETYPES; ++i) {
-                    fs::path path = pathStateFiles / strprintf("%s-%s.dat", statePrefix[i], curTip->GetBlockHash().ToString());
+                    auto fileName = strprintf("%s-%s.dat", statePrefix[i], curTip->GetBlockHash().ToString());
+                    fs::path path = pathStateFiles / fileName.c_str();
                     const std::string strFile = path.string();
                     success = RestoreInMemoryState(strFile, i, true);
                     if (success < 0) {

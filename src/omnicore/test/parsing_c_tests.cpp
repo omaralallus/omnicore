@@ -25,7 +25,7 @@
 
 using namespace mastercore;
 
-BOOST_FIXTURE_TEST_SUITE(omnicore_parsing_c_tests, BasicTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(omnicore_parsing_c_tests, TestingSetup)
 
 /** Creates a dummy transaction with the given inputs and outputs. */
 static CTransaction TxClassC(const std::vector<CTxOut>& txInputs, const std::vector<CTxOut>& txOuts)

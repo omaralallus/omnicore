@@ -8,7 +8,7 @@
 #include <qt/omnicore_qtutils.h>
 
 #include <qt/guiutil.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 #include <qt/walletmodel.h>
 #include <qt/clientmodel.h>
 #include <qt/platformstyle.h>
@@ -24,11 +24,10 @@
 #include <omnicore/sp.h>
 #include <omnicore/tx.h>
 #include <omnicore/utilsbitcoin.h>
-#include <omnicore/walletcache.h>
 #include <omnicore/walletfetchtxs.h>
 #include <omnicore/walletutils.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <chainparams.h>
 #include <init.h>
 #include <validation.h>
@@ -312,7 +311,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
     // obtain a sorted list of Omni layer wallet transactions (including STO receipts and pending) - default last 65535
     std::map<std::string,uint256> walletTransactions;
     if (walletModel)
-        walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetArg("-omniuiwalletscope", 65535L));
+        walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetIntArg("-omniuiwalletscope", 65535L));
 
     // reverse iterate over (now ordered) transactions and populate history map for each one
     for (std::map<std::string,uint256>::reverse_iterator it = walletTransactions.rbegin(); it != walletTransactions.rend(); it++) {
@@ -327,7 +326,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         std::vector<std::string> vstr;
         boost::split(vstr, tempStrValue, boost::is_any_of(":"), boost::token_compress_on);
         if (vstr.size() > 2) {
-            if (atoi(vstr[2]) != MSC_TYPE_METADEX_TRADE) continue;
+            if (std::stoi(vstr[2]) != MSC_TYPE_METADEX_TRADE) continue;
         }
 
         // check historyMap, if this tx exists don't waste resources doing anymore work on it

@@ -21,7 +21,7 @@
 #include <omnicore/utilsbitcoin.h>
 #include <omnicore/version.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <base58.h>
 #include <key_io.h>
 #include <validation.h>
@@ -43,6 +43,8 @@
 using boost::algorithm::token_compress_on;
 
 using namespace mastercore;
+
+extern void DoWarning(const bilingual_str& warning);
 
 /** Returns a label for the given transaction type. */
 std::string mastercore::strTransactionType(uint16_t txType)
@@ -3119,9 +3121,10 @@ int CMPTransaction::logicMath_Alert()
             PrintToLog(msgText);
             PrintToConsole(msgText);
             if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-                fs::path persistPath = GetDataDir() / "MP_persist";
+                fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
                 if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-                AbortNode(msgText, msgText);
+                BlockValidationState state;
+                AbortNode(state, msgText);
             }
         }
     }
@@ -3133,7 +3136,7 @@ int CMPTransaction::logicMath_Alert()
     }
 
     // we have a new alert, fire a notify event if needed
-    DoWarning(alert_text);
+    DoWarning({alert_text, alert_text});
 
     return 0;
 }

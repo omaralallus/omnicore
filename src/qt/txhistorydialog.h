@@ -56,7 +56,7 @@ public:
     void setClientModel(ClientModel *model);
     void setWalletModel(WalletModel *model);
 
-    virtual void resizeEvent(QResizeEvent* event);
+    void resizeEvent(QResizeEvent* event) override;
     std::string shrinkTxType(int txType, bool *fundsMoved);
 
 private:

@@ -3,12 +3,12 @@
 #include <omnicore/log.h>
 #include <omnicore/sp.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <validation.h>
 #include <sync.h>
 #include <txmempool.h>
 #include <uint256.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 
 #include <string>
 
@@ -46,7 +46,7 @@ void PendingAdd(const uint256& txid, const std::string& sendingAddress, uint16_t
         my_pending.insert(std::make_pair(txid, pending));
     }
     // after adding a transaction to pending the available balance may now be reduced, refresh wallet totals
-    CheckWalletUpdate(true); // force an update since some outbound pending (eg MetaDEx cancel) may not change balances
+    CheckWalletUpdate(); // force an update since some outbound pending (eg MetaDEx cancel) may not change balances
     uiInterface.OmniPendingChanged(true);
 }
 
@@ -84,7 +84,9 @@ void PendingCheck()
 
     std::vector<uint256> vecMemPoolTxids;
     std::vector<uint256> txidsForDeletion;
-    mempool.queryHashes(vecMemPoolTxids);
+    if (auto mempool = ::ChainstateActive().GetMempool()) {
+        mempool->queryHashes(vecMemPoolTxids);
+    }
 
     for (PendingMap::iterator it = my_pending.begin(); it != my_pending.end(); ++it) {
         const uint256& txid = it->first;

@@ -35,12 +35,13 @@
 #include <omnicore/walletfetchtxs.h>
 #include <omnicore/walletutils.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <base58.h>
 #include <chainparams.h>
 #include <init.h>
 #include <index/txindex.h>
 #include <interfaces/wallet.h>
+#include <node/context.h>
 #include <key_io.h>
 #include <validation.h>
 #include <primitives/block.h>
@@ -51,9 +52,10 @@
 #include <txmempool.h>
 #include <uint256.h>
 #include <util/strencodings.h>
-#include <wallet/rpcwallet.h>
+#include <wallet/rpc/util.h>
 #ifdef ENABLE_WALLET
 #include <wallet/wallet.h>
+using namespace wallet;
 #endif
 
 #include <univalue.h>
@@ -68,6 +70,10 @@
 
 using std::runtime_error;
 using namespace mastercore;
+
+#ifdef ENABLE_WALLET
+extern std::pair<std::shared_ptr<CWallet>, std::unique_ptr<interfaces::Wallet>> GetWalletFromContextForJSONRPCRequest(const JSONRPCRequest& request);
+#endif
 
 /**
  * Throws a JSONRPCError, depending on error code.
@@ -592,12 +598,15 @@ static UniValue omni_getfeetrigger(const JSONRPCRequest& request)
     return response;
 }
 
+#ifdef ENABLE_WALLET
+using namespace wallet;
+#endif
+
 // Provides the fee share the wallet (or specific address) will receive from fee distributions
 #ifdef ENABLE_WALLET
 static UniValue omni_getfeeshare(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_getfeeshare",
        "\nReturns the percentage share of fees distribution applied to the wallet (default) or address (if supplied).\n",
@@ -853,26 +862,22 @@ static UniValue omni_setautocommit(const JSONRPCRequest& request)
 static UniValue mscrpc(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    CWallet* const pwallet = wallet.get();
+    auto [pwallet, _] = GetWalletFromContextForJSONRPCRequest(request);
 #endif
 
-    int extra = 0;
-    int extra2 = 0, extra3 = 0;
-    if (request.fHelp || request.params.size() > 3)
-        throw runtime_error(
-            RPCHelpMan{"mscrpc",
-               "\nReturns the number of blocks in the longest block chain.\n",
-               {},
-               RPCResult{
-                   RPCResult::Type::NUM, "", "the current block count"
-               },
-               RPCExamples{
-                   HelpExampleCli("mscrpc", "")
-                   + HelpExampleRpc("mscrpc", "")
-               }
-    }.ToString());
+    RPCHelpMan{"mscrpc",
+        "\nReturns the number of blocks in the longest block chain.\n",
+        {},
+        RPCResult{
+            RPCResult::Type::NUM, "", "the current block count"
+        },
+        RPCExamples{
+            HelpExampleCli("mscrpc", "")
+            + HelpExampleRpc("mscrpc", "")
+        }
+    }.Check(request);
 
+    int extra = 0, extra2 = 0, extra3 = 0;
     if (0 < request.params.size()) extra = atoi(request.params[0].get_str());
     if (1 < request.params.size()) extra2 = atoi(request.params[1].get_str());
     if (2 < request.params.size()) extra3 = atoi(request.params[2].get_str());
@@ -1189,8 +1194,7 @@ static UniValue omni_getallbalancesforaddress(const JSONRPCRequest& request)
 static std::set<std::string> getWalletAddresses(const JSONRPCRequest& request, bool fIncludeWatchOnly)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    CWallet* const pwallet = wallet.get();
+    auto [pwallet, _] = GetWalletFromContextForJSONRPCRequest(request);
 #endif
 
     std::set<std::string> result;
@@ -1202,7 +1206,7 @@ static std::set<std::string> getWalletAddresses(const JSONRPCRequest& request, b
         const CTxDestination& address = item.first;
         isminetype iIsMine = pwallet->IsMine(address);
 
-        if (iIsMine == ISMINE_SPENDABLE || (fIncludeWatchOnly && iIsMine != ISMINE_NO)) {
+        if (iIsMine == wallet::ISMINE_SPENDABLE || (fIncludeWatchOnly && iIsMine != wallet::ISMINE_NO)) {
             result.insert(EncodeDestination(address));
         }
     }
@@ -1214,13 +1218,12 @@ static std::set<std::string> getWalletAddresses(const JSONRPCRequest& request, b
 #ifdef ENABLE_WALLET
 static UniValue omni_getwalletbalances(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    CWallet* const pwallet = wallet.get();
+    auto [pwallet, _] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_getwalletbalances",
        "\nReturns a list of the total token balances of the whole wallet.\n",
        {
-           {"includewatchonly", RPCArg::Type::BOOL, /* default */ "false", "include balances of watchonly addresses"},
+           {"includewatchonly", RPCArg::Type::BOOL, RPCArg::DefaultHint{"false"}, "include balances of watchonly addresses"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -1325,13 +1328,12 @@ static UniValue omni_getwalletbalances(const JSONRPCRequest& request)
 static UniValue omni_getwalletaddressbalances(const JSONRPCRequest& request)
 {
 
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    CWallet* const pwallet = wallet.get();
+    auto [pwallet, _] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_getwalletaddressbalances",
        "\nReturns a list of all token balances for every wallet address.\n",
        {
-           {"includewatchonly", RPCArg::Type::BOOL, /*default */ "false", "include balances of watchonly addresses"},
+           {"includewatchonly", RPCArg::Type::BOOL, RPCArg::DefaultHint{"false"}, "include balances of watchonly addresses"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -1540,7 +1542,7 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
        "\nReturns information about a crowdsale.\n",
        {
            {"propertyid", RPCArg::Type::NUM, RPCArg::Optional::NO, "the identifier of the crowdsale"},
-           {"verbose", RPCArg::Type::BOOL, /* default */ "false", "list crowdsale participants"},
+           {"verbose", RPCArg::Type::BOOL, RPCArg::DefaultHint{"false"}, "list crowdsale participants"},
        },
        RPCResult{
            RPCResult::Type::OBJ, "", "",
@@ -1933,8 +1935,7 @@ static UniValue omni_getorderbook(const JSONRPCRequest& request)
 static UniValue omni_gettradehistoryforaddress(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif
@@ -1945,8 +1946,8 @@ static UniValue omni_gettradehistoryforaddress(const JSONRPCRequest& request)
        "The documentation only covers the output for a trade, but there are also cancel transactions with different properties.\n",
        {
            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "address to retrieve history for"},
-           {"count", RPCArg::Type::NUM, /* default */ "10", "number of orders to retrieve"},
-           {"propertyid", RPCArg::Type::NUM, /* default */ "no filter", "filter by property identifier transacted"},
+           {"count", RPCArg::Type::NUM, RPCArg::DefaultHint{"10"}, "number of orders to retrieve"},
+           {"propertyid", RPCArg::Type::NUM, RPCArg::DefaultHint{"no filter"}, "filter by property identifier transacted"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -2038,7 +2039,7 @@ static UniValue omni_gettradehistoryforpair(const JSONRPCRequest& request)
        {
            {"propertyid", RPCArg::Type::NUM, RPCArg::Optional::NO, "the first side of the traded pair"},
            {"propertyidsecond", RPCArg::Type::NUM, RPCArg::Optional::NO, "the second side of the traded pair"},
-           {"count", RPCArg::Type::NUM, /* default */ "10", "number of trades to retrieve"},
+           {"count", RPCArg::Type::NUM, RPCArg::DefaultHint{"10"}, "number of trades to retrieve"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -2086,7 +2087,7 @@ static UniValue omni_getactivedexsells(const JSONRPCRequest& request)
     RPCHelpMan{"omni_getactivedexsells",
        "\nReturns currently active offers on the distributed exchange.\n",
        {
-           {"address", RPCArg::Type::STR, /* default */ "include any", "address filter"},
+           {"address", RPCArg::Type::STR, RPCArg::DefaultHint{"include any"}, "address filter"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -2240,7 +2241,7 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
         LOCK(cs_main);
         CBlockIndex* pBlockIndex = ::ChainActive()[blockHeight];
 
-        if (!ReadBlockFromDisk(block, pBlockIndex, Params().GetConsensus())) {
+        if (!node::ReadBlockFromDisk(block, pBlockIndex, Params().GetConsensus())) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to read block from disk");
         }
     }
@@ -2252,7 +2253,7 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
 
     LOCK(cs_tally);
 
-    for(const auto tx : block.vtx) {
+    for(const auto& tx : block.vtx) {
         if (pDbTransactionList->exists(tx->GetHash())) {
             // later we can add a verbose flag to decode here, but for now callers can send returned txids into gettransaction_MP
             // add the txid into the response as it's an MP transaction
@@ -2304,8 +2305,7 @@ static UniValue omni_listblockstransactions(const JSONRPCRequest& request)
 static UniValue omni_gettransaction(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif
@@ -2357,17 +2357,16 @@ static UniValue omni_gettransaction(const JSONRPCRequest& request)
 #ifdef ENABLE_WALLET
 static UniValue omni_listtransactions(const JSONRPCRequest& request)
 {
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 
     RPCHelpMan{"omni_listtransactions",
        "\nList wallet transactions, optionally filtered by an address and block boundaries.\n",
        {
-           {"address", RPCArg::Type::STR, /* default */ "\"*\"", "address filter"},
-           {"count", RPCArg::Type::NUM, /* default */ "10", "show at most n transactions"},
-           {"skip", RPCArg::Type::NUM, /* default */ "0", "skip the first n transactions"},
-           {"startblock", RPCArg::Type::NUM, /* default */ "0", "first block to begin the search"},
-           {"endblock", RPCArg::Type::NUM, /* default */ "999999999", "last block to include in the search"},
+           {"address", RPCArg::Type::STR, RPCArg::DefaultHint{"\"*\""}, "address filter"},
+           {"count", RPCArg::Type::NUM, RPCArg::DefaultHint{"10"}, "show at most n transactions"},
+           {"skip", RPCArg::Type::NUM, RPCArg::DefaultHint{"0"}, "skip the first n transactions"},
+           {"startblock", RPCArg::Type::NUM, RPCArg::DefaultHint{"0"}, "first block to begin the search"},
+           {"endblock", RPCArg::Type::NUM, RPCArg::DefaultHint{"999999999"}, "last block to include in the search"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -2441,8 +2440,7 @@ static UniValue omni_listtransactions(const JSONRPCRequest& request)
 static UniValue omni_listpendingtransactions(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif
@@ -2454,7 +2452,7 @@ static UniValue omni_listpendingtransactions(const JSONRPCRequest& request)
        "change at any moment. It is recommended to check transactions after confirmation, and pending "
        "transactions should be considered as invalid.\n",
        {
-           {"address", RPCArg::Type::STR, /* default */ "\"\" for no filter", "address filter"},
+           {"address", RPCArg::Type::STR, RPCArg::DefaultHint{"\"\" for no filter"}, "address filter"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -2485,7 +2483,9 @@ static UniValue omni_listpendingtransactions(const JSONRPCRequest& request)
     }
 
     std::vector<uint256> vTxid;
-    mempool.queryHashes(vTxid);
+    if (auto mempool = ::ChainstateActive().GetMempool()) {
+        mempool->queryHashes(vTxid);
+    }
 
     UniValue result(UniValue::VARR);
     for(const uint256& hash : vTxid) {
@@ -2660,8 +2660,7 @@ static UniValue omni_getactivations(const JSONRPCRequest& request)
 static UniValue omni_getsto(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif
@@ -2670,7 +2669,7 @@ static UniValue omni_getsto(const JSONRPCRequest& request)
        "\nGet information and recipients of a send-to-owners transaction.\n",
        {
            {"txid", RPCArg::Type::STR, RPCArg::Optional::NO, "the hash of the transaction to lookup"},
-           {"recipientfilter", RPCArg::Type::STR, /* default */ "\"*\" for all", "a filter for recipients"},
+           {"recipientfilter", RPCArg::Type::STR, RPCArg::DefaultHint{"\"*\" for all"}, "a filter for recipients"},
        },
        RPCResult{
            RPCResult::Type::OBJ, "", "",
@@ -2725,8 +2724,7 @@ static UniValue omni_getsto(const JSONRPCRequest& request)
 static UniValue omni_gettrade(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif

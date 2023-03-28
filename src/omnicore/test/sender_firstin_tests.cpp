@@ -23,7 +23,7 @@
 
 using namespace mastercore;
 
-BOOST_FIXTURE_TEST_SUITE(omnicore_sender_firstin_tests, BasicTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(omnicore_sender_firstin_tests, TestingSetup)
 
 /** Creates a dummy class C transaction with the given inputs. */
 static CTransaction TxClassC(const std::vector<CTxOut>& txInputs)

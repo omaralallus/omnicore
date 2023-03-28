@@ -117,9 +117,10 @@ void COmniFeeCache::AddFee(const uint32_t &propertyId, int block, const int64_t 
         const std::string& msg = strprintf("Shutting down due to fee cache overflow (block %d property %d current %d amount %d)\n", block, propertyId, currentCachedAmount, amount);
         PrintToLog(msg);
         if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-            fs::path persistPath = GetDataDir() / "MP_persist";
+            fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
             if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-            AbortNode(msg, msg);
+            BlockValidationState state;
+            AbortNode(state, msg);
         }
     }
     int64_t newCachedAmount = currentCachedAmount + amount;
@@ -235,13 +236,13 @@ void COmniFeeCache::DistributeCache(const uint32_t &propertyId, int block)
     ClearCache(propertyId, block);
 }
 
-// Prunes entries over MAX_STATE_HISTORY blocks old from the entry for a property
+// Prunes entries from the entry for a property
 void COmniFeeCache::PruneCache(const uint32_t &propertyId, int block)
 {
     if (msc_debug_fees) PrintToLog("Starting PruneCache for prop %d block %d...\n", propertyId, block);
     assert(pdb);
 
-    int pruneBlock = block - MAX_STATE_HISTORY;
+    int pruneBlock = block;
     if (msc_debug_fees) PrintToLog("Removing entries prior to block %d...\n", pruneBlock);
     const std::string key = strprintf("%010d", propertyId);
     std::set<feeCacheItem> sCacheHistoryItems = GetCacheHistory(propertyId);

@@ -1,11 +1,11 @@
-0.20.1 Release Notes
+24.1rc1 Release Notes
 ====================
 
-Bitcoin Core version 0.20.1 is now available from:
+Bitcoin Core version 24.1rc1 is now available from:
 
-  <https://bitcoincore.org/bin/bitcoin-core-0.20.1/>
+  <https://bitcoincore.org/bin/bitcoin-core-24.1/test.rc1/>
 
-This minor release includes various bug fixes and performance
+This release includes new features, various bug fixes and performance
 improvements, as well as updated translations.
 
 Please report bugs using the issue tracker at GitHub:
@@ -21,7 +21,7 @@ How to Upgrade
 
 If you are running an older version, shut it down. Wait until it has completely
 shut down (which might take a few minutes in some cases), then run the
-installer (on Windows) or just copy over `/Applications/Bitcoin-Qt` (on Mac)
+installer (on Windows) or just copy over `/Applications/Bitcoin-Qt` (on macOS)
 or `bitcoind`/`bitcoin-qt` (on Linux).
 
 Upgrading directly from a version of Bitcoin Core that has reached its EOL is
@@ -32,127 +32,57 @@ Compatibility
 ==============
 
 Bitcoin Core is supported and extensively tested on operating systems
-using the Linux kernel, macOS 10.12+, and Windows 7 and newer.  Bitcoin
+using the Linux kernel, macOS 10.15+, and Windows 7 and newer.  Bitcoin
 Core should also work on most other Unix-like systems but is not as
 frequently tested on them.  It is not recommended to use Bitcoin Core on
 unsupported systems.
 
-From Bitcoin Core 0.20.0 onwards, macOS versions earlier than 10.12 are no
-longer supported. Additionally, Bitcoin Core does not yet change appearance
-when macOS "dark mode" is activated.
+### P2P
 
-Known Bugs
-==========
-
-The process for generating the source code release ("tarball") has changed in an
-effort to make it more complete, however, there are a few regressions in
-this release:
-
-- The generated `configure` script is currently missing, and you will need to
-  install autotools and run `./autogen.sh` before you can run
-  `./configure`. This is the same as when checking out from git.
-
-- Instead of running `make` simply, you should instead run
-  `BITCOIN_GENBUILD_NO_GIT=1 make`.
-
-Notable changes
-===============
-
-Changes regarding misbehaving peers
------------------------------------
-
-Peers that misbehave (e.g. send us invalid blocks) are now referred to as
-discouraged nodes in log output, as they're not (and weren't) strictly banned:
-incoming connections are still allowed from them, but they're preferred for
-eviction.
-
-Furthermore, a few additional changes are introduced to how discouraged
-addresses are treated:
-
-- Discouraging an address does not time out automatically after 24 hours
-  (or the `-bantime` setting). Depending on traffic from other peers,
-  discouragement may time out at an indeterminate time.
-
-- Discouragement is not persisted over restarts.
-
-- There is no method to list discouraged addresses. They are not returned by
-  the `listbanned` RPC. That RPC also no longer reports the `ban_reason`
-  field, as `"manually added"` is the only remaining option.
-
-- Discouragement cannot be removed with the `setban remove` RPC command.
-  If you need to remove a discouragement, you can remove all discouragements by
-  stop-starting your node.
-
-Notification changes
---------------------
-
-`-walletnotify` notifications are now sent for wallet transactions that are
-removed from the mempool because they conflict with a new block. These
-notifications were sent previously before the v0.19 release, but had been
-broken since that release (bug
-[#18325](https://github.com/bitcoin/bitcoin/issues/18325)).
-
-PSBT changes
-------------
-
-PSBTs will contain both the non-witness utxo and the witness utxo for segwit
-inputs in order to restore compatibility with wallet software that are now
-requiring the full previous transaction for segwit inputs. The witness utxo
-is still provided to maintain compatibility with software which relied on its
-existence to determine whether an input was segwit.
-
-0.20.1 change log
-=================
-
-### Mining
-- #19019 Fix GBT: Restore "!segwit" and "csv" to "rules" key (luke-jr)
-
-### P2P protocol and network code
-- #19219 Replace automatic bans with discouragement filter (sipa)
-
-### Wallet
-- #19300 Handle concurrent wallet loading (promag)
-- #18982 Minimal fix to restore conflicted transaction notifications (ryanofsky)
+- #26878 I2P network optimizations
+- #26909 net: prevent peers.dat corruptions by only serializing once
 
 ### RPC and other APIs
-- #19524 Increment input value sum only once per UTXO in decodepsbt (fanquake)
-- #19517 psbt: Increment input value sum only once per UTXO in decodepsbt (achow101)
-- #19215 psbt: Include and allow both non_witness_utxo and witness_utxo for segwit inputs (achow101)
 
-### GUI
-- #19097 Add missing QPainterPath include (achow101)
-- #19059 update Qt base translations for macOS release (fanquake)
+- #26515 rpc: Require NodeStateStats object in getpeerinfo
 
-### Build system
-- #19152 improve build OS configure output (skmcontrib)
-- #19536 qt, build: Fix QFileDialog for static builds (hebasto)
+### Build System
 
-### Tests and QA
-- #19444 Remove cached directories and associated script blocks from appveyor config (sipsorcery)
-- #18640 appveyor: Remove clcache (MarcoFalke)
+- #26944 depends: fix systemtap download URL
+
+### Wallet
+
+- #26595 wallet: be able to specify a wallet name and passphrase to migratewallet
+- #26675 wallet: For feebump, ignore abandoned descendant spends
+- #26679 wallet: Skip rescanning if wallet is more recent than tip
+- #26761 wallet: fully migrate address book entries for watchonly/solvable wallets
+- #27053 wallet: reuse change dest when re-creating TX with avoidpartialspends
+- #27080 wallet: Zero out wallet master key upon locking so it doesn't persist in memory
+
+### GUI changes
+
+- gui#687 Load PSBTs using istreambuf_iterator rather than istream_iterator
+- gui#704 Correctly limit overview transaction list
 
 ### Miscellaneous
-- #19194 util: Don't reference errno when pthread fails (miztake)
-- #18700 Fix locking on WSL using flock instead of fcntl (meshcollider)
+
+- #26880 ci: replace Intel macOS CI job
+- #26924 refactor: Add missing includes to fix gcc-13 compile error
 
 Credits
 =======
 
 Thanks to everyone who directly contributed to this release:
 
-- Aaron Clauson
 - Andrew Chow
-- fanquake
 - Hennadii Stepanov
-- João Barbosa
-- Luke Dashjr
-- MarcoFalke
-- MIZUTA Takeshi
-- Pieter Wuille
-- Russell Yanofsky
-- sachinkm77
-- Samuel Dobson
-- Wladimir J. van der Laan
+- John Moffett
+- Marco Falke
+- Martin Zumsande
+- Matthew Zipkin
+- Michael Ford
+- Sebastian Falbesoner
+- Vasil Dimov
 
 As well as to everyone that helped with translations on
 [Transifex](https://www.transifex.com/bitcoin/bitcoin/).

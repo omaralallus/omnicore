@@ -12,10 +12,10 @@
 #include <omnicore/tally.h>
 #include <omnicore/walletutils.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <key_io.h>
 #include <sync.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 #include <wallet/wallet.h>
 
 #include <stdint.h>
@@ -241,9 +241,9 @@ void BalancesDialog::PopulateBalances(unsigned int propertyId)
 
             CTxDestination destination = DecodeDestination(address);
             std::string name;
-            isminetype ismine;
+            wallet::isminetype ismine;
             walletModel->wallet().getAddress(destination, &name, &ismine, nullptr);
-            if (ismine != ISMINE_SPENDABLE) watchAddress = true;
+            if (ismine != wallet::ISMINE_SPENDABLE) watchAddress = true;
 
             // add the row
             if (!watchAddress) {

@@ -1,6 +1,6 @@
 #include <omnicore/script.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <policy/policy.h>
 #include <validation.h>
 #include <script/script.h>

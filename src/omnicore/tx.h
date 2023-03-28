@@ -214,8 +214,8 @@ public:
     uint64_t getFeePaid() const { return tx_fee_paid; }
     std::string getSender() const { return sender; }
     std::string getReceiver() const { return receiver; }
-    std::string getPayload() const { return HexStr(pkt, pkt + pkt_size); }
-    std::string getPayloadData() const { return HexStr(pkt + 4 /* skip version and type */, pkt + pkt_size); }
+    std::string getPayload() const { return HexStr({pkt, pkt + pkt_size}); }
+    std::string getPayloadData() const { return HexStr({pkt + 4 /* skip version and type */, pkt + pkt_size}); }
     uint64_t getAmount() const { return nValue; }
     uint64_t getNewAmount() const { return nNewValue; }
     uint8_t getEcosystem() const { return ecosystem; }

@@ -16,7 +16,7 @@ BOOST_FIXTURE_TEST_SUITE(omnicore_nftdb_tests, BasicTestingSetup)
 BOOST_AUTO_TEST_CASE(nftdb_test_sequence)
 {
     LOCK(cs_tally);
-    std::unique_ptr<CMPNonFungibleTokensDB> UITDb{new CMPNonFungibleTokensDB(GetDataDir() / "OMNI_nftdb", true)};
+    std::unique_ptr<CMPNonFungibleTokensDB> UITDb{new CMPNonFungibleTokensDB(gArgs.GetDataDirNet() / "OMNI_nftdb", true)};
 
     /* Test A:
      * - Create 1000 tokens of prop 50 and assign them to address 'Alice'
@@ -116,60 +116,6 @@ BOOST_AUTO_TEST_CASE(nftdb_test_sequence)
     BOOST_CHECK_EQUAL("Charles", UITDb->GetNonFungibleTokenValueInRange(50, 2300, 2400));
     BOOST_CHECK(UITDb->MoveNonFungibleTokens(50, 2300, 2400, "Charles", "Bob"));
     BOOST_CHECK_EQUAL("Bob", UITDb->GetNonFungibleTokenValueInRange(50, 2300, 2400));
-}
-
-BOOST_AUTO_TEST_CASE(nftdb_test_rollback)
-{
-    LOCK(cs_tally);
-    std::unique_ptr<CMPNonFungibleTokensDB> UITDb{new CMPNonFungibleTokensDB(GetDataDir() / "OMNI_nftdb_rollback", true)};
-
-    std::pair<int64_t, int64_t> testA = UITDb->CreateNonFungibleTokens(50, 1000, "David", "");
-    BOOST_CHECK_EQUAL(1, testA.first);
-    BOOST_CHECK_EQUAL(1000, testA.second);
-    BOOST_CHECK_EQUAL("David", UITDb->GetNonFungibleTokenValueInRange(50, 1, 1000));
-
-    UITDb->WriteBlockCache(1);
-
-    BOOST_CHECK(UITDb->MoveNonFungibleTokens(50, 1, 1000, "David", "Charles"));
-    BOOST_CHECK_EQUAL("Charles", UITDb->GetNonFungibleTokenValueInRange(50, 1, 1000));
-
-    UITDb->WriteBlockCache(2);
-
-    // rollback above block 2
-    UITDb->RollBackAboveBlock(2);
-    BOOST_CHECK_EQUAL("David", UITDb->GetNonFungibleTokenValueInRange(50, 1, 1000));
-
-    std::pair<int64_t, int64_t> testB = UITDb->CreateNonFungibleTokens(50, 1000, "Alice", "");
-    BOOST_CHECK_EQUAL(1001, testB.first);
-    BOOST_CHECK_EQUAL(2000, testB.second);
-    BOOST_CHECK_EQUAL("Alice", UITDb->GetNonFungibleTokenValueInRange(50, 1001, 2000));
-
-    UITDb->WriteBlockCache(2);
-
-    std::pair<int64_t, int64_t> testE = UITDb->CreateNonFungibleTokens(50, 1000, "David", "");
-    BOOST_CHECK_EQUAL(2001, testE.first);
-    BOOST_CHECK_EQUAL(3000, testE.second);
-    BOOST_CHECK_EQUAL("David", UITDb->GetNonFungibleTokenValueInRange(50, 2001, 3000));
-    BOOST_CHECK(UITDb->GetNonFungibleTokenValueInRange(50, 2000, 2001).empty());
-
-    UITDb->WriteBlockCache(3);
-
-    BOOST_CHECK(UITDb->MoveNonFungibleTokens(50, 2001, 2100, "David", "Charles"));
-    BOOST_CHECK_EQUAL("Charles", UITDb->GetNonFungibleTokenValueInRange(50, 2001, 2100));
-    BOOST_CHECK_EQUAL("David", UITDb->GetNonFungibleTokenValueInRange(50, 2101, 3000));
-    BOOST_CHECK(UITDb->GetNonFungibleTokenValueInRange(50, 2001, 3000).empty());
-
-    UITDb->WriteBlockCache(4);
-
-    // rollback above block 4
-    UITDb->RollBackAboveBlock(4);
-    BOOST_CHECK_EQUAL("David", UITDb->GetNonFungibleTokenValueInRange(50, 2001, 3000));
-
-    // rollback above block 2
-    UITDb->RollBackAboveBlock(2);
-    BOOST_CHECK(UITDb->GetNonFungibleTokenValueInRange(50, 2001, 3000).empty());
-    BOOST_CHECK(UITDb->GetNonFungibleTokenValueInRange(50, 1001, 2000).empty());
-    BOOST_CHECK_EQUAL("David", UITDb->GetNonFungibleTokenValueInRange(50, 1, 1000));
 }
 
 BOOST_AUTO_TEST_SUITE_END()

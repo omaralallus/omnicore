@@ -38,16 +38,8 @@ const std::string OmniCoreVersion()
 //! Returns formatted Bitcoin Core version, e.g. "0.10", "0.9.3"
 const std::string BitcoinCoreVersion()
 {
-    if (CLIENT_VERSION_BUILD) {
-        return strprintf("%d.%d.%d.%d",
-                CLIENT_VERSION_MAJOR,
-                CLIENT_VERSION_MINOR,
-                CLIENT_VERSION_REVISION,
-                CLIENT_VERSION_BUILD);
-    } else {
-        return strprintf("%d.%d.%d",
-                CLIENT_VERSION_MAJOR,
-                CLIENT_VERSION_MINOR,
-                CLIENT_VERSION_REVISION);
-    }
+    return strprintf("%d.%d.%d",
+            CLIENT_VERSION_MAJOR,
+            CLIENT_VERSION_MINOR,
+            CLIENT_VERSION_BUILD);
 }

@@ -4,7 +4,7 @@
 class CPubKey;
 class CTxOut;
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <script/script.h>
 
 #include <stdint.h>

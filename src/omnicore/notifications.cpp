@@ -6,7 +6,7 @@
 
 #include <validation.h>
 #include <util/system.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 
 #include <boost/algorithm/string.hpp>
 #include <boost/lexical_cast.hpp>

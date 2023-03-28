@@ -14,16 +14,16 @@ extern unsigned nMaxDatacarrierBytes;
 BOOST_FIXTURE_TEST_SUITE(omnicore_script_solver_tests, BasicTestingSetup)
 
 /** Checks whether the custom solver is unaffected by user settings. */
-static void CheckOutputType(const CScript& script, txnouttype outTypeExpected)
+static void CheckOutputType(const CScript& script, TxoutType outTypeExpected)
 {
     // Explicit check via SafeSolver
-    txnouttype outTypeExplicit;
+    TxoutType outTypeExplicit;
     std::vector<std::vector<unsigned char> > vSolutions;
     BOOST_CHECK(SafeSolver(script, outTypeExplicit, vSolutions));
     BOOST_CHECK_EQUAL(outTypeExplicit, outTypeExpected);
 
     // Implicit check via GetOutputType
-    txnouttype outTypeImplicit;
+    TxoutType outTypeImplicit;
     BOOST_CHECK(GetOutputType(script, outTypeImplicit));
     BOOST_CHECK_EQUAL(outTypeImplicit, outTypeExpected);
 }
@@ -50,35 +50,35 @@ BOOST_AUTO_TEST_CASE(solve_op_return_test)
     scriptExtreme << OP_RETURN << std::vector<unsigned char>(2500, 0x07);
 
     // Default settings
-    CheckOutputType(scriptNoData, TX_NULL_DATA);
-    CheckOutputType(scriptDefault, TX_NULL_DATA);
-    CheckOutputType(scriptLarge, TX_NULL_DATA);
-    CheckOutputType(scriptExtreme, TX_NULL_DATA);
+    CheckOutputType(scriptNoData, TxoutType::NULL_DATA);
+    CheckOutputType(scriptDefault, TxoutType::NULL_DATA);
+    CheckOutputType(scriptLarge, TxoutType::NULL_DATA);
+    CheckOutputType(scriptExtreme, TxoutType::NULL_DATA);
 
     // Tests with different data carrier size settings following ...
     nMaxDatacarrierBytes = 0;
-    CheckOutputType(scriptNoData, TX_NULL_DATA);
-    CheckOutputType(scriptDefault, TX_NULL_DATA);
-    CheckOutputType(scriptLarge, TX_NULL_DATA);
-    CheckOutputType(scriptExtreme, TX_NULL_DATA);
+    CheckOutputType(scriptNoData, TxoutType::NULL_DATA);
+    CheckOutputType(scriptDefault, TxoutType::NULL_DATA);
+    CheckOutputType(scriptLarge, TxoutType::NULL_DATA);
+    CheckOutputType(scriptExtreme, TxoutType::NULL_DATA);
 
     nMaxDatacarrierBytes = 40;
-    CheckOutputType(scriptNoData, TX_NULL_DATA);
-    CheckOutputType(scriptDefault, TX_NULL_DATA);
-    CheckOutputType(scriptLarge, TX_NULL_DATA);
-    CheckOutputType(scriptExtreme, TX_NULL_DATA);
+    CheckOutputType(scriptNoData, TxoutType::NULL_DATA);
+    CheckOutputType(scriptDefault, TxoutType::NULL_DATA);
+    CheckOutputType(scriptLarge, TxoutType::NULL_DATA);
+    CheckOutputType(scriptExtreme, TxoutType::NULL_DATA);
 
     nMaxDatacarrierBytes = 120;
-    CheckOutputType(scriptNoData, TX_NULL_DATA);
-    CheckOutputType(scriptDefault, TX_NULL_DATA);
-    CheckOutputType(scriptLarge, TX_NULL_DATA);
-    CheckOutputType(scriptExtreme, TX_NULL_DATA);
+    CheckOutputType(scriptNoData, TxoutType::NULL_DATA);
+    CheckOutputType(scriptDefault, TxoutType::NULL_DATA);
+    CheckOutputType(scriptLarge, TxoutType::NULL_DATA);
+    CheckOutputType(scriptExtreme, TxoutType::NULL_DATA);
 
     nMaxDatacarrierBytes = 2500;
-    CheckOutputType(scriptNoData, TX_NULL_DATA);
-    CheckOutputType(scriptDefault, TX_NULL_DATA);
-    CheckOutputType(scriptLarge, TX_NULL_DATA);
-    CheckOutputType(scriptExtreme, TX_NULL_DATA);
+    CheckOutputType(scriptNoData, TxoutType::NULL_DATA);
+    CheckOutputType(scriptDefault, TxoutType::NULL_DATA);
+    CheckOutputType(scriptLarge, TxoutType::NULL_DATA);
+    CheckOutputType(scriptExtreme, TxoutType::NULL_DATA);
 
     // Restore original data carrier size settings
     nMaxDatacarrierBytes = nMaxDatacarrierBytesOriginal;

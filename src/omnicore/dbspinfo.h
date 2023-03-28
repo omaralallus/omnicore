@@ -95,35 +95,32 @@ public:
 
         Entry();
 
-        ADD_SERIALIZE_METHODS;
-
-        template <typename Stream, typename Operation>
-        inline void SerializationOp(Stream& s, Operation ser_action) {
-            READWRITE(issuer);
-            READWRITE(prop_type);
-            READWRITE(prev_prop_id);
-            READWRITE(category);
-            READWRITE(subcategory);
-            READWRITE(name);
-            READWRITE(url);
-            READWRITE(data);
-            READWRITE(num_tokens);
-            READWRITE(property_desired);
-            READWRITE(deadline);
-            READWRITE(early_bird);
-            READWRITE(percentage);
-            READWRITE(close_early);
-            READWRITE(max_tokens);
-            READWRITE(missedTokens);
-            READWRITE(timeclosed);
-            READWRITE(txid_close);
-            READWRITE(txid);
-            READWRITE(creation_block);
-            READWRITE(update_block);
-            READWRITE(fixed);
-            READWRITE(manual);
-            READWRITE(historicalData);
-            READWRITE(historicalIssuers);
+        SERIALIZE_METHODS(Entry, obj) {
+            READWRITE(obj.issuer);
+            READWRITE(obj.prop_type);
+            READWRITE(obj.prev_prop_id);
+            READWRITE(obj.category);
+            READWRITE(obj.subcategory);
+            READWRITE(obj.name);
+            READWRITE(obj.url);
+            READWRITE(obj.data);
+            READWRITE(obj.num_tokens);
+            READWRITE(obj.property_desired);
+            READWRITE(obj.deadline);
+            READWRITE(obj.early_bird);
+            READWRITE(obj.percentage);
+            READWRITE(obj.close_early);
+            READWRITE(obj.max_tokens);
+            READWRITE(obj.missedTokens);
+            READWRITE(obj.timeclosed);
+            READWRITE(obj.txid_close);
+            READWRITE(obj.txid);
+            READWRITE(obj.creation_block);
+            READWRITE(obj.update_block);
+            READWRITE(obj.fixed);
+            READWRITE(obj.manual);
+            READWRITE(obj.historicalData);
+            READWRITE(obj.historicalIssuers);
         }
 
         bool isDivisible() const;

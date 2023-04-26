@@ -4,8 +4,12 @@
 
 #include <omnicore/log.h>
 #include <omnicore/parsing.h>
+#include <omnicore/rules.h>
 
 #include <base58.h>
+#include <bech32.h>
+#include <chainparams.h>
+#include <util/strencodings.h>
 
 #include <stdint.h>
 #include <limits>
@@ -33,14 +37,53 @@
 static std::vector<unsigned char> AddressToBytes(const std::string& address)
 {
     std::vector<unsigned char> addressBytes;
-    bool success = DecodeBase58(address, addressBytes, 21 + 4);
-    if (!success) {
-        PrintToLog("ERROR: failed to decode address %s.\n", address);
-    }
-    if (addressBytes.size() == 25) {
-        addressBytes.resize(21); // truncate checksum
+    bool is_bech32 = (ToLower(address.substr(0, Params().Bech32HRP().size())) == Params().Bech32HRP());
+    if (!is_bech32) {
+        if (!DecodeBase58(address, addressBytes, 21 + 4)) {
+            PrintToLog("ERROR: failed to decode address %s.\n", address);
+            return {};
+        }
+        if (addressBytes.size() == 25) {
+            addressBytes.resize(21); // truncate checksum
+        } else {
+            PrintToLog("ERROR: unexpected size from DecodeBase58 when decoding address %s.\n", address);
+        }
     } else {
-        PrintToLog("ERROR: unexpected size from DecodeBase58 when decoding address %s.\n", address);
+        const auto dec = bech32::Decode(address);
+        if ((dec.encoding != bech32::Encoding::BECH32 && dec.encoding != bech32::Encoding::BECH32M) || dec.data.empty()) {
+            PrintToLog("ERROR: failed to decode address %s.\n", address);
+            return {};
+        }
+        // Bech32 decoding
+        if (dec.hrp != Params().Bech32HRP()) {
+            PrintToLog("ERROR: invalid prefix for Bech32 address %s\n", address);
+            return {};
+        }
+        auto version = dec.data[0]; // The first 5 bit symbol is the witness version (0-16)
+        if (version == 0 && dec.encoding != bech32::Encoding::BECH32) {
+            PrintToLog("ERROR: version 0 witness address must use Bech32 checksum\n");
+            return {};
+        }
+        if (version != 0 && dec.encoding != bech32::Encoding::BECH32M) {
+            PrintToLog("ERROR: version 1 witness address must use Bech32m checksum\n");
+            return {};
+        }
+        // The rest of the symbols are converted witness program bytes.
+        addressBytes.reserve((dec.data.size() * 5) / 8);
+        addressBytes.push_back(mastercore::WITNESS_V0_BYTE - version);
+        if (ConvertBits<5, 8, false>([&](unsigned char c) { addressBytes.push_back(c); }, dec.data.begin() + 1, dec.data.end())) {
+            if (version == 0 && addressBytes.size() != 21 && addressBytes.size() != 33) {
+                PrintToLog("ERROR: invalid Bech32 v0 address data size\n");
+                return {};
+            }
+            if (version == 1 && addressBytes.size() != 33) {
+                PrintToLog("ERROR: invalid Bech32 v1 address data size\n");
+                return {};
+            }
+        } else {
+            PrintToLog("ERROR: cannot convert Bech32 bytes\n");
+            return {};
+        }
     }
 
     return addressBytes;

@@ -14,11 +14,11 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=legacy'],['-omniactivationallowsender=any', '-addresstype=legacy']]
+        self.extra_args = [['-omniactivationallowsender=any'],['-omniactivationallowsender=any']]
 
     def run_test(self):
         # Get address for mining, issuance, granting and sending tokens to.
-        self.nodes[0].createwallet("w0")
+        self.nodes[0].createwallet(wallet_name="w0", descriptors=True)
         token_address = self.nodes[0].getnewaddress()
         grant_address = self.nodes[0].getnewaddress()
         destination_address = self.nodes[0].getnewaddress()
@@ -307,7 +307,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         assert_equal(result[0]['holderdata'], '')
 
         # Set data on a non-issuer/holder address
-        self.nodes[1].createwallet("w1")
+        self.nodes[1].createwallet(wallet_name="w1", descriptors=True)
         non_issuer_address = self.nodes[1].getnewaddress()
         self.nodes[0].sendtoaddress(non_issuer_address, 1)
         self.generatetoaddress(self.nodes[0], 1, token_address)

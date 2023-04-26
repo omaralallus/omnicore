@@ -11,13 +11,13 @@ class OmniDeactivation(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any', "-addresstype=legacy"]]
+        self.extra_args = [['-omniactivationallowsender=any']]
 
     def run_test(self):
         self.log.info("test deactivation")
 
         # Preparing some mature Bitcoins
-        self.nodes[0].createwallet("w0")
+        self.nodes[0].createwallet(wallet_name="w0", descriptors=True)
         coinbase_address = self.nodes[0].getnewaddress()
         self.generatetoaddress(self.nodes[0], 101, coinbase_address)
 

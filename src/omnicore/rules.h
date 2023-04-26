@@ -50,6 +50,10 @@ const uint16_t FEATURE_SEND_TO_MANY = 19;
 //! Feature identifier to enable NFTs
 const uint16_t FEATURE_NFTS = 20;
 
+//! Witness version bytes to not match base58 prefixes
+const uint8_t WITNESS_V0_BYTE = 0xFF;
+const uint8_t WITNESS_V1_BYTE = 0xFE;
+
 //! When (propertyTotalTokens / OMNI_FEE_THRESHOLD) is reached fee distribution will occur
 const int64_t OMNI_FEE_THRESHOLD = 100000; // 0.001%
 
@@ -120,6 +124,10 @@ public:
     int MULTISIG_BLOCK;
     //! Block to enable OP_RETURN based encoding
     int NULLDATA_BLOCK;
+    //! Block to enable witness v0 support (segwit)
+    int WITNESS_V0_BLOCK;
+    //! Block to enable witness v1 support (taproot)
+    int WITNESS_V1_BLOCK;
 
     //! Block to enable alerts and notifications
     int MSC_ALERT_BLOCK;

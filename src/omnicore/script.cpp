@@ -60,6 +60,20 @@ bool GetOutputType(const CScript& scriptPubKey, TxoutType& whichTypeRet)
  */
 bool GetScriptPushes(const CScript& script, std::vector<std::string>& vstrRet, bool fSkipFirst)
 {
+    int version = 0;
+    std::vector<unsigned char> program;
+    if (script.IsWitnessProgram(version, program)) {
+        if (fSkipFirst) {
+            return true;
+        }
+        if ((version == 0 && program.size() == WITNESS_V0_KEYHASH_SIZE)
+        || ((version == 0 && program.size() == WITNESS_V0_SCRIPTHASH_SIZE)
+        || ((version == 1 && program.size() == WITNESS_V1_TAPROOT_SIZE)))) {
+            vstrRet.push_back(HexStr(program));
+        }
+        return true;
+    }
+
     int count = 0;
     CScript::const_iterator pc = script.begin();
 
@@ -89,21 +103,19 @@ bool GetScriptPushes(const CScript& script, std::vector<std::string>& vstrRet, b
 bool SafeSolver(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet)
 {
     // Templates
-    static std::multimap<TxoutType, CScript> mTemplates;
-    if (mTemplates.empty())
-    {
+    static const std::multimap<TxoutType, CScript> mTemplates{
         // Standard tx, sender provides pubkey, receiver adds signature
-        mTemplates.insert(std::make_pair(TxoutType::PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG));
+        { TxoutType::PUBKEY, CScript() << OP_PUBKEY << OP_CHECKSIG },
 
         // Bitcoin address tx, sender provides hash of pubkey, receiver provides signature and pubkey
-        mTemplates.insert(std::make_pair(TxoutType::PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG));
+        { TxoutType::PUBKEYHASH, CScript() << OP_DUP << OP_HASH160 << OP_PUBKEYHASH << OP_EQUALVERIFY << OP_CHECKSIG },
 
         // Sender provides N pubkeys, receivers provides M signatures
-        mTemplates.insert(std::make_pair(TxoutType::MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG));
+        { TxoutType::MULTISIG, CScript() << OP_SMALLINTEGER << OP_PUBKEYS << OP_SMALLINTEGER << OP_CHECKMULTISIG },
 
         // Empty, provably prunable, data-carrying output
-        mTemplates.insert(std::make_pair(TxoutType::NULL_DATA, CScript() << OP_RETURN));
-    }
+        { TxoutType::NULL_DATA, CScript() << OP_RETURN },
+    };
 
     vSolutionsRet.clear();
 
@@ -112,22 +124,26 @@ bool SafeSolver(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<std
     if (scriptPubKey.IsPayToScriptHash())
     {
         typeRet = TxoutType::SCRIPTHASH;
-        std::vector<unsigned char> hashBytes(scriptPubKey.begin()+2, scriptPubKey.begin()+22);
-        vSolutionsRet.push_back(hashBytes);
+        vSolutionsRet.emplace_back(scriptPubKey.begin()+2, scriptPubKey.begin()+22);
         return true;
     }
 
     int witnessversion;
     std::vector<unsigned char> witnessprogram;
     if (scriptPubKey.IsWitnessProgram(witnessversion, witnessprogram)) {
-        if (witnessversion == 0 && witnessprogram.size() == 20) {
+        if (witnessversion == 0 && witnessprogram.size() == WITNESS_V0_KEYHASH_SIZE) {
             typeRet = TxoutType::WITNESS_V0_KEYHASH;
-            vSolutionsRet.push_back(witnessprogram);
+            vSolutionsRet.push_back(std::move(witnessprogram));
             return true;
         }
-        if (witnessversion == 0 && witnessprogram.size() == 32) {
+        if (witnessversion == 0 && witnessprogram.size() == WITNESS_V0_SCRIPTHASH_SIZE) {
             typeRet = TxoutType::WITNESS_V0_SCRIPTHASH;
-            vSolutionsRet.push_back(witnessprogram);
+            vSolutionsRet.push_back(std::move(witnessprogram));
+            return true;
+        }
+        if (witnessversion == 1 && witnessprogram.size() == WITNESS_V1_TAPROOT_SIZE) {
+            typeRet = TxoutType::WITNESS_V1_TAPROOT;
+            vSolutionsRet.push_back(std::move(witnessprogram));
             return true;
         }
         return false;

@@ -239,6 +239,8 @@ CMainConsensusParams::CMainConsensusParams()
     SCRIPTHASH_BLOCK = 322000;
     MULTISIG_BLOCK = 0;
     NULLDATA_BLOCK = 395000;
+    WITNESS_V0_BLOCK = 999999;
+    WITNESS_V1_BLOCK = 999999;
     // Transaction restrictions:
     MSC_ALERT_BLOCK = 0;
     MSC_SEND_BLOCK = 249498;
@@ -287,6 +289,8 @@ CTestNetConsensusParams::CTestNetConsensusParams()
     SCRIPTHASH_BLOCK = 0;
     MULTISIG_BLOCK = 0;
     NULLDATA_BLOCK = 0;
+    WITNESS_V0_BLOCK = 0;
+    WITNESS_V1_BLOCK = 0;
     // Transaction restrictions:
     MSC_ALERT_BLOCK = 0;
     MSC_SEND_BLOCK = 0;
@@ -335,6 +339,8 @@ CRegTestConsensusParams::CRegTestConsensusParams()
     SCRIPTHASH_BLOCK = 0;
     MULTISIG_BLOCK = 0;
     NULLDATA_BLOCK = 0;
+    WITNESS_V0_BLOCK = 0;
+    WITNESS_V1_BLOCK = 0;
     // Transaction restrictions:
     MSC_ALERT_BLOCK = 0;
     MSC_SEND_BLOCK = 0;
@@ -432,6 +438,13 @@ bool IsAllowedInputType(TxoutType whichType, int nBlock)
         case TxoutType::SCRIPTHASH:
             return (params.SCRIPTHASH_BLOCK <= nBlock);
 
+        case TxoutType::WITNESS_V0_KEYHASH:
+        case TxoutType::WITNESS_V0_SCRIPTHASH:
+            return (params.WITNESS_V0_BLOCK <= nBlock);
+
+        case TxoutType::WITNESS_V1_TAPROOT:
+            return (params.WITNESS_V1_BLOCK <= nBlock);
+
         default:
             return false;
     }
@@ -459,6 +472,13 @@ bool IsAllowedOutputType(TxoutType whichType, int nBlock)
 
         case TxoutType::NULL_DATA:
             return (params.NULLDATA_BLOCK <= nBlock);
+
+        case TxoutType::WITNESS_V0_KEYHASH:
+        case TxoutType::WITNESS_V0_SCRIPTHASH:
+            return (params.WITNESS_V0_BLOCK <= nBlock);
+
+        case TxoutType::WITNESS_V1_TAPROOT:
+            return (params.WITNESS_V1_BLOCK <= nBlock);
 
         default:
             return false;

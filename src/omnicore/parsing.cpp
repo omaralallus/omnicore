@@ -8,6 +8,7 @@
 
 #include <omnicore/log.h>
 #include <omnicore/script.h>
+#include <omnicore/rules.h>
 
 #include <base58.h>
 #include <key_io.h>
@@ -88,9 +89,11 @@ std::string HashToAddress(unsigned char version, const uint160& hash)
     } else if (version == Params().Base58Prefix(CChainParams::SCRIPT_ADDRESS)[0]) {
         CScriptID scriptId(hash);
         return EncodeDestination(ScriptHash(scriptId));
+    } else if (version == mastercore::WITNESS_V0_BYTE) {
+        return EncodeDestination(WitnessV0KeyHash(hash));
     }
 
-    return "";
+    return {};
 }
 
 /**

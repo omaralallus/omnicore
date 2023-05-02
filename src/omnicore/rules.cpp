@@ -33,7 +33,7 @@ namespace mastercore
  */
 std::vector<TransactionRestriction> CConsensusParams::GetRestrictions() const
 {
-    const TransactionRestriction vTxRestrictions[] =
+    std::vector<TransactionRestriction> vTxRestrictions
     { //  transaction type                    version        allow 0  activation block
       //  ----------------------------------  -------------  -------  ------------------
         { OMNICORE_MESSAGE_TYPE_ALERT,        0xFFFF,        true,    MSC_ALERT_BLOCK    },
@@ -83,9 +83,7 @@ std::vector<TransactionRestriction> CConsensusParams::GetRestrictions() const
         { MSC_TYPE_SEND_TO_MANY,              MP_TX_PKT_V0,  false,   MSC_SEND_TO_MANY_BLOCK  },
     };
 
-    const size_t nSize = sizeof(vTxRestrictions) / sizeof(vTxRestrictions[0]);
-
-    return std::vector<TransactionRestriction>(vTxRestrictions, vTxRestrictions + nSize);
+    return vTxRestrictions;
 }
 
 /**
@@ -114,7 +112,7 @@ std::vector<TransactionCheckpoint> CConsensusParams::GetTransactions() const
 std::vector<ConsensusCheckpoint> CMainConsensusParams::GetCheckpoints() const
 {
     // block height, block hash and consensus hash
-    const ConsensusCheckpoint vCheckpoints[] = {
+    static const std::vector<ConsensusCheckpoint> vCheckpoints{
         { 250000, uint256S("000000000000003887df1f29024b06fc2200b55f8af8f35453d7be294df2d214"),
                   uint256S("c2e1e0f3cf3c49d8ee08bd45ad39be27eb400041d6288864ee144892449c97df") },
         { 260000, uint256S("000000000000001fb91fbcebaaba0e2d926f04908d798a8b598c3bd962951080"),
@@ -175,9 +173,7 @@ std::vector<ConsensusCheckpoint> CMainConsensusParams::GetCheckpoints() const
                   uint256S("f06698346373e7e7df1fa4227f45695d05fcf26096e7200499af23644a1ed762") },
     };
 
-    const size_t nSize = sizeof(vCheckpoints) / sizeof(vCheckpoints[0]);
-
-    return std::vector<ConsensusCheckpoint>(vCheckpoints, vCheckpoints + nSize);
+    return vCheckpoints;
 }
 
 /**
@@ -186,7 +182,7 @@ std::vector<ConsensusCheckpoint> CMainConsensusParams::GetCheckpoints() const
 std::vector<TransactionCheckpoint> CMainConsensusParams::GetTransactions() const
 {
     // block height, transaction hash
-    const TransactionCheckpoint vTransactions[] = {
+    static const std::vector<TransactionCheckpoint> vTransactions{
         { 306906, uint256S("b7c66175a99ca0e7b1691905d50a46165adb7a8012d9ec5e1ecf8239f859df6d") },
         { 306906, uint256S("a59ac18eda590dfe9f3671f99f3cec5679e95ea4d1478d5313e2b4706307537b") },
         { 306912, uint256S("ce56ee84abd20bd1386d66e5ab9e3661a9bfad45a7d46490cae2241bbebf91df") },
@@ -217,9 +213,7 @@ std::vector<TransactionCheckpoint> CMainConsensusParams::GetTransactions() const
         { 420551, uint256S("5b81b20508c98a9bda3de68d6b3872f52efd02ebe2cb9b114cfb3a3225f33dd1") },
     };
 
-    const size_t nSize = sizeof(vTransactions) / sizeof(vTransactions[0]);
-
-    return std::vector<TransactionCheckpoint>(vTransactions, vTransactions + nSize);
+    return vTransactions;
 }
 
 /**

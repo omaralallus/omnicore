@@ -28,7 +28,7 @@ using namespace mastercore;
 BOOST_FIXTURE_TEST_SUITE(omnicore_parsing_c_tests, TestingSetup)
 
 /** Creates a dummy transaction with the given inputs and outputs. */
-static CTransaction TxClassC(const std::vector<CTxOut>& txInputs, const std::vector<CTxOut>& txOuts)
+static CTransaction TxClassC(CCoinsViewCache& view, const std::vector<CTxOut>& txInputs, const std::vector<CTxOut>& txOuts)
 {
     CMutableTransaction mutableTx;
 
@@ -67,6 +67,7 @@ static CTxOut createTxOut(int64_t amount, const std::string& dest)
 
 BOOST_AUTO_TEST_CASE(reference_identification)
 {
+    CCoinsViewCacheOnly view;
     {
         int nBlock = ConsensusParams().NULLDATA_BLOCK;
 
@@ -77,10 +78,10 @@ BOOST_AUTO_TEST_CASE(reference_identification)
         txOutputs.push_back(OpReturn_SimpleSend());
         txOutputs.push_back(createTxOut(2700000, EncodeDestination(ExodusAddress())));
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK(metaTx.getReceiver().empty());
         BOOST_CHECK_EQUAL(metaTx.getFeePaid(), 2300000);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "1NNQKWM8mC35pBNPxV1noWFZEw7A5X6zXz");
@@ -96,10 +97,10 @@ BOOST_AUTO_TEST_CASE(reference_identification)
         txOutputs.push_back(OpReturn_SimpleSend());
         txOutputs.push_back(createTxOut(6000, "3QHw8qKf1vQkMnSVXarq7N4PYzz1G3mAK4"));
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getFeePaid(), 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "3NfRfUekDSzgSyohRro9jXD1AqDALN321P");
         BOOST_CHECK_EQUAL(metaTx.getReceiver(), "3QHw8qKf1vQkMnSVXarq7N4PYzz1G3mAK4");
@@ -115,10 +116,10 @@ BOOST_AUTO_TEST_CASE(reference_identification)
         txOutputs.push_back(OpReturn_SimpleSend());
         txOutputs.push_back(createTxOut(6000, "1M773vkrQDtBpkorfHTdctRo6kHxb4fXuT"));
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getFeePaid(), 74000);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "1M773vkrQDtBpkorfHTdctRo6kHxb4fXuT");
         BOOST_CHECK_EQUAL(metaTx.getReceiver(), "1M773vkrQDtBpkorfHTdctRo6kHxb4fXuT");
@@ -139,10 +140,10 @@ BOOST_AUTO_TEST_CASE(reference_identification)
         txOutputs.push_back(PayToBareMultisig_1of3());
         txOutputs.push_back(createTxOut(6000, "19NNUnwsKZK5dCnDCZ7pqeruL2syA8hSVh"));
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "19NNUnwsKZK5dCnDCZ7pqeruL2syA8hSVh");
         BOOST_CHECK_EQUAL(metaTx.getReceiver(), "37pwWHk1oFaWxVsnYKfGs7Lyt5yJEVomTH");
     }
@@ -161,10 +162,10 @@ BOOST_AUTO_TEST_CASE(reference_identification)
         txOutputs.push_back(PayToPubKeyHash_Exodus());
         txOutputs.push_back(OpReturn_SimpleSend());
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "35iqJySouevicrYzMhjKSsqokSGwGovGov");
         BOOST_CHECK_EQUAL(metaTx.getReceiver(), "35iqJySouevicrYzMhjKSsqokSGwGovGov");
     }
@@ -172,6 +173,7 @@ BOOST_AUTO_TEST_CASE(reference_identification)
 
 BOOST_AUTO_TEST_CASE(empty_op_return)
 {
+    CCoinsViewCacheOnly view;
     {
         int nBlock = std::numeric_limits<int>::max();
 
@@ -182,10 +184,10 @@ BOOST_AUTO_TEST_CASE(empty_op_return)
         txOutputs.push_back(OpReturn_PlainMarker());
         txOutputs.push_back(PayToPubKeyHash_Unrelated());
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK(metaTx.getPayload().empty());
         BOOST_CHECK_EQUAL(metaTx.getSender(), "35iqJySouevicrYzMhjKSsqokSGwGovGov");
         // via PayToPubKeyHash_Unrelated:
@@ -219,10 +221,11 @@ BOOST_AUTO_TEST_CASE(trimmed_op_return)
         CTxOut txOut = CTxOut(0, scriptPubKey);
         txOutputs.push_back(txOut);
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CCoinsViewCacheOnly view;
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "3LzuqJs1deHYeFyJz5JXqrZXpuMk3GBEX2");
         BOOST_CHECK_EQUAL(metaTx.getPayload(), HexStr(vchFiller.begin(), vchFiller.end()));
         BOOST_CHECK_EQUAL(metaTx.getPayload().size() / 2, MAX_PACKETS * PACKET_SIZE);
@@ -262,10 +265,11 @@ BOOST_AUTO_TEST_CASE(multiple_op_return_short)
             CTxOut txOut = CTxOut(0, scriptPubKey);
             txOutputs.push_back(txOut);
         }
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CCoinsViewCacheOnly view;
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "13ZXjcDDUY3cRTPFXVfwmFR9Mz2WpnF5PP");
         BOOST_CHECK_EQUAL(metaTx.getPayload(), "00001111222233330001000200030004");
     }
@@ -314,10 +318,11 @@ BOOST_AUTO_TEST_CASE(multiple_op_return)
             txOutputs.push_back(txOut);
         }
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CCoinsViewCacheOnly view;
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "3LzuqJs1deHYeFyJz5JXqrZXpuMk3GBEX2");
         BOOST_CHECK_EQUAL(metaTx.getPayload(), "12222222222222222222222222234555555"
                 "555555555555555555556788888888889ffff11111111111111111111111111111"
@@ -329,6 +334,7 @@ BOOST_AUTO_TEST_CASE(multiple_op_return)
 
 BOOST_AUTO_TEST_CASE(multiple_op_return_pushes)
 {
+    CCoinsViewCacheOnly view;
     {
         int nBlock = std::numeric_limits<int>::max();
 
@@ -341,10 +347,10 @@ BOOST_AUTO_TEST_CASE(multiple_op_return_pushes)
         txOutputs.push_back(PayToScriptHash_Unrelated());
         txOutputs.push_back(OpReturn_MultiSimpleSend());
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "3LzuqJs1deHYeFyJz5JXqrZXpuMk3GBEX2");
         BOOST_CHECK_EQUAL(metaTx.getPayload(),
                 // OpReturn_SimpleSend (without marker):
@@ -371,10 +377,10 @@ BOOST_AUTO_TEST_CASE(multiple_op_return_pushes)
             txOutputs.push_back(txOut);
         }
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getSender(), "3LzuqJs1deHYeFyJz5JXqrZXpuMk3GBEX2");
         BOOST_CHECK_EQUAL(metaTx.getPayload(),
                 "00000000000000010000000006dac2c000000000000000030000000000000d48");
@@ -395,10 +401,10 @@ BOOST_AUTO_TEST_CASE(multiple_op_return_pushes)
           txOutputs.push_back(txOut);
         }
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
         BOOST_CHECK_EQUAL(metaTx.getPayload(), "00000000000000010000000006dac2c0");
     }
     {
@@ -422,10 +428,10 @@ BOOST_AUTO_TEST_CASE(multiple_op_return_pushes)
             txOutputs.push_back(txOut);
         }
 
-        CTransaction dummyTx = TxClassC(txInputs, txOutputs);
+        CTransaction dummyTx = TxClassC(view, txInputs, txOutputs);
 
         CMPTransaction metaTx;
-        BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) != 0);
+        BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) != 0);
     }
 }
 

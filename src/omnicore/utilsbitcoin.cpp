@@ -52,6 +52,21 @@ CBlockIndex* GetBlockIndex(const uint256& hash)
     return pBlockIndex;
 }
 
+std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey)
+{
+    CTxDestination dest;
+    if (!ExtractDestination(scriptPubKey, dest)) {
+        return {};
+    }
+    auto bytes = std::visit(DataVisitor{}, dest);
+    if (bytes.empty() || bytes.size() > uint256::size()) {
+        return {};
+    }
+    uint256 addressBytes;
+    std::copy(bytes.begin(), bytes.end(), addressBytes.begin());
+    return std::make_pair(dest.index(), addressBytes);
+}
+
 bool MainNet()
 {
     return Params().NetworkIDString() == "main";

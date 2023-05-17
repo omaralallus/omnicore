@@ -28,12 +28,12 @@ public:
     /** Records the range awarded in a grant applied to a non-fungible property. */
     void RecordNonFungibleGrant(const uint256 &txid, int64_t start, int64_t end);
 
-    std::string getKeyValue(std::string key);
-    uint256 findMetaDExCancel(const uint256 txid);
+    std::string getKeyValue(const std::string& key);
+    uint256 findMetaDExCancel(const uint256& txid);
     /** Returns the number of sub records. */
     int getNumberOfSubRecords(const uint256& txid);
-    int getNumberOfMetaDExCancels(const uint256 txid);
-    bool getPurchaseDetails(const uint256 txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t *propertyId, uint64_t* nValue);
+    int getNumberOfMetaDExCancels(const uint256& txid);
+    bool getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t *propertyId, uint64_t* nValue);
     /** Retrieves details about a "send all" record. */
     bool getSendAllDetails(const uint256& txid, int subSend, uint32_t& propertyId, int64_t& amount);
     /** Retrieves details about the range awarded in a grant to a non-fungible property. */

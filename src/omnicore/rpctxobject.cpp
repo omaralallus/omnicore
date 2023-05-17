@@ -94,7 +94,8 @@ int populateRPCTransactionObject(const CTransaction& tx, const uint256& blockHas
 
     // attempt to parse the transaction
     CMPTransaction mp_obj;
-    int parseRC = ParseTransaction(tx, blockHeight, 0, mp_obj, blockTime);
+    CCoinsViewCacheOnly view;
+    int parseRC = ParseTransaction(view, tx, blockHeight, 0, mp_obj, blockTime);
     if (parseRC == -101) {
         return MP_RPC_DECODE_INPUTS_MISSING;
     }

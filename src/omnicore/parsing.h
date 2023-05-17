@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+class CCoinsViewCache;
 class CTransaction;
 class CMPTransaction;
 class uint160;
@@ -21,7 +22,7 @@ class uint160;
 #define MAX_SHA256_OBFUSCATION_TIMES  255
 
 /**
- * Swaps byte order on little-endian systems and does nothing 
+ * Swaps byte order on little-endian systems and does nothing
  * otherwise. SwapByteOrder cycles on LE systems.
  */
 void SwapByteOrder16(uint16_t&);
@@ -35,7 +36,7 @@ std::string HashToAddress(unsigned char version, const uint160& hash);
 void PrepareObfuscatedHashes(const std::string& strSeed, int hashCount, std::string(&vstrHashes)[1+MAX_SHA256_OBFUSCATION_TIMES]);
 
 /** Parses a transaction and populates the CMPTransaction object. */
-int ParseTransaction(const CTransaction& tx, int nBlock, unsigned int idx, CMPTransaction& mptx, unsigned int nTime=0);
+int ParseTransaction(CCoinsViewCache& view, const CTransaction& tx, int nBlock, unsigned int idx, CMPTransaction& mptx, unsigned int nTime=0);
 
 
 #endif // BITCOIN_OMNICORE_PARSING_H

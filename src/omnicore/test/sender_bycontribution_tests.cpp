@@ -350,7 +350,7 @@ BOOST_AUTO_TEST_CASE(sender_selection_mixed_test)
 }
 
 /** Creates a dummy class B transaction with the given inputs. */
-static CTransaction TxClassB(const std::vector<CTxOut>& txInputs)
+static CTransaction TxClassB(CCoinsViewCache& view, const std::vector<CTxOut>& txInputs)
 {
     CMutableTransaction mutableTx;
 
@@ -386,10 +386,12 @@ static bool GetSenderByContribution(const std::vector<CTxOut>& vouts, std::strin
 {
     int nBlock = std::numeric_limits<int>::max();
 
-    CMPTransaction metaTx;
-    CTransaction dummyTx = TxClassB(vouts);
 
-    if (ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0) {
+    CMPTransaction metaTx;
+    CCoinsViewCacheOnly view;
+    CTransaction dummyTx = TxClassB(view, vouts);
+
+    if (ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0) {
         strSender = metaTx.getSender();
         return true;
     }

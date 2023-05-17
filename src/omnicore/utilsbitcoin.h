@@ -5,6 +5,11 @@ class CBlockIndex;
 class uint256;
 
 #include <stdint.h>
+#include <optional>
+
+#include <uint256.h>
+
+class CScript;
 
 namespace mastercore
 {
@@ -14,6 +19,8 @@ int GetHeight();
 uint32_t GetLatestBlockTime();
 /** Returns the CBlockIndex for a given block hash, or NULL. */
 CBlockIndex* GetBlockIndex(const uint256& hash);
+
+std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey);
 
 bool MainNet();
 bool TestNet();

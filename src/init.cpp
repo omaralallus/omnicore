@@ -145,7 +145,6 @@ static const char* DEFAULT_ASMAP_FILENAME="ip_asn.map";
 // Omni Core initialization and shutdown handlers
 extern int mastercore_init();
 extern int mastercore_shutdown();
-extern int CheckWalletUpdate();
 extern std::optional<std::reference_wrapper<node::NodeContext>> g_context;
 
 /**
@@ -360,7 +359,6 @@ static void HandleSIGTERM(int)
 static void HandleSIGHUP(int)
 {
     LogInstance().m_reopen_file = true;
-    fReopenOmniCoreLog = true;
 }
 #else
 static BOOL WINAPI consoleCtrlHandler(DWORD dwCtrlType)
@@ -610,7 +608,6 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-server", "Accept command line and JSON-RPC commands", ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
 
     argsman.AddArg("-startclean", "Clear all persistence files on startup; triggers reparsing of Omni transactions (default: 0)", false, OptionsCategory::OMNI);
-    argsman.AddArg("-omnitxcache", "The maximum number of transactions in the input transaction cache (default: 500000)", false, OptionsCategory::OMNI);
     argsman.AddArg("-omniprogressfrequency", "Time in seconds after which the initial scanning progress is reported (default: 30)", false, OptionsCategory::OMNI);
     argsman.AddArg("-omniseedblockfilter", "Set skipping of blocks without Omni transactions during initial scan (default: 1)", false, OptionsCategory::OMNI);
     argsman.AddArg("-omniskipstoringstate", "Don't store state during initial synchronization until block n (faster, but may have to restart syncing after a shutdown)(default: 770000)", false, OptionsCategory::OMNI);
@@ -1589,10 +1586,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         return false;
     }
 
-    if (fAddressIndex != args.GetBoolArg("-experimental-btc-balances", DEFAULT_ADDRINDEX)) {
-        return InitError(_("You need to rebuild the database using -reindex-chainstate to change -experimental-btc-balances"));
-    }
-
     ChainstateManager& chainman = *Assert(node.chainman);
 
     assert(!node.peerman);
@@ -1628,10 +1621,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
 
     g_context = std::ref(node);
 
-    uiInterface.InitMessage(_("Parsing Omni Layer transactions...").translated);
-
-    mastercore_init();
-
     // ********************************************************* Step 9: load wallet
     for (const auto& client : node.chain_clients) {
         if (!client->load()) {
@@ -1639,8 +1628,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
 
-    // Omni Core code should be initialized and wallet should now be loaded, perform an initial populat$
-    CheckWalletUpdate();
+    mastercore_init();
 
     // ********************************************************* Step 10: data directory maintenance
 

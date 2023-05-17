@@ -1,6 +1,7 @@
 #include <omnicore/walletutils.h>
 
 #include <omnicore/log.h>
+#include <omnicore/mempool.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/rules.h>
 #include <omnicore/script.h>
@@ -228,8 +229,7 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
                 continue;
             }
             if (wtx.depth_in_main_chain == 0) {
-                auto mempool = ::ChainstateActive().GetMempool();
-                if (!mempool || !mempool->exists(GenTxid::Txid(txid))) {
+                if (!GetMempoolTransaction(txid)) {
                     continue;
                 }
             }

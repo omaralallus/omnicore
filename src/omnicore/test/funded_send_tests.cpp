@@ -1,3 +1,9 @@
+#include "chain.h"
+#include "index/txindex.h"
+#include "omnicore/log.h"
+#include "primitives/transaction.h"
+#include "uint256.h"
+#include <boost/test/tools/old/interface.hpp>
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>
@@ -12,6 +18,7 @@
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <script/standard.h>
+#include <thread>
 #include <validation.h>
 #include <wallet/coincontrol.h>
 #include <wallet/spend.h>
@@ -24,9 +31,12 @@ class FundedSendTestingSetup : public TestChain100Setup
 public:
     FundedSendTestingSetup()
     {
-        CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
+        g_txindex = std::make_unique<TxIndex>(interfaces::MakeChain(m_node), 1000, false, node::fReindex);
+        BOOST_REQUIRE(g_txindex->Start());
         m_wallet_loader = interfaces::MakeWalletLoader(*m_node.chain, *Assert(m_node.args));
         wallet = std::make_shared<wallet::CWallet>(m_node.chain.get(), "", m_args, wallet::CreateMockWalletDatabase());
+        interface_wallet = interfaces::MakeWallet(*m_wallet_loader->context(), wallet);
+        CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
         {
             LOCK(wallet->cs_wallet);
             wallet->SetLastBlockProcessed(::ChainActive().Height(), ::ChainActive().Tip()->GetBlockHash());
@@ -40,7 +50,6 @@ public:
         wallet::WalletRescanReserver reserver(*wallet);
         reserver.reserve();
         wallet->ScanForWalletTransactions(::ChainActive().Genesis()->GetBlockHash(), 0, {}, reserver, false, false);
-        interface_wallet = interfaces::MakeWallet(*m_wallet_loader->context(), wallet);
         wallet->m_fallback_fee = CFeeRate(1000);
     }
 
@@ -75,6 +84,8 @@ public:
             LOCK(wallet->cs_wallet);
             wallet->SetLastBlockProcessed(::ChainActive().Height(), ::ChainActive().Tip()->GetBlockHash());
         }
+
+        g_txindex->BlockUntilSyncedToCurrentChain();
     }
 
     // For dust set entry in amounts to -1
@@ -113,7 +124,12 @@ static std::vector<unsigned char> dummy_payload() {
 static void check_outputs(uint256& hash, int expected_number) {
     CTransactionRef tx;
     uint256 hash_block;
-    BOOST_CHECK(GetTransaction(hash, tx, Params().GetConsensus(), hash_block, nullptr));
+    bool tx_succeed = false;
+    for (int i = 0; i < 100 && !tx_succeed; i++) {
+        std::this_thread::sleep_for(1ms);
+        tx_succeed = GetTransaction(hash, tx, Params().GetConsensus(), hash_block);
+    }
+    BOOST_REQUIRE(tx_succeed);
     BOOST_CHECK_EQUAL(tx->vout.size(), expected_number);
 }
 

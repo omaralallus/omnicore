@@ -45,6 +45,7 @@ src/config/bitcoin-config.h
 src/config/bitcoin-config.h.in
 src/config/stamp-h1
 src/obj
+src/omnicore/res/omnicore-setup-win.nsi
 share/setup.nsi
 share/qt/Info.plist
 

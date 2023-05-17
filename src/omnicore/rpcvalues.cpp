@@ -252,7 +252,7 @@ uint32_t ParseOutputIndex(const UniValue& value)
 /** Parses previous transaction outputs. */
 std::vector<PrevTxsEntry> ParsePrevTxs(const UniValue& value)
 {
-    UniValue prevTxs = value.get_array();
+    const UniValue& prevTxs = value.get_array();
 
     std::vector<PrevTxsEntry> prevTxsParsed;
     prevTxsParsed.reserve(prevTxs.size());
@@ -262,7 +262,7 @@ std::vector<PrevTxsEntry> ParsePrevTxs(const UniValue& value)
         if (p.type() != UniValue::VOBJ) {
             throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "expected object with {\"txid\",\"vout\",\"scriptPubKey\",\"value\":n.nnnnnnnn}");
         }
-        UniValue prevOut = p.get_obj();
+        const UniValue& prevOut = p.get_obj();
 
         uint256 txid = ParseHashO(prevOut, "txid");
         UniValue outputIndex = find_value(prevOut, "vout");

@@ -43,8 +43,6 @@ namespace mastercore
  */
 static unsigned int GetTransactionByteOffset(const uint256& txid)
 {
-    LOCK(cs_main);
-
     if (g_txindex) {
         return g_txindex->ReadTxPos(txid);
     }

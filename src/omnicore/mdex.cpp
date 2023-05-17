@@ -742,7 +742,7 @@ bool mastercore::MetaDEx_isOpen(const uint256& txid, uint32_t propertyIdForSale)
         for (md_PricesMap::iterator it = prices.begin(); it != prices.end(); ++it) {
             md_Set & indexes = (it->second);
             for (md_Set::iterator it = indexes.begin(); it != indexes.end(); ++it) {
-                CMPMetaDEx obj = *it;
+                const CMPMetaDEx& obj = *it;
                 if( obj.getHash().GetHex() == txid.GetHex() ) return true;
             }
         }

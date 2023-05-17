@@ -34,12 +34,6 @@ struct LogCategory {
     bool active;
 };
 
-/** Flag to indicate, whether the Omni Core log file should be reopened. */
-extern std::atomic<bool> fReopenOmniCoreLog;
-
-/** override to print to omni log to console */
-extern std::atomic<bool> fOmniCoreConsoleLog;
-
 namespace BCLog {
     enum LogFlags : uint32_t {
         NONE        = 0,
@@ -72,7 +66,6 @@ namespace BCLog {
 #endif
         UTIL        = (1 << 25),
         BLOCKSTORE  = (1 << 26),
-        HANDLER     = (1 << 27),
         ALL         = ~(uint32_t)0,
     };
     enum class Level {

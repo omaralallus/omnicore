@@ -26,12 +26,6 @@ using namespace wallet;
 #include <stdexcept>
 #include <string>
 
-extern RecursiveMutex cs_main;
-
-using mastercore::cs_tx_cache;
-using mastercore::view;
-using mastercore::viewDummy;
-
 #ifdef ENABLE_WALLET
 extern std::pair<std::shared_ptr<CWallet>, std::unique_ptr<interfaces::Wallet>> GetWalletFromContextForJSONRPCRequest(const JSONRPCRequest& request);
 #endif
@@ -102,16 +96,7 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
     }
 
     UniValue txObj(UniValue::VOBJ);
-    int populateResult = -3331;
-    {
-        LOCK2(cs_main, cs_tx_cache);
-        // temporarily switch global coins view cache for transaction inputs
-        view.SetBackend(viewTemp);
-        // then get the results
-        populateResult = populateRPCTransactionObject(tx, uint256(), txObj, "", false, "", blockHeight, pWallet.get());
-        // and restore the original, unpolluted coins view cache
-        view.SetBackend(viewDummy);
-    }
+    int populateResult = populateRPCTransactionObject(tx, uint256(), txObj, "", false, "", blockHeight, pWallet.get());
 
     if (populateResult != 0) PopulateFailure(populateResult);
 

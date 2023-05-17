@@ -18,6 +18,7 @@
 #include <omnicore/errors.h>
 #include <omnicore/log.h>
 #include <omnicore/mdex.h>
+#include <omnicore/mempool.h>
 #include <omnicore/notifications.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/parsing.h>
@@ -814,7 +815,8 @@ static UniValue omni_getpayload(const JSONRPCRequest& request)
     }
 
     CMPTransaction mp_obj;
-    int parseRC = ParseTransaction(*tx, blockHeight, 0, mp_obj, blockTime);
+    CCoinsViewCacheOnly view;
+    int parseRC = ParseTransaction(view, *tx, blockHeight, 0, mp_obj, blockTime);
     if (parseRC < 0) PopulateFailure(MP_TX_IS_NOT_OMNI_PROTOCOL);
 
     UniValue payloadObj(UniValue::VOBJ);
@@ -2473,16 +2475,10 @@ static UniValue omni_listpendingtransactions(const JSONRPCRequest& request)
     }
 
     std::vector<uint256> vTxid;
-    if (auto mempool = ::ChainstateActive().GetMempool()) {
-        mempool->queryHashes(vTxid);
-    }
+    MempoolQueryHashes(vTxid);
 
     UniValue result(UniValue::VARR);
     for(const uint256& hash : vTxid) {
-        if (!IsInMarkerCache(hash)) {
-            continue;
-        }
-
         UniValue txObj(UniValue::VOBJ);
         if (populateRPCTransactionObject(hash, txObj, filterAddress, false, "", pWallet.get()) == 0) {
             result.push_back(txObj);

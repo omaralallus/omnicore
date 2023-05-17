@@ -46,6 +46,31 @@ inline std::string ValueToString(const std::string& value)
     return value;
 }
 
+template<typename T>
+std::string KeyToString(const T& key)
+{
+    std::vector<uint8_t> v;
+    static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
+    CVectorWriter writer(SER_DISK, CLIENT_VERSION, v, 0);
+    writer << T::prefix << key;
+    return {v.begin(), v.end()};
+}
+
+template<typename T>
+bool StringToKey(const std::string& s, T& key)
+{
+    auto prefix = T::prefix;
+    static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
+    try {
+        Span v((const uint8_t *)s.data(), s.size());
+        SpanReader reader(SER_DISK, CLIENT_VERSION, v);
+        reader >> prefix >> key;
+    } catch (const std::exception&) {
+        return false;
+    }
+    return prefix == T::prefix;
+}
+
 /** Base class for LevelDB based storage.
  */
 class CDBBase
@@ -103,40 +128,31 @@ protected:
      */
     leveldb::Iterator* NewIterator() const
     {
-        assert(pdb != nullptr);
+        assert(pdb);
         return pdb->NewIterator(iteroptions);
     }
 
     template<typename K, typename V>
     bool Write(const K& key, const V& value)
     {
-        static_assert(sizeof(K::prefix) == 1, "Prefix needs to be 1 byte");
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION, K::prefix, key);
-        leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
         assert(pdb);
-        return pdb->Put(writeoptions, slKey, ValueToString(value)).ok();
+        return pdb->Put(writeoptions, KeyToString(key), ValueToString(value)).ok();
     }
 
     template<typename K, typename V>
     bool Read(const K& key, V& value) const
     {
-        static_assert(sizeof(K::prefix) == 1, "Prefix needs to be 1 byte");
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION, K::prefix, key);
-        leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
-        std::string strValue;
         assert(pdb);
-        return pdb->Get(readoptions, slKey, &strValue).ok()
+        std::string strValue;
+        return pdb->Get(readoptions, KeyToString(key), &strValue).ok()
             && StringToValue(std::move(strValue), value);
     }
 
     template<typename K>
     bool Delete(const K& key)
     {
-        static_assert(sizeof(K::prefix) == 1, "Prefix needs to be 1 byte");
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION, K::prefix, key);
-        leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
         assert(pdb);
-        return pdb->Delete(leveldb::WriteOptions(), slKey).ok();
+        return pdb->Delete(writeoptions, KeyToString(key)).ok();
     }
 
     /**
@@ -162,31 +178,6 @@ public:
      */
     void Clear();
 };
-
-template<typename T>
-std::string KeyToString(const T& key)
-{
-    std::vector<uint8_t> v;
-    static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
-    CVectorWriter writer(SER_DISK, CLIENT_VERSION, v, 0);
-    writer << T::prefix << key;
-    return {v.begin(), v.end()};
-}
-
-template<typename T>
-bool StringToKey(const std::string& s, T& key)
-{
-    auto prefix = T::prefix;
-    static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
-    try {
-        std::vector<uint8_t> v{s.begin(), s.end()};
-        SpanReader reader(SER_DISK, CLIENT_VERSION, v);
-        reader >> prefix >> key;
-    } catch (const std::exception&) {
-        return false;
-    }
-    return prefix == T::prefix;
-}
 
 class CDBaseIterator
 {

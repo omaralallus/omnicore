@@ -299,6 +299,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
     if (walletModel)
         walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetIntArg("-omniuiwalletscope", 65535L));
 
+    CCoinsViewCacheOnly view;
     // reverse iterate over (now ordered) transactions and populate history map for each one
     for (std::map<std::string,uint256>::reverse_iterator it = walletTransactions.rbegin(); it != walletTransactions.rend(); it++) {
         uint256 hash = it->second;
@@ -357,7 +358,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         bool valid = false;
 
         // parse the transaction
-        if (0 != ParseTransaction(*wtx, blockHeight, 0, mp_obj)) continue;
+        if (0 != ParseTransaction(view, *wtx, blockHeight, 0, mp_obj)) continue;
         if (mp_obj.interpret_Transaction()) {
             valid = pDbTransactionList->getValidMPTX(hash);
             propertyIdForSale = mp_obj.getProperty();

@@ -11,6 +11,8 @@
 #include <validation.h>
 #include <util/strencodings.h>
 
+#include <omnicore/dbaddress.h>
+#include <omnicore/mempool.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/script.h>
 #include <omnicore/utilsbitcoin.h>
@@ -22,7 +24,9 @@
 
 #include <univalue.h>
 
-bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint256, int> > &addresses)
+using namespace mastercore;
+
+bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint256, unsigned> > &addresses)
 {
     if (params[0].isStr()) {
         uint256 hashBytes;
@@ -154,21 +158,21 @@ UniValue getaddressdeltas(const JSONRPCRequest& request)
         }
     }
 
-    std::vector<std::pair<uint256, int> > addresses;
+    std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-    std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
+    std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndex;
 
-    for (std::vector<std::pair<uint256, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+    for (auto it = addresses.begin(); it != addresses.end(); it++) {
         if (start > 0 && end > 0) {
-            if (!GetAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
+            if (!pDbAddress->ReadAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
             }
         } else {
-            if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+            if (!pDbAddress->ReadAddressIndex((*it).first, (*it).second, addressIndex)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
             }
         }
@@ -251,7 +255,7 @@ UniValue getaddressbalance(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
-    std::vector<std::pair<uint256, int> > addresses;
+    std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
@@ -259,8 +263,8 @@ UniValue getaddressbalance(const JSONRPCRequest& request)
 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
 
-    for (std::vector<std::pair<uint256, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+    for (auto it = addresses.begin(); it != addresses.end(); it++) {
+        if (!pDbAddress->ReadAddressIndex((*it).first, (*it).second, addressIndex)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }
@@ -338,7 +342,7 @@ UniValue getaddressutxos(const JSONRPCRequest& request)
         }
     }
 
-    std::vector<std::pair<uint256, int> > addresses;
+    std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
@@ -346,8 +350,8 @@ UniValue getaddressutxos(const JSONRPCRequest& request)
 
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue> > unspentOutputs;
 
-    for (std::vector<std::pair<uint256, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
-        if (!GetAddressUnspent((*it).first, (*it).second, unspentOutputs)) {
+    for (auto it = addresses.begin(); it != addresses.end(); it++) {
+        if (!pDbAddress->ReadAddressUnspentIndex((*it).first, (*it).second, unspentOutputs)) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
         }
     }
@@ -422,19 +426,14 @@ UniValue getaddressmempool(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
-    std::vector<std::pair<uint256, int> > addresses;
+    std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
 
-    auto mempool = ::ChainstateActive().GetMempool();
-    if (!mempool) {
-        throw JSONRPCError(RPC_MISC_ERROR, "No mempool available");
-    }
-
-    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta> > indexes;
-    if (!mempool->getAddressIndex(addresses, indexes)) {
+    std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>> indexes;
+    if (!GetAddressIndexFromMempool(addresses, indexes)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
     }
 
@@ -518,7 +517,7 @@ UniValue getblockhashes(const JSONRPCRequest& request)
 
     std::vector<std::pair<uint256, unsigned int> > blockHashes;
 
-    if (!GetTimestampIndex(high, low, fActiveOnly, blockHashes)) {
+    if (!pDbAddress->ReadTimestampIndex(high, low, fActiveOnly, blockHashes)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for block hashes");
     }
 
@@ -575,13 +574,10 @@ UniValue getspentinfo(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid txid or index");
     }
 
-    uint256 txid = ParseHashV(txidValue, "txid");
-    int outputIndex = indexValue.getInt<int>();
-
-    CSpentIndexKey key(txid, outputIndex);
+    CSpentIndexKey key{ParseHashV(txidValue, "txid"), indexValue.getInt<unsigned>()};
     CSpentIndexValue value;
 
-    if (!GetSpentIndex(key, value)) {
+    if (!GetSpentIndexFromMempool(key, value) && !pDbAddress->ReadSpentIndex(key, value)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Unable to get spent info");
     }
 
@@ -629,7 +625,7 @@ UniValue getaddresstxids(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
-    std::vector<std::pair<uint256, int> > addresses;
+    std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
@@ -648,13 +644,13 @@ UniValue getaddresstxids(const JSONRPCRequest& request)
 
     std::vector<std::pair<CAddressIndexKey, CAmount> > addressIndex;
 
-    for (std::vector<std::pair<uint256, int> >::iterator it = addresses.begin(); it != addresses.end(); it++) {
+    for (auto it = addresses.begin(); it != addresses.end(); it++) {
         if (start > 0 && end > 0) {
-            if (!GetAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
+            if (!pDbAddress->ReadAddressIndex((*it).first, (*it).second, addressIndex, start, end)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
             }
         } else {
-            if (!GetAddressIndex((*it).first, (*it).second, addressIndex)) {
+            if (!pDbAddress->ReadAddressIndex((*it).first, (*it).second, addressIndex)) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "No information available for address");
             }
         }
@@ -707,9 +703,7 @@ static UniValue clearmempool(const JSONRPCRequest& request)
     if (!mempool)
         throw JSONRPCError(RPC_MISC_ERROR, "No mempool available");
 
-    std::vector<uint256> vtxid;
-    mempool->queryHashes(vtxid);
-
+    auto vtxid = ClearMempool();
     UniValue removed(UniValue::VARR);
     for (const uint256& hash : vtxid)
         removed.push_back(hash.ToString());

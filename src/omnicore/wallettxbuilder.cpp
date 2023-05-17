@@ -3,6 +3,7 @@
 #include <omnicore/encoding.h>
 #include <omnicore/errors.h>
 #include <omnicore/log.h>
+#include <omnicore/mempool.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/parsing.h>
 #include <omnicore/script.h>
@@ -422,45 +423,29 @@ int CreateFundedTransaction(
     }
 
     // sign the transaction
-
-    // fetch previous transactions (inputs):
-    CCoinsView viewDummy;
-    CCoinsViewCache view(&viewDummy);
-    {
-        auto mempool = ::ChainstateActive().GetMempool();
-        assert(mempool);
-        LOCK2(cs_main, mempool->cs);
-        CCoinsViewCache &viewChain = ::ChainstateActive().CoinsTip();
-        CCoinsViewMemPool viewMempool(&viewChain, *mempool);
-        view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
-
-        for(const CTxIn& txin : tx.vin) {
-            const auto& prevout = txin.prevout;
-            view.AccessCoin(prevout); // this is certainly allowed to fail
-        }
-
-        view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
-    }
-
     int nHashType = SIGHASH_ALL;
 
-    for (unsigned int i = 0; i < tx.vin.size(); i++) {
-        CTxIn& txin = tx.vin[i];
-        const Coin& coin = view.AccessCoin(txin.prevout);
-        if (coin.IsSpent()) {
-            PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
-            continue;
-        }
-        const CScript& prevPubKey = coin.out.scriptPubKey;
-        const CAmount& amount = coin.out.nValue;
+    {
+        uint256 hashBlock;
+        CTransactionRef txPrev;
+        bool fCoinbase = false;
+        for (size_t i = 0; i < tx.vin.size(); i++) {
+            auto& txin = tx.vin[i];
+            const auto& outpoint = txin.prevout;
+            if (!GetTransaction(outpoint.hash, txPrev, Params().GetConsensus(), hashBlock) || outpoint.n >= txPrev->vout.size()) {
+                PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
+                continue;
+            }
+            const auto& out = txPrev->vout[outpoint.n];
 
-        SignatureData sigdata;
-        if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, amount, nHashType), prevPubKey, sigdata)) {
-            PrintToLog("%s: ERROR: wallet transaction signing failed\n", __func__);
-            return MP_ERR_CREATE_TX;
-        }
+            SignatureData sigdata;
+            if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, out.nValue, nHashType), out.scriptPubKey, sigdata)) {
+                PrintToLog("%s: ERROR: wallet transaction signing failed\n", __func__);
+                return MP_ERR_CREATE_TX;
+            }
 
-        UpdateInput(txin, sigdata);
+            UpdateInput(txin, sigdata);
+        }
     }
 
     // send the transaction

@@ -195,6 +195,7 @@ int TXHistoryDialog::PopulateHistoryMap()
     if (walletModel)
         walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetIntArg("-omniuiwalletscope", 65535L));
 
+    CCoinsViewCacheOnly view;
     // reverse iterate over (now ordered) transactions and populate history map for each one
     for (std::map<std::string,uint256>::reverse_iterator it = walletTransactions.rbegin(); it != walletTransactions.rend(); it++) {
         uint256 txHash = it->second;
@@ -253,7 +254,7 @@ int TXHistoryDialog::PopulateHistoryMap()
         if (nullptr == pBlockIndex) continue;
         int blockHeight = pBlockIndex->nHeight;
         CMPTransaction mp_obj;
-        int parseRC = ParseTransaction(*wtx, blockHeight, 0, mp_obj);
+        int parseRC = ParseTransaction(view, *wtx, blockHeight, 0, mp_obj);
         HistoryTXObject htxo;
         if (it->first.length() == 16) {
             htxo.blockHeight = atoi(it->first.substr(0,6));

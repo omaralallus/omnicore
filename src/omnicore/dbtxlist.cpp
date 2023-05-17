@@ -60,13 +60,16 @@ void CMPTxList::recordTX(const uint256 &txid, bool fValid, int nBlock, unsigned 
 {
     if (!pdb) return;
 
-    // overwrite detection, we should never be overwriting a tx, as that means we have redone something a second time
-    // reorgs delete all txs from levelDB above reorg_chain_height
-    if (exists(txid)) PrintToLog("LEVELDB TX OVERWRITE DETECTION - %s\n", txid.ToString());
-
     const std::string key = txid.ToString();
     const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, nValue);
     leveldb::Status status;
+
+    // overwrite detection, we should never be overwriting a tx, as that means we have redone something a second time
+    // reorgs delete all txs from levelDB above reorg_chain_height
+    std::string old_value;
+    if (getTX(txid, old_value) && old_value != value) {
+        PrintToLog("LEVELDB TX OVERWRITE DETECTION - %s\n", txid.ToString());
+    }
 
     PrintToLog("%s(%s, valid=%s, block= %d, type= %d, value= %lu)\n",
             __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, type, nValue);
@@ -181,7 +184,7 @@ void CMPTxList::recordSendAllSubRecord(const uint256& txid, int subRecordNumber,
 }
 
 
-std::string CMPTxList::getKeyValue(std::string key)
+std::string CMPTxList::getKeyValue(const std::string& key)
 {
     if (!pdb) return "";
     std::string strValue;
@@ -193,7 +196,7 @@ std::string CMPTxList::getKeyValue(std::string key)
     }
 }
 
-uint256 CMPTxList::findMetaDExCancel(const uint256 txid)
+uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
 {
     std::vector<std::string> vstr;
     std::string txidStr = txid.ToString();
@@ -239,7 +242,7 @@ int CMPTxList::getNumberOfSubRecords(const uint256& txid)
     return numberOfSubRecords;
 }
 
-int CMPTxList::getNumberOfMetaDExCancels(const uint256 txid)
+int CMPTxList::getNumberOfMetaDExCancels(const uint256& txid)
 {
     if (!pdb) return 0;
     int numberOfCancels = 0;
@@ -257,7 +260,7 @@ int CMPTxList::getNumberOfMetaDExCancels(const uint256 txid)
     return numberOfCancels;
 }
 
-bool CMPTxList::getPurchaseDetails(const uint256 txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t* propertyId, uint64_t* nValue)
+bool CMPTxList::getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t* propertyId, uint64_t* nValue)
 {
     if (!pdb) return 0;
     std::vector<std::string> vstr;
@@ -524,13 +527,47 @@ std::set<int> CMPTxList::GetSeedBlocks(int startHeight, int endHeight)
     return setSeedBlocks;
 }
 
+static void ProcessActivations(const std::vector<std::pair<int64_t, uint256>>& activations, int blockHeight, std::function<void(CMPTransaction&)> callback)
+{
+    CCoinsViewCacheOnly view;
+    for (const auto& [_, hash] : activations) {
+        uint256 blockHash;
+        CTransactionRef wtx;
+        CMPTransaction mp_obj;
+        CBlockIndex* pBlockIndex;
+
+        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
+            PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
+            continue;
+        }
+        if (blockHash.IsNull() || !(pBlockIndex = GetBlockIndex(blockHash))) {
+            PrintToLog("ERROR: While loading activation transaction %s: failed to retrieve block hash.\n", hash.GetHex());
+            continue;
+        }
+        int currentBlockHeight = pBlockIndex->nHeight;
+        if (currentBlockHeight > blockHeight) {
+            // skipping, because it's in the future
+            continue;
+        }
+        if (0 != ParseTransaction(view, *wtx, currentBlockHeight, 0, mp_obj)) {
+            PrintToLog("ERROR: While loading activation transaction %s: failed ParseTransaction.\n", hash.GetHex());
+            continue;
+        }
+        if (!mp_obj.interpret_Transaction()) {
+            PrintToLog("ERROR: While loading activation transaction %s: failed interpret_Transaction.\n", hash.GetHex());
+            continue;
+        }
+        callback(mp_obj);
+    }
+}
+
 void CMPTxList::LoadAlerts(int blockHeight)
 {
     if (!pdb) return;
     leveldb::Slice skey, svalue;
     leveldb::Iterator* it = NewIterator();
 
-    std::vector<std::pair<int64_t, uint256> > loadOrder;
+    std::vector<std::pair<int64_t, uint256>> loadOrder;
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string itData = it->value().ToString();
@@ -544,44 +581,21 @@ void CMPTxList::LoadAlerts(int blockHeight)
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
-    for (std::vector<std::pair<int64_t, uint256> >::iterator it = loadOrder.begin(); it != loadOrder.end(); ++it) {
-        uint256 txid = (*it).second;
-        uint256 blockHash;
-        CTransactionRef wtx;
-        CMPTransaction mp_obj;
-        if (!GetTransaction(txid, wtx, Params().GetConsensus(), blockHash)) {
-            PrintToLog("ERROR: While loading alert %s: tx in levelDB but does not exist.\n", txid.GetHex());
-            continue;
-        }
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
-        int currentBlockHeight = pBlockIndex->nHeight;
-        if (currentBlockHeight > blockHeight) {
-            // skipping, because it's in the future
-            continue;
-        }
-        if (0 != ParseTransaction(*wtx, blockHeight, 0, mp_obj)) {
-            PrintToLog("ERROR: While loading alert %s: failed ParseTransaction.\n", txid.GetHex());
-            continue;
-        }
-        if (!mp_obj.interpret_Transaction()) {
-            PrintToLog("ERROR: While loading alert %s: failed interpret_Transaction.\n", txid.GetHex());
-            continue;
-        }
+    ProcessActivations(loadOrder, blockHeight, [&](CMPTransaction& mp_obj) {
         if (OMNICORE_MESSAGE_TYPE_ALERT != mp_obj.getType()) {
-            PrintToLog("ERROR: While loading alert %s: levelDB type mismatch, not an alert.\n", txid.GetHex());
-            continue;
+            PrintToLog("ERROR: While loading alert %s: levelDB type mismatch, not an alert.\n", mp_obj.getHash().GetHex());
+            return;
         }
         if (!CheckAlertAuthorization(mp_obj.getSender())) {
-            PrintToLog("ERROR: While loading alert %s: sender is not authorized to send alerts.\n", txid.GetHex());
-            continue;
+            PrintToLog("ERROR: While loading alert %s: sender is not authorized to send alerts.\n", mp_obj.getHash().GetHex());
+            return;
         }
-
         if (mp_obj.getAlertType() == 65535) { // set alert type to FFFF to clear previously sent alerts
             DeleteAlerts(mp_obj.getSender());
         } else {
             AddAlert(mp_obj.getSender(), mp_obj.getAlertType(), mp_obj.getAlertExpiry(), mp_obj.getAlertMessage());
         }
-    }
+    });
 
     delete it;
     int64_t blockTime = 0;
@@ -606,7 +620,7 @@ void CMPTxList::LoadActivations(int blockHeight)
 
     PrintToLog("Loading feature activations from levelDB\n");
 
-    std::vector<std::pair<int64_t, uint256> > loadOrder;
+    std::vector<std::pair<int64_t, uint256>> loadOrder;
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string itData = it->value().ToString();
@@ -620,48 +634,18 @@ void CMPTxList::LoadActivations(int blockHeight)
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
-    for (std::vector<std::pair<int64_t, uint256> >::iterator it = loadOrder.begin(); it != loadOrder.end(); ++it) {
-        uint256 hash = (*it).second;
-        uint256 blockHash;
-        CTransactionRef wtx;
-        CMPTransaction mp_obj;
-
-        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
-            PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
-            continue;
-        }
-        if (blockHash.IsNull() || (nullptr == GetBlockIndex(blockHash))) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed to retrieve block hash.\n", hash.GetHex());
-            continue;
-        }
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
-        if (nullptr == pBlockIndex) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed to retrieve block index.\n", hash.GetHex());
-            continue;
-        }
-        int currentBlockHeight = pBlockIndex->nHeight;
-        if (currentBlockHeight > blockHeight) {
-            // skipping, because it's in the future
-            continue;
-        }
-        if (0 != ParseTransaction(*wtx, currentBlockHeight, 0, mp_obj)) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed ParseTransaction.\n", hash.GetHex());
-            continue;
-        }
-        if (!mp_obj.interpret_Transaction()) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed interpret_Transaction.\n", hash.GetHex());
-            continue;
-        }
+    ProcessActivations(loadOrder, blockHeight, [&](CMPTransaction& mp_obj) {
         if (OMNICORE_MESSAGE_TYPE_ACTIVATION != mp_obj.getType()) {
-            PrintToLog("ERROR: While loading activation transaction %s: levelDB type mismatch, not an activation.\n", hash.GetHex());
-            continue;
+            PrintToLog("ERROR: While loading activation transaction %s: levelDB type mismatch, not an activation.\n", mp_obj.getHash().GetHex());
+            return;
         }
         mp_obj.unlockLogic();
         if (0 != mp_obj.interpretPacket()) {
-            PrintToLog("ERROR: While loading activation transaction %s: non-zero return from interpretPacket\n", hash.GetHex());
-            continue;
+            PrintToLog("ERROR: While loading activation transaction %s: non-zero return from interpretPacket\n", mp_obj.getHash().GetHex());
+            return;
         }
-    }
+    });
+
     delete it;
     CheckLiveActivations(blockHeight);
 
@@ -676,7 +660,7 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
 {
     assert(pdb);
 
-    std::vector<std::pair<std::string, uint256> > loadOrder;
+    std::vector<std::pair<int64_t, uint256>> loadOrder;
     int txnsLoaded = 0;
     leveldb::Iterator* it = NewIterator();
     PrintToLog("Loading freeze state from levelDB\n");
@@ -692,7 +676,7 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
         if (atoi(vstr[0]) != 1) continue; // invalid, ignore
         uint256 txid = uint256S(it->key().ToString());
         int txPosition = pDbTransaction->FetchTransactionPosition(txid);
-        std::string sortKey = strprintf("%06d%010d", atoi(vstr[1]), txPosition);
+        int64_t sortKey = (int64_t(atoi(vstr[1])) << 32) | txPosition;
         loadOrder.push_back(std::make_pair(sortKey, txid));
     }
 
@@ -700,49 +684,19 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
-    for (std::vector<std::pair<std::string, uint256> >::iterator it = loadOrder.begin(); it != loadOrder.end(); ++it) {
-        uint256 hash = (*it).second;
-        uint256 blockHash;
-        CTransactionRef wtx;
-        CMPTransaction mp_obj;
-        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
-            PrintToLog("ERROR: While loading freeze transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
-            return false;
-        }
-        if (blockHash.IsNull() || (nullptr == GetBlockIndex(blockHash))) {
-            PrintToLog("ERROR: While loading freeze transaction %s: failed to retrieve block hash.\n", hash.GetHex());
-            return false;
-        }
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
-        if (nullptr == pBlockIndex) {
-            PrintToLog("ERROR: While loading freeze transaction %s: failed to retrieve block index.\n", hash.GetHex());
-            return false;
-        }
-        int currentBlockHeight = pBlockIndex->nHeight;
-        if (currentBlockHeight > blockHeight) {
-            // skipping, because it's in the future
-            continue;
-        }
-        if (0 != ParseTransaction(*wtx, currentBlockHeight, 0, mp_obj)) {
-            PrintToLog("ERROR: While loading freeze transaction %s: failed ParseTransaction.\n", hash.GetHex());
-            return false;
-        }
-        if (!mp_obj.interpret_Transaction()) {
-            PrintToLog("ERROR: While loading freeze transaction %s: failed interpret_Transaction.\n", hash.GetHex());
-            return false;
-        }
+    ProcessActivations(loadOrder, blockHeight, [&](CMPTransaction& mp_obj) {
         if (MSC_TYPE_FREEZE_PROPERTY_TOKENS != mp_obj.getType() && MSC_TYPE_UNFREEZE_PROPERTY_TOKENS != mp_obj.getType() &&
                 MSC_TYPE_ENABLE_FREEZING != mp_obj.getType() && MSC_TYPE_DISABLE_FREEZING != mp_obj.getType()) {
-            PrintToLog("ERROR: While loading freeze transaction %s: levelDB type mismatch, not a freeze transaction.\n", hash.GetHex());
-            return false;
+            PrintToLog("ERROR: While loading freeze transaction %s: levelDB type mismatch, not a freeze transaction.\n", mp_obj.getHash().GetHex());
+            return;
         }
         mp_obj.unlockLogic();
         if (0 != mp_obj.interpretPacket()) {
-            PrintToLog("ERROR: While loading freeze transaction %s: non-zero return from interpretPacket\n", hash.GetHex());
-            return false;
+            PrintToLog("ERROR: While loading freeze transaction %s: non-zero return from interpretPacket\n", mp_obj.getHash().GetHex());
+            return;
         }
         txnsLoaded++;
-    }
+    });
 
     if (blockHeight > 497000 && !isNonMainNet()) {
         assert(txnsLoaded >= 2); // sanity check against a failure to properly load the freeze state

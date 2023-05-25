@@ -20,5 +20,16 @@ bool GetScriptPushes(const CScript& script, std::vector<std::string>& vstrRet, b
 /** Returns public keys or hashes from scriptPubKey, for standard transaction types. */
 bool SafeSolver(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<std::vector<unsigned char> >& vSolutionsRet);
 
+/** Returns valid destination from Omni address. */
+CTxDestination DecodeOmniDestination(const std::string& address);
+
+/** Returns Omni address from valid destination. */
+std::string EncodeOmniDestination(const CTxDestination& dest);
+
+/** Returns Omni address if it's applicable. */
+std::string TryEncodeOmniAddress(const std::string& address);
+
+/** Returns original Bitcoin address. */
+std::string TryDecodeOmniAddress(const std::string& address);
 
 #endif // BITCOIN_OMNICORE_SCRIPT_H

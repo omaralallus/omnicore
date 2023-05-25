@@ -186,6 +186,9 @@ public:
     /** Returns an empty vector of transaction checkpoints. */
     virtual std::vector<TransactionCheckpoint> GetTransactions() const;
 
+    /** Returns Omni bech32 prefixes. */
+    virtual std::string GetBech32HRO() const { return {}; }
+
     /** Destructor. */
     virtual ~CConsensusParams() {}
 
@@ -209,6 +212,9 @@ public:
 
     /** Returns transactions checkpoints for mainnet, used to verify DB consistency. */
     std::vector<TransactionCheckpoint> GetTransactions() const override;
+
+    /** Returns Omni bech32 prefixes. */
+    std::string GetBech32HRO() const override { return "o"; }
 };
 
 /** Consensus parameters for testnet.
@@ -218,6 +224,10 @@ class CTestNetConsensusParams: public CConsensusParams
 public:
     /** Constructor for testnet consensus parameters. */
     CTestNetConsensusParams();
+
+    /** Returns Omni bech32 prefixes. */
+    std::string GetBech32HRO() const override { return "to"; }
+
     /** Destructor. */
     virtual ~CTestNetConsensusParams() {}
 };
@@ -229,6 +239,10 @@ class CRegTestConsensusParams: public CConsensusParams
 public:
     /** Constructor for regtest consensus parameters. */
     CRegTestConsensusParams();
+
+    /** Returns Omni bech32 prefixes. */
+    std::string GetBech32HRO() const override { return "ocrt"; }
+
     /** Destructor. */
     virtual ~CRegTestConsensusParams() {}
 };

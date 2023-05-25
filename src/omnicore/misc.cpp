@@ -12,6 +12,8 @@
 #include <util/strencodings.h>
 
 #include <omnicore/omnicore.h>
+#include <omnicore/script.h>
+#include <omnicore/utilsbitcoin.h>
 
 #include <consensus/consensus.h>
 #include <txmempool.h>
@@ -266,13 +268,14 @@ UniValue getaddressbalance(const JSONRPCRequest& request)
     CAmount balance = 0;
     CAmount received = 0;
     CAmount immature = 0;
+    auto height = mastercore::GetHeight();
 
     for (std::vector<std::pair<CAddressIndexKey, CAmount> >::const_iterator it=addressIndex.begin(); it!=addressIndex.end(); it++) {
         if (it->second > 0) {
             received += it->second;
         }
         balance += it->second;
-        if (it->first.txindex == 0 && ((::ChainActive().Height() - it->first.blockHeight) < COINBASE_MATURITY))
+        if (it->first.txindex == 0 && ((height - it->first.blockHeight) < COINBASE_MATURITY))
             immature += it->second;
     }
 
@@ -716,6 +719,61 @@ static UniValue clearmempool(const JSONRPCRequest& request)
     return removed;
 }
 
+static UniValue omni_encodeaddress(const JSONRPCRequest& request)
+{
+    RPCHelpMan{"omni_encodeaddress",
+        "\nReturns the omni address which corresponds to bitcoin one.\n"
+        "\nThe function is useful to convert bitcoin address to receive Omni tokens.\n"
+        "\nWARNING: Do not use this function to convert destination address (i.e. when you send tokens)\n"
+        "\ndestination might be a custodial wallet where private key isn't available\n",
+        {
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "bech32 encodded address\n"}
+        },
+        RPCResult{
+            RPCResult::Type::STR, "address", "omni encoded address"
+        },
+        RPCExamples{
+            HelpExampleCli("omni_encodeaddress", "bc1q09vm5lfy0j5reeulh4x5752q25uqqvz34hufdl")
+            + HelpExampleRpc("omni_encodeaddress", "bc1q09vm5lfy0j5reeulh4x5752q25uqqvz34hufdl")
+        }
+    }.Check(request);
+
+    auto dest = DecodeDestination(request.params[0].get_str());
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Address is not valid");
+    }
+    if (dest.index() < 3) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Address needs to be bech32");
+    }
+    return EncodeOmniDestination(dest);
+}
+
+static UniValue omni_decodeaddress(const JSONRPCRequest& request)
+{
+    RPCHelpMan{"omni_decodeaddress",
+        "\nReturns the bitcoin address which corresponds to omni one.\n"
+        "\nThe function is useful to get btc address for omni encoded address.\n"
+        "\nWARNING: Do not use this function to convert destination address (i.e. when you send tokens)\n"
+        "\ndestination might be a custodial wallet where private key isn't available\n",
+        {
+            {"address", RPCArg::Type::STR, RPCArg::Optional::NO, "bech32 encodded address\n"}
+        },
+        RPCResult{
+            RPCResult::Type::STR, "address", "btc encoded address"
+        },
+        RPCExamples{
+            HelpExampleCli("omni_decodeaddress", "o1q09vm5lfy0j5reeulh4x5752q25uqqvz34hufdl")
+            + HelpExampleRpc("omni_decodeaddress", "o1q09vm5lfy0j5reeulh4x5752q25uqqvz34hufdl")
+        }
+    }.Check(request);
+
+    auto dest = DecodeOmniDestination(request.params[0].get_str());
+    if (!IsValidDestination(dest)) {
+        throw JSONRPCError(RPC_MISC_ERROR, "Address is not valid or not bech32");
+    }
+    return EncodeDestination(dest);
+}
+
 void RegisterOmniMiscRPCCommands(CRPCTable &t)
 {
 // clang-format off
@@ -729,6 +787,8 @@ void RegisterOmniMiscRPCCommands(CRPCTable &t)
         { "util",               "getaddressmempool",      &getaddressmempool,      {"addresses"} },
         { "util",               "getblockhashes",         &getblockhashes,         {"high","low","options"} },
         { "util",               "getspentinfo",           &getspentinfo,           {"argument"} },
+        { "util",               "omni_encodeaddress",     &omni_encodeaddress,     {"address"} },
+        { "util",               "omni_decodeaddress",     &omni_decodeaddress,     {"address"} },
     };
 // clang-format on
 

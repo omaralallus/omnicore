@@ -85,10 +85,10 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
-    std::string feeAddress = ParseAddress(request.params[4]);
+    std::string feeAddress = ParseOmniAddress(request.params[4]);
 
     // perform checks
     RequireExistingProperty(propertyId);
@@ -135,9 +135,9 @@ static UniValue omni_funded_sendall(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint8_t ecosystem = ParseEcosystem(request.params[2]);
-    std::string feeAddress = ParseAddress(request.params[3]);
+    std::string feeAddress = ParseOmniAddress(request.params[3]);
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_SendAll(ecosystem);
@@ -181,7 +181,7 @@ static UniValue omni_sendrawtx(const JSONRPCRequest& request)
     std::string fromAddress = ParseAddress(request.params[0]);
     std::vector<unsigned char> data = ParseHexV(request.params[1], "raw transaction");
     std::string toAddress = (request.params.size() > 2) ? ParseAddressOrEmpty(request.params[2]): "";
-    std::string redeemAddress = (request.params.size() > 3) ? ParseAddressOrEmpty(request.params[3]): "";
+    std::string redeemAddress = (request.params.size() > 3) ? ParseOmniAddressOrEmpty(request.params[3]): "";
     int64_t referenceAmount = (request.params.size() > 4) ? ParseAmount(request.params[4], true): 0;
 
     if (wallet) {
@@ -230,10 +230,10 @@ static UniValue omni_send(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
-    std::string redeemAddress = (request.params.size() > 4 && !ParseText(request.params[4]).empty()) ? ParseAddress(request.params[4]): "";
+    std::string redeemAddress = (request.params.size() > 4 && !ParseText(request.params[4]).empty()) ? ParseOmniAddress(request.params[4]): "";
     int64_t referenceAmount = (request.params.size() > 5) ? ParseAmount(request.params[5], true): 0;
 
     // perform checks
@@ -290,9 +290,9 @@ static UniValue omni_sendall(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint8_t ecosystem = ParseEcosystem(request.params[2]);
-    std::string redeemAddress = (request.params.size() > 3 && !ParseText(request.params[3]).empty()) ? ParseAddress(request.params[3]): "";
+    std::string redeemAddress = (request.params.size() > 3 && !ParseText(request.params[3]).empty()) ? ParseOmniAddress(request.params[3]): "";
     int64_t referenceAmount = (request.params.size() > 4) ? ParseAmount(request.params[4], true): 0;
 
     // perform checks
@@ -352,12 +352,12 @@ static UniValue omni_sendnonfungible(const JSONRPCRequest& request)
     }
 
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t tokenStart = request.params[3].getInt<int64_t>(); // non-fungible tokens are always indivisible
     int64_t tokenEnd =  request.params[4].getInt<int64_t>();
     int64_t uniqueTokenAmount = (tokenEnd - tokenStart)+1;
-    std::string redeemAddress = (request.params.size() > 5 && !ParseText(request.params[5]).empty()) ? ParseAddress(request.params[5]): "";
+    std::string redeemAddress = (request.params.size() > 5 && !ParseText(request.params[5]).empty()) ? ParseOmniAddress(request.params[5]): "";
     int64_t referenceAmount = (request.params.size() > 6) ? ParseAmount(request.params[6], true): 0;
 
     // perform checks
@@ -523,7 +523,7 @@ static UniValue omni_sendtomany(const JSONRPCRequest& request)
         const UniValue& uvOutput = find_value(o, "address");
         const UniValue& uvAmount = find_value(o, "amount");
 
-        std::string address = ParseAddress(uvOutput);
+        std::string address = ParseOmniAddress(uvOutput);
         uint64_t amount = ParseAmount(uvAmount, isPropertyDivisible(propertyId));
 
         amountToSend += amount;
@@ -563,7 +563,7 @@ static UniValue omni_sendtomany(const JSONRPCRequest& request)
         const UniValue& uvOutput = find_value(o, "address");
         const UniValue& uvAmount = find_value(o, "amount");
 
-        std::string address = ParseAddress(uvOutput);
+        std::string address = ParseOmniAddress(uvOutput);
         uint64_t amount = ParseAmount(uvAmount, isPropertyDivisible(propertyId));
 
         receiverAddresses.push_back(address);
@@ -714,7 +714,7 @@ static UniValue omni_senddexaccept(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
     bool override = (request.params.size() > 4) ? request.params[4].get_bool(): false;
@@ -987,24 +987,14 @@ static UniValue omni_senddexpay(const JSONRPCRequest& request)
     }.Check(request);
 
     // Parameters
-    std::string buyerAddress = ParseText(request.params[0]);
-    std::string sellerAddress = ParseText(request.params[1]);
+    std::string buyerAddress = ParseAddress(request.params[0]);
+    std::string sellerAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     CAmount nAmount = ParseAmount(request.params[3], true);
 
     // Check parameters are valid
     if (nAmount <= 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid amount for send");
-
-    CTxDestination buyerDest = DecodeDestination(buyerAddress);
-    if (!IsValidDestination(buyerDest)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid buyer address");
-    }
-
-    CTxDestination sellerDest = DecodeDestination(sellerAddress);
-    if (!IsValidDestination(sellerDest)) {
-        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid seller address");
-    }
 
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyId);
@@ -1281,7 +1271,7 @@ static UniValue omni_sendsto(const JSONRPCRequest& request)
     std::string fromAddress = ParseAddress(request.params[0]);
     uint32_t propertyId = ParsePropertyId(request.params[1]);
     int64_t amount = ParseAmount(request.params[2], isPropertyDivisible(propertyId));
-    std::string redeemAddress = (request.params.size() > 3 && !ParseText(request.params[3]).empty()) ? ParseAddress(request.params[3]): "";
+    std::string redeemAddress = (request.params.size() > 3 && !ParseText(request.params[3]).empty()) ? ParseOmniAddress(request.params[3]): "";
     uint32_t distributionPropertyId = (request.params.size() > 4) ? ParsePropertyId(request.params[4]) : propertyId;
 
     // perform checks
@@ -1336,7 +1326,7 @@ static UniValue omni_sendgrant(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = !ParseText(request.params[1]).empty() ? ParseAddress(request.params[1]): "";
+    std::string toAddress = !ParseText(request.params[1]).empty() ? ParseOmniAddress(request.params[1]): "";
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
     std::string info = (request.params.size() > 4) ? ParseText(request.params[4]) : "";
@@ -1731,7 +1721,7 @@ static UniValue omni_sendchangeissuer(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string toAddress = ParseAddress(request.params[1]);
+    std::string toAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
 
     // perform checks
@@ -1891,7 +1881,7 @@ static UniValue omni_sendfreeze(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string refAddress = ParseAddress(request.params[1]);
+    std::string refAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
 
@@ -1949,7 +1939,7 @@ static UniValue omni_sendunfreeze(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    std::string refAddress = ParseAddress(request.params[1]);
+    std::string refAddress = ParseOmniAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
 
@@ -2006,7 +1996,7 @@ static UniValue omni_sendadddelegate(const JSONRPCRequest& request)
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
     uint32_t propertyId = ParsePropertyId(request.params[1]);
-    std::string delegateAddress = ParseAddress(request.params[2]);
+    std::string delegateAddress = ParseOmniAddress(request.params[2]);
 
     // perform checks
     RequireExistingProperty(propertyId);
@@ -2060,7 +2050,7 @@ static UniValue omni_sendremovedelegate(const JSONRPCRequest& request)
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
     uint32_t propertyId = ParsePropertyId(request.params[1]);
-    std::string delegateAddress = ParseAddress(request.params[2]);
+    std::string delegateAddress = ParseOmniAddress(request.params[2]);
 
     // perform checks
     RequireExistingProperty(propertyId);
@@ -2118,7 +2108,7 @@ static UniValue omni_sendanydata(const JSONRPCRequest& request)
     std::vector<unsigned char> data = ParseHexV(request.params[1], "data");
     std::string toAddress;
     if (request.params.size() > 2) {
-        toAddress = ParseAddressOrEmpty(request.params[2]);
+        toAddress = ParseOmniAddressOrEmpty(request.params[2]);
     }
 
     // create a payload for the transaction

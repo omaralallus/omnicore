@@ -1,6 +1,11 @@
+
+#include <omnicore/omnicore.h>
+#include <omnicore/rules.h>
 #include <omnicore/script.h>
 
+#include <bech32.h>
 #include <consensus/amount.h>
+#include <key_io.h>
 #include <policy/feerate.h>
 #include <policy/policy.h>
 #include <script/script.h>
@@ -246,4 +251,97 @@ bool SafeSolver(const CScript& scriptPubKey, TxoutType& typeRet, std::vector<std
     vSolutionsRet.clear();
     typeRet = TxoutType::NONSTANDARD;
     return false;
+}
+
+using mastercore::ConsensusParams;
+
+CTxDestination DecodeOmniDestination(const std::string& address)
+{
+    const auto dec = bech32::Decode(address);
+    if ((dec.encoding == bech32::Encoding::BECH32 || dec.encoding == bech32::Encoding::BECH32M) && !dec.data.empty()) {
+        // Bech32 decoding
+        if (dec.hrp != ConsensusParams().GetBech32HRO()) {
+            return CNoDestination();
+        }
+        int version = dec.data[0]; // The first 5 bit symbol is the witness version (0-16)
+        if (version == 0 && dec.encoding != bech32::Encoding::BECH32) {
+            return CNoDestination();
+        }
+        if (version != 0 && dec.encoding != bech32::Encoding::BECH32M) {
+            return CNoDestination();
+        }
+        // The rest of the symbols are converted witness program bytes.
+        std::string data;
+        data.reserve(((dec.data.size() - 1) * 5) / 8);
+        if (ConvertBits<5, 8, false>([&](unsigned char c) { data.push_back(c); }, dec.data.begin() + 1, dec.data.end())) {
+            if (version == 0) {
+                {
+                    WitnessV0KeyHash keyid;
+                    if (data.size() == keyid.size()) {
+                        std::copy(data.begin(), data.end(), keyid.begin());
+                        return keyid;
+                    }
+                }
+                {
+                    WitnessV0ScriptHash scriptid;
+                    if (data.size() == scriptid.size()) {
+                        std::copy(data.begin(), data.end(), scriptid.begin());
+                        return scriptid;
+                    }
+                }
+                return CNoDestination();
+            }
+
+            if (version == 1 && data.size() == WITNESS_V1_TAPROOT_SIZE) {
+                static_assert(WITNESS_V1_TAPROOT_SIZE == WitnessV1Taproot::size());
+                WitnessV1Taproot tap;
+                std::copy(data.begin(), data.end(), tap.begin());
+                return tap;
+            }
+        }
+    }
+    return CNoDestination{};
+}
+
+std::string EncodeOmniDestination(const CTxDestination& dest)
+{
+    Span<const unsigned char> span;
+    std::vector<unsigned char> data{0};
+    auto encoding = bech32::Encoding::BECH32;
+    if (auto id = std::get_if<WitnessV0KeyHash>(&dest)) {
+        span = Span{id->begin(), id->end()};
+    } else
+    if (auto id = std::get_if<WitnessV0ScriptHash>(&dest)) {
+        span = Span{id->begin(), id->end()};
+    } else
+    if (auto id = std::get_if<WitnessV1Taproot>(&dest)) {
+        data[0] = 1;
+        span = Span{id->begin(), id->end()};
+        encoding = bech32::Encoding::BECH32M;
+    } else
+        return {};
+    ConvertBits<8, 5, true>([&](unsigned char c) { data.push_back(c); }, span.begin(), span.end());
+    return bech32::Encode(encoding, ConsensusParams().GetBech32HRO(), data);
+}
+
+std::string TryEncodeOmniAddress(const std::string& address)
+{
+    if (fOmniSafeAddresses) {
+        auto dest = DecodeDestination(address);
+        if (dest.index() > 2) {
+            return EncodeOmniDestination(dest);
+        }
+    }
+    return address;
+}
+
+std::string TryDecodeOmniAddress(const std::string& address)
+{
+    if (fOmniSafeAddresses) {
+        auto dest = DecodeOmniDestination(address);
+        if (IsValidDestination(dest)) {
+            return EncodeDestination(dest);
+        }
+    }
+    return address;
 }

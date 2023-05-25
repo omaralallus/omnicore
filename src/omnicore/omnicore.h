@@ -123,9 +123,11 @@ enum TransactionType {
 #define PKT_ERROR_NFT         (-85000)
 #define PKT_ERROR_SEND_MANY   (-86000)
 
-#define OMNI_PROPERTY_BTC   0
-#define OMNI_PROPERTY_MSC   1
-#define OMNI_PROPERTY_TMSC  2
+#define OMNI_PROPERTY_BTC       0
+#define OMNI_PROPERTY_MSC       1
+#define OMNI_PROPERTY_TMSC      2
+#define OMNI_PROPERTY_EMAID     3  // MaidSafeCoin
+#define OMNI_PROPERTY_USDT      31 // Tether USD
 
 /** Number formatting related functions. */
 std::string FormatDivisibleMP(int64_t amount, bool fSign = false);
@@ -158,7 +160,11 @@ extern std::map<uint32_t, int64_t> global_balance_reserved;
 //! Vector containing a list of properties relative to the wallet
 extern std::set<uint32_t> global_wallet_property_list;
 
+extern std::set<std::string> wallet_addresses;
+
 extern CFeeRate minRelayTxFee;
+
+extern bool fOmniSafeAddresses;
 
 extern std::optional<std::reference_wrapper<node::NodeContext>> g_context;
 

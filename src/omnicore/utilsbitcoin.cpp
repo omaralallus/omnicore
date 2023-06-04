@@ -4,6 +4,8 @@
  * This file contains certain helpers to access information about Bitcoin.
  */
 
+#include <omnicore/omnicore.h>
+
 #include <chain.h>
 #include <chainparams.h>
 #include <validation.h>
@@ -42,9 +44,9 @@ CBlockIndex* GetBlockIndex(const uint256& hash)
 {
     CBlockIndex* pBlockIndex = nullptr;
     LOCK(cs_main);
-    BlockMap::const_iterator it = ::BlockIndex().find(hash);
+    auto it = ::BlockIndex().find(hash);
     if (it != ::BlockIndex().end()) {
-        pBlockIndex = it->second;
+        pBlockIndex = &it->second;
     }
 
     return pBlockIndex;

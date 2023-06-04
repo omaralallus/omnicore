@@ -11,25 +11,26 @@ class OmniSendToOwnersV1(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any']]
+        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=legacy']]
 
     def run_test(self):
         self.log.info("test Send To Owners V1")
 
         # Preparing some mature Bitcoins
+        self.nodes[0].createwallet("w0")
         coinbase_address = self.nodes[0].getnewaddress()
-        self.nodes[0].generatetoaddress(101, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 101, coinbase_address)
 
         # Obtaining a master address to work with
         address = self.nodes[0].getnewaddress()
 
         # Funding the address with some testnet BTC for fees
         self.nodes[0].sendtoaddress(address, 20)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Participating in the Exodus crowdsale to obtain some OMNI
         txid = self.nodes[0].sendmany("", {"moneyqMan7uh8FqdCA2BV5yZ8qVrc9ikLP": 10, address: 4})
-        self.nodes[0].generatetoaddress(10, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 10, coinbase_address)
 
         # Checking the transaction was valid.
         result = self.nodes[0].gettransaction(txid)
@@ -37,11 +38,11 @@ class OmniSendToOwnersV1(BitcoinTestFramework):
 
         # Creating an indivisible test property
         self.nodes[0].omni_sendissuancefixed(address, 1, 1, 0, "Z_TestCat", "Z_TestSubCat", "Z_IndivisTestProperty", "Z_TestURL", "Z_TestData", "100")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Creating a divisible test property
         self.nodes[0].omni_sendissuancefixed(address, 1, 2, 0, "Z_TestCat", "Z_TestSubCat", "Z_DivisTestProperty", "Z_TestURL", "Z_TestData", "10000")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Generating addresses to use as STO recipients
         addresses = []
@@ -52,31 +53,31 @@ class OmniSendToOwnersV1(BitcoinTestFramework):
 
         # Seeding address 1 with 5% = 5 SP#3
         self.nodes[0].omni_send(address, addresses[1], 3, "5")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Seeding address 2 with 10% = 10 SP#3
         self.nodes[0].omni_send(address, addresses[2], 3, "10")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Seeding address 3 with 15% = 15 SP#3
         self.nodes[0].omni_send(address, addresses[3], 3, "15")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Seeding address 4 with 20% = 20 SP#3
         self.nodes[0].omni_send(address, addresses[4], 3, "20")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Seeding address 5 with 25% = 25 SP#3
         self.nodes[0].omni_send(address, addresses[5], 3, "25")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Seeding address 6 with 25% = 25 SP#3
         self.nodes[0].omni_send(address, addresses[6], 3, "25")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Testing a cross property (v1) STO, distributing 1000.00 SPT #4 to holders of SPT #3
         txid = self.nodes[0].omni_sendsto(address, 4, "1000", "", 3)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the STO transaction was invalid (feature not yet activated)...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -85,14 +86,14 @@ class OmniSendToOwnersV1(BitcoinTestFramework):
         # Activating cross property (v1) Send To Owners...
         activation_block = self.nodes[0].getblockcount() + 8
         txid = self.nodes[0].omni_sendactivation(address, 10, activation_block, 999)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
         assert_equal(result['valid'], True)
 
         # Mining 10 blocks to forward past the activation block
-        self.nodes[0].generatetoaddress(10, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 10, coinbase_address)
 
         # Checking the activation went live as expected...
         featureid = self.nodes[0].omni_getactivations()['completedactivations']
@@ -104,7 +105,7 @@ class OmniSendToOwnersV1(BitcoinTestFramework):
 
         # Testing a cross property (v1) STO, distributing 1000.00 SPT #4 to holders of SPT #3
         txid = self.nodes[0].omni_sendsto(address, 4, "1000", "", 3)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the STO transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)

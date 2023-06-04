@@ -7,7 +7,7 @@
 #include <omnicore/nftdb.h>
 #include <omnicore/utilsbitcoin.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <validation.h>
 #include <rpc/protocol.h>
 #include <rpc/request.h>

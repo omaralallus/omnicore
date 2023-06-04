@@ -5,10 +5,15 @@
 
 namespace mastercore
 {
-    
+
 uint64_t rounduint64(long double ld)
 {
     return static_cast<uint64_t>(roundl(fabsl(ld)));
+}
+
+int atoi(const std::string& str)
+{
+    return std::atoi(str.c_str());
 }
 
 } // namespace mastercore

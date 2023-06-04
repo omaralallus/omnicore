@@ -13,7 +13,7 @@
 
 #include <fs.h>
 #include <validation.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 
 #include <stdint.h>
 #include <string>
@@ -90,9 +90,10 @@ void CheckLiveActivations(int blockHeight)
             PrintToLog(msgText);
             PrintToConsole(msgText);
             if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-                fs::path persistPath = GetDataDir() / "MP_persist";
+                fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
                 if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-                AbortNode(msgText, msgText);
+                BlockValidationState state;
+                AbortNode(state, msgText);
             }
         }
         PendingActivationCompleted(liveActivation);

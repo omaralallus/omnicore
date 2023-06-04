@@ -14,20 +14,21 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any'],['-omniactivationallowsender=any']]
+        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=legacy'],['-omniactivationallowsender=any', '-addresstype=legacy']]
 
     def run_test(self):
         # Get address for mining, issuance, granting and sending tokens to.
+        self.nodes[0].createwallet("w0")
         token_address = self.nodes[0].getnewaddress()
         grant_address = self.nodes[0].getnewaddress()
         destination_address = self.nodes[0].getnewaddress()
 
         # Fund issuance address
-        self.nodes[0].generatetoaddress(110, token_address)
+        self.generatetoaddress(self.nodes[0], 110, token_address)
 
         # Create test token
         txid = self.nodes[0].omni_sendissuancemanaged(token_address, 2, 5, 0, "", "", "TESTTOKEN", "", "")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -44,7 +45,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Grant tokens to creator
         txid = self.nodes[0].omni_sendgrant(token_address, "", property_id, "100", "")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Send tokens out of range start
         try:
@@ -96,7 +97,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Grant 1 tokens with data
         txid = self.nodes[0].omni_sendgrant(token_address, "", property_id, "1", "Test grantdata")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -128,7 +129,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Grant 99 tokens with different data
         txid = self.nodes[0].omni_sendgrant(token_address, "", property_id, "99", "Different grantdata")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -170,7 +171,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Grant 100 tokens to different address
         txid = self.nodes[0].omni_sendgrant(token_address, grant_address, property_id, "100", "Multiple grantdata")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -212,7 +213,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # Test sending tokens to a new address
         self.nodes[0].sendtoaddress(destination_address, 1)
         self.nodes[0].sendtoaddress(grant_address, 1)
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Send token range without data
         self.nodes[0].omni_sendnonfungible(token_address, destination_address, property_id, 1, 10)
@@ -222,7 +223,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Send token range from different address with "Multiple grantdata"
         self.nodes[0].omni_sendnonfungible(grant_address, destination_address, property_id, 201, 210)
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Send tokens that has already been sent from source address
         try:
@@ -306,9 +307,10 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         assert_equal(result[0]['holderdata'], '')
 
         # Set data on a non-issuer/holder address
+        self.nodes[1].createwallet("w1")
         non_issuer_address = self.nodes[1].getnewaddress()
         self.nodes[0].sendtoaddress(non_issuer_address, 1)
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Fail to set data on token we did not issue
         try:
@@ -328,7 +330,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Send token to new address
         self.nodes[0].omni_sendnonfungible(token_address, non_issuer_address, property_id, 102, 111)
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_all()
 
         # Fail to set data on token we did not issue but do own
@@ -342,7 +344,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # Set holder data
         self.nodes[1].omni_setnonfungibledata(property_id, 102, 102, False, "Test holderdata")
         self.sync_mempools()
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
 
         # Before blank
@@ -368,7 +370,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # Set holder data range and overwrite just set entry
         tx = self.nodes[1].omni_setnonfungibledata(property_id, 102, 111, False, "New holderdata")
         self.sync_mempools()
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
 
         # Check range visible in omni_gettransaction
@@ -407,7 +409,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # Set holder data in the middle of the range
         self.nodes[1].omni_setnonfungibledata(property_id, 106, 106, False, "Even newer holderdata")
         self.sync_mempools()
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
 
         # Before blank
@@ -462,7 +464,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # Test issuer data
         self.nodes[0].omni_setnonfungibledata(property_id, 106, 106, True, "Test issuerdata")
         self.sync_mempools()
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
 
         # Before
@@ -488,7 +490,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Set issuer data across multiple ranges owned by different addresses
         self.nodes[0].omni_setnonfungibledata(property_id, 101, 112, True, "Different issuerdata")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
 
         # Before blank
@@ -528,11 +530,11 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Send tokens and chekd data is the same
         self.nodes[0].sendtoaddress(non_issuer_address, 1)
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
         self.nodes[1].omni_sendnonfungible(non_issuer_address, destination_address, property_id, 106, 111)
         self.sync_mempools()
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Before range start
         result = self.nodes[0].omni_getnonfungibletokendata(property_id, 105)
@@ -618,7 +620,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Test omni_getnonfungibletokendata with multiple tokens on an address
         txid = self.nodes[0].omni_sendissuancemanaged(token_address, 2, 5, 0, "", "", "TESTTOKEN2", "", "")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -627,7 +629,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
 
         # Grant tokens to creator
         txid = self.nodes[0].omni_sendgrant(token_address, "", second_property_id, "100", "")
-        self.nodes[0].generatetoaddress(1, token_address)
+        self.generatetoaddress(self.nodes[0], 1, token_address)
         self.sync_blocks()
 
         # Check multiple properties returned
@@ -674,7 +676,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         rawtx = self.nodes[1].omni_createrawtx_opreturn(rawtx, payload)
         signed_rawtx = self.nodes[1].signrawtransactionwithwallet(rawtx)
         txid = self.nodes[1].sendrawtransaction(signed_rawtx['hex'])
-        blockhash = self.nodes[1].generate(1)[0]
+        blockhash = self.generate(self.nodes[1], 1)[0]
 
         # Check transaction is valid
         result = self.nodes[1].omni_gettransaction(txid)
@@ -687,19 +689,19 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # Fund activation address
         activation_address = self.nodes[1].getnewaddress("", "legacy")
         self.nodes[1].sendtoaddress(activation_address, 1)
-        self.nodes[1].generate(1)
+        self.generate(self.nodes[1], 1)
 
         # Activate feature to prevent non-issuer updating issuer data
         activation_block = self.nodes[0].getblockcount() + 8
         txid = self.nodes[1].omni_sendactivation(activation_address, 18, activation_block, 0)
-        self.nodes[1].generate(1)
+        self.generate(self.nodes[1], 1)
 
         # Checking the transaction was valid...
         result = self.nodes[1].omni_gettransaction(txid)
         assert_equal(result['valid'], True)
 
         # Mining 10 blocks to forward past the activation block
-        self.nodes[1].generate(10)
+        self.generate(self.nodes[1], 10)
 
         # Test setting of issuer data by non-issuer now blocked
         for utxos in self.nodes[1].listunspent():
@@ -711,7 +713,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         rawtx = self.nodes[1].omni_createrawtx_opreturn(rawtx, payload)
         signed_rawtx = self.nodes[1].signrawtransactionwithwallet(rawtx)
         txid = self.nodes[1].sendrawtransaction(signed_rawtx['hex'])
-        self.nodes[1].generate(1)
+        self.generate(self.nodes[1], 1)
 
         # Check transaction is invalid
         result = self.nodes[1].omni_gettransaction(txid)
@@ -724,7 +726,7 @@ class OmniNonFungibleTokensTest(BitcoinTestFramework):
         # reorg
         self.nodes[0].invalidateblock(blockhash)
         self.nodes[0].clearmempool()
-        self.nodes[0].generate(15)
+        self.nodes[0].generate(15, invalid_call=False)
         self.sync_all()
 
         result = self.nodes[1].omni_getnonfungibletokendata(property_id, 102)

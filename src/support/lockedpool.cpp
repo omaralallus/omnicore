@@ -1,4 +1,4 @@
-// Copyright (c) 2016-2019 The Bitcoin Core developers
+// Copyright (c) 2016-2020 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -10,10 +10,6 @@
 #endif
 
 #ifdef WIN32
-#define WIN32_LEAN_AND_MEAN 1
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
 #include <windows.h>
 #else
 #include <sys/mman.h> // for mmap
@@ -23,13 +19,15 @@
 #endif
 
 #include <algorithm>
+#include <limits>
+#include <stdexcept>
+#include <utility>
 #ifdef ARENA_DEBUG
 #include <iomanip>
 #include <iostream>
 #endif
 
 LockedPoolManager* LockedPoolManager::_instance = nullptr;
-std::once_flag LockedPoolManager::init_flag;
 
 /*******************************************************************************/
 // Utilities
@@ -67,7 +65,7 @@ void* Arena::alloc(size_t size)
 
     // Pick a large enough free-chunk. Returns an iterator pointing to the first element that is not less than key.
     // This allocation strategy is best-fit. According to "Dynamic Storage Allocation: A Survey and Critical Review",
-    // Wilson et. al. 1995, http://www.scs.stanford.edu/14wi-cs140/sched/readings/wilson.pdf, best-fit and first-fit
+    // Wilson et. al. 1995, https://www.scs.stanford.edu/14wi-cs140/sched/readings/wilson.pdf, best-fit and first-fit
     // policies seem to work well in practice.
     auto size_ptr_it = size_to_free_chunk.lower_bound(size);
     if (size_ptr_it == size_to_free_chunk.end())
@@ -204,7 +202,10 @@ void Win32LockedPageAllocator::FreeLocked(void* addr, size_t len)
 
 size_t Win32LockedPageAllocator::GetLimit()
 {
-    // TODO is there a limit on Windows, how to get it?
+    size_t min, max;
+    if(GetProcessWorkingSetSize(GetCurrentProcess(), &min, &max) != 0) {
+        return min;
+    }
     return std::numeric_limits<size_t>::max();
 }
 #endif
@@ -237,12 +238,6 @@ PosixLockedPageAllocator::PosixLockedPageAllocator()
 #endif
 }
 
-// Some systems (at least OS X) do not define MAP_ANONYMOUS yet and define
-// MAP_ANON which is deprecated
-#ifndef MAP_ANONYMOUS
-#define MAP_ANONYMOUS MAP_ANON
-#endif
-
 void *PosixLockedPageAllocator::AllocateLocked(size_t len, bool *lockingSuccess)
 {
     void *addr;
@@ -253,8 +248,10 @@ void *PosixLockedPageAllocator::AllocateLocked(size_t len, bool *lockingSuccess)
     }
     if (addr) {
         *lockingSuccess = mlock(addr, len) == 0;
-#ifdef MADV_DONTDUMP
+#if defined(MADV_DONTDUMP) // Linux
         madvise(addr, len, MADV_DONTDUMP);
+#elif defined(MADV_NOCORE) // FreeBSD
+        madvise(addr, len, MADV_NOCORE);
 #endif
     }
     return addr;
@@ -288,9 +285,8 @@ LockedPool::LockedPool(std::unique_ptr<LockedPageAllocator> allocator_in, Lockin
 {
 }
 
-LockedPool::~LockedPool()
-{
-}
+LockedPool::~LockedPool() = default;
+
 void* LockedPool::alloc(size_t size)
 {
     std::lock_guard<std::mutex> lock(mutex);

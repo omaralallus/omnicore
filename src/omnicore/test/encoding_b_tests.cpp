@@ -85,15 +85,15 @@ BOOST_AUTO_TEST_CASE(class_b_maidsafe)
     const CScript& scriptPubKeyB = vTxOuts[1].first;
     const CScript& scriptPubKeyC = vTxOuts[2].first;
 
-    txnouttype outtypeA;
+    TxoutType outtypeA;
     BOOST_CHECK(GetOutputType(scriptPubKeyA, outtypeA));
-    BOOST_CHECK_EQUAL(outtypeA, TX_MULTISIG);
-    txnouttype outtypeB;
+    BOOST_CHECK_EQUAL(outtypeA, TxoutType::MULTISIG);
+    TxoutType outtypeB;
     BOOST_CHECK(GetOutputType(scriptPubKeyB, outtypeB));
-    BOOST_CHECK_EQUAL(outtypeB, TX_MULTISIG);
-    txnouttype outtypeC;
+    BOOST_CHECK_EQUAL(outtypeB, TxoutType::MULTISIG);
+    TxoutType outtypeC;
     BOOST_CHECK(GetOutputType(scriptPubKeyC, outtypeC));
-    BOOST_CHECK_EQUAL(outtypeC, TX_PUBKEYHASH);
+    BOOST_CHECK_EQUAL(outtypeC, TxoutType::PUBKEYHASH);
 
     std::vector<std::string> vstrSolutions;
     BOOST_CHECK(GetScriptPushes(scriptPubKeyA, vstrSolutions));
@@ -145,18 +145,18 @@ BOOST_AUTO_TEST_CASE(class_b_tetherus)
     const CScript& scriptPubKeyC = vTxOuts[2].first;
     const CScript& scriptPubKeyD = vTxOuts[3].first;
 
-    txnouttype outtypeA;
+    TxoutType outtypeA;
     BOOST_CHECK(GetOutputType(scriptPubKeyA, outtypeA));
-    BOOST_CHECK_EQUAL(outtypeA, TX_MULTISIG);
-    txnouttype outtypeB;
+    BOOST_CHECK_EQUAL(outtypeA, TxoutType::MULTISIG);
+    TxoutType outtypeB;
     BOOST_CHECK(GetOutputType(scriptPubKeyB, outtypeB));
-    BOOST_CHECK_EQUAL(outtypeB, TX_MULTISIG);
-    txnouttype outtypeC;
+    BOOST_CHECK_EQUAL(outtypeB, TxoutType::MULTISIG);
+    TxoutType outtypeC;
     BOOST_CHECK(GetOutputType(scriptPubKeyC, outtypeC));
-    BOOST_CHECK_EQUAL(outtypeC, TX_MULTISIG);
-    txnouttype outtypeD;
+    BOOST_CHECK_EQUAL(outtypeC, TxoutType::MULTISIG);
+    TxoutType outtypeD;
     BOOST_CHECK(GetOutputType(scriptPubKeyD, outtypeD));
-    BOOST_CHECK_EQUAL(outtypeD, TX_PUBKEYHASH);
+    BOOST_CHECK_EQUAL(outtypeD, TxoutType::PUBKEYHASH);
 
     std::vector<std::string> vstrSolutions;
     BOOST_CHECK(GetScriptPushes(scriptPubKeyA, vstrSolutions));

@@ -2,6 +2,7 @@
 #define BITCOIN_OMNICORE_CONVERT_H
 
 #include <stdint.h>
+#include <string>
 
 namespace mastercore
 {
@@ -13,6 +14,7 @@ namespace mastercore
  * up and down otherwise.
  */
 uint64_t rounduint64(long double);
+int atoi(const std::string& str);
 }
 
 

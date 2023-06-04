@@ -117,9 +117,10 @@ void COmniFeeCache::AddFee(const uint32_t &propertyId, int block, const int64_t 
         const std::string& msg = strprintf("Shutting down due to fee cache overflow (block %d property %d current %d amount %d)\n", block, propertyId, currentCachedAmount, amount);
         PrintToLog(msg);
         if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-            fs::path persistPath = GetDataDir() / "MP_persist";
+            fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
             if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-            AbortNode(msg, msg);
+            BlockValidationState state;
+            AbortNode(state, msg);
         }
     }
     int64_t newCachedAmount = currentCachedAmount + amount;

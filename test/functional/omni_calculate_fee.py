@@ -11,7 +11,7 @@ class OmniFeeCalculation(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [[], ["-omnidebug=all", "-paytxfee=0.00003"]] # 3,000 Sats per KB
+        self.extra_args = [["-addresstype=p2sh-segwit"], ["-omnidebug=all", "-paytxfee=0.00003", "-addresstype=p2sh-segwit"]] # 3,000 Sats per KB
 
     def run_test(self):
         self.log.info("test fee calculation")
@@ -20,20 +20,22 @@ class OmniFeeCalculation(BitcoinTestFramework):
         node1 = self.nodes[1]
 
         # Preparing some mature Bitcoins
+        node0.createwallet(wallet_name="w0", descriptors=False)
         coinbase_address = node0.getnewaddress()
-        node0.generatetoaddress(130, coinbase_address)
+        self.generatetoaddress(node0, 130, coinbase_address)
 
         # Obtaining a master address to work with
+        node1.createwallet(wallet_name="w1", descriptors=False)
         address = node1.getnewaddress()
 
         # Create and fund new address
         omni_address = node0.getnewaddress()
         node0.sendtoaddress(omni_address, 20)
-        node0.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node0, 1, coinbase_address)
 
         # Participating in the Exodus crowdsale to obtain some OMNI
         txid = node0.sendmany("", {"moneyqMan7uh8FqdCA2BV5yZ8qVrc9ikLP": 10, omni_address: 4})
-        node0.generatetoaddress(10, coinbase_address)
+        self.generatetoaddress(node0, 10, coinbase_address)
 
         self.sync_blocks()
 
@@ -41,11 +43,11 @@ class OmniFeeCalculation(BitcoinTestFramework):
         for _ in range(3):
             for _ in range(50):
                 node0.sendtoaddress(address, 0.00002000)
-            node0.generatetoaddress(10, coinbase_address)
+            self.generatetoaddress(node0, 10, coinbase_address)
 
         # Test small transaction with single input
         txid = node1.omni_sendissuancefixed(address, 1, 2, 0, "", "", "TST", "", "", "1000")
-        node1.generatetoaddress(2, coinbase_address)
+        self.generatetoaddress(node1, 2, coinbase_address)
 
         # Checking the transaction was valid...
         result = node1.omni_gettransaction(txid)
@@ -59,7 +61,7 @@ class OmniFeeCalculation(BitcoinTestFramework):
 
         # Create large transaction, will fail if fee requirement not met
         txid = node1.omni_sendissuancecrowdsale(address, 1, 2, 0, large_data, large_data, large_data, large_data, large_data, 1, "1", 32533598549, 0, 0)
-        node1.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node1, 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = node1.omni_gettransaction(txid)
@@ -69,11 +71,11 @@ class OmniFeeCalculation(BitcoinTestFramework):
 
         # Test DEx calls
         node0.sendtoaddress(omni_address, 1)
-        node0.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node0, 1, coinbase_address)
 
         # Create Offer
         txid = node0.omni_senddexsell(omni_address, 1, "1", "1", 10, "0.0001", 1)
-        node0.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node0, 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = node0.omni_gettransaction(txid)
@@ -83,7 +85,7 @@ class OmniFeeCalculation(BitcoinTestFramework):
 
         # Accept the DEx offer
         txid = node1.omni_senddexaccept(address, omni_address, 1, "1")
-        node1.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node1, 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = node1.omni_gettransaction(txid)
@@ -93,13 +95,13 @@ class OmniFeeCalculation(BitcoinTestFramework):
 
         # Give buyer bitcoin to pay with, only fee left to pay
         node0.sendtoaddress(address, 1)
-        node0.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node0, 1, coinbase_address)
 
         self.sync_blocks()
 
         # Pay for the DEx offer, tests min fee arg to WalletTxBuilder
         txid = node1.omni_senddexpay(address, omni_address, 1, "1")
-        node1.generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(node1, 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = node1.omni_gettransaction(txid)

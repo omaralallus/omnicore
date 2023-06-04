@@ -14,9 +14,10 @@
 #include <sync.h>
 #include <uint256.h>
 #include <util/strencodings.h>
-#include <wallet/rpcwallet.h>
+#include <wallet/rpc/util.h>
 #ifdef ENABLE_WALLET
 #include <wallet/wallet.h>
+using namespace wallet;
 #endif
 
 #include <univalue.h>
@@ -29,13 +30,16 @@ extern RecursiveMutex cs_main;
 
 using mastercore::cs_tx_cache;
 using mastercore::view;
+using mastercore::viewDummy;
 
+#ifdef ENABLE_WALLET
+extern std::pair<std::shared_ptr<CWallet>, std::unique_ptr<interfaces::Wallet>> GetWalletFromContextForJSONRPCRequest(const JSONRPCRequest& request);
+#endif
 
 static UniValue omni_decodetransaction(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif
@@ -47,7 +51,7 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
        "\nA block height can be provided, which is used to determine the parsing rules.\n",
        {
            {"rawtx", RPCArg::Type::STR, RPCArg::Optional::NO, "the raw transaction to decode\n"},
-           {"prevtxs", RPCArg::Type::ARR, /* default */ "none", "a JSON array of transaction inputs\n",
+           {"prevtxs", RPCArg::Type::ARR, RPCArg::DefaultHint{"none"}, "a JSON array of transaction inputs\n",
                 {
                     {"", RPCArg::Type::OBJ, RPCArg::Optional::OMITTED, "",
                         {
@@ -57,9 +61,9 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
                             {"value:n.nnnnnnnn", RPCArg::Type::NUM, RPCArg::Optional::NO, "the output value\n"},
                         }
                     }
-                }
+                },
            },
-           {"height", RPCArg::Type::NUM, /* default */ "0 for chain height", "the parsing block height\n"},
+           {"height", RPCArg::Type::NUM, RPCArg::DefaultHint{"0 for chain height"}, "the parsing block height\n"},
        },
        RPCResult{
            RPCResult::Type::ARR, "", "",
@@ -97,22 +101,16 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
         blockHeight = request.params[2].get_int();
     }
 
-#ifdef ENABLE_WALLET
-    if (wallet) {
-        wallet->BlockUntilSyncedToCurrentChain();
-    }
-#endif
-
     UniValue txObj(UniValue::VOBJ);
     int populateResult = -3331;
     {
         LOCK2(cs_main, cs_tx_cache);
         // temporarily switch global coins view cache for transaction inputs
-        std::swap(view, viewTemp);
+        view.SetBackend(viewTemp);
         // then get the results
         populateResult = populateRPCTransactionObject(tx, uint256(), txObj, "", false, "", blockHeight, pWallet.get());
         // and restore the original, unpolluted coins view cache
-        std::swap(viewTemp, view);
+        view.SetBackend(viewDummy);
     }
 
     if (populateResult != 0) PopulateFailure(populateResult);
@@ -153,8 +151,7 @@ static UniValue omni_createrawtx_opreturn(const JSONRPCRequest& request)
 static UniValue omni_createrawtx_multisig(const JSONRPCRequest& request)
 {
 #ifdef ENABLE_WALLET
-    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
-    std::unique_ptr<interfaces::Wallet> pWallet = interfaces::MakeWallet(wallet);
+    auto [wallet, pWallet] = GetWalletFromContextForJSONRPCRequest(request);
 #else
     std::unique_ptr<interfaces::Wallet> pWallet;
 #endif
@@ -283,7 +280,7 @@ static UniValue omni_createrawtx_change(const JSONRPCRequest& request)
            },
            {"destination", RPCArg::Type::STR, RPCArg::Optional::NO, "the destination for the change\n"},
            {"fee", RPCArg::Type::NUM, RPCArg::Optional::NO, "the desired transaction fees\n"},
-           {"position", RPCArg::Type::NUM, /* default */ "first position", "the position of the change output\n"},
+           {"position", RPCArg::Type::NUM, RPCArg::DefaultHint{"first position"}, "the position of the change output\n"},
        },
        RPCResult{
            RPCResult::Type::STR_HEX, "rawtx", "the hex-encoded modified raw transaction"

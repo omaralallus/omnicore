@@ -62,6 +62,7 @@ OMNICORE_CPP = \
   omnicore/mdex.cpp \
   omnicore/nftdb.cpp \
   omnicore/notifications.cpp \
+  omnicore/misc.cpp \
   omnicore/omnicore.cpp \
   omnicore/parse_string.cpp \
   omnicore/parsing.cpp \
@@ -92,11 +93,11 @@ if ENABLE_WALLET
 OMNICORE_CPP += omnicore/rpctx.cpp
 endif
 
-libbitcoin_server_a_SOURCES += \
+libbitcoin_node_a_SOURCES += \
   $(OMNICORE_CPP) \
   $(OMNICORE_H)
 
-omnicore/libbitcoin_server_a-version.$(OBJEXT): obj/build.h # build info
+omnicore/libbitcoin_node_a-version.$(OBJEXT): obj/build.h # build info
 
 CLEAN_OMNICORE = omnicore/*.gcda omnicore/*.gcno
 

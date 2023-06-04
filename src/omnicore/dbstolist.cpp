@@ -1,5 +1,6 @@
-#include <omnicore/dbstolist.h>
 
+#include <omnicore/convert.h>
+#include <omnicore/dbstolist.h>
 #include <omnicore/log.h>
 #include <omnicore/sp.h>
 #include <omnicore/walletutils.h>
@@ -25,6 +26,7 @@
 #include <string>
 #include <vector>
 
+using mastercore::atoi;
 using mastercore::IsMyAddress;
 using mastercore::isPropertyDivisible;
 
@@ -52,9 +54,6 @@ void CMPSTOList::getRecipients(const uint256 txid, std::string filterAddress, Un
         filterByWallet = false;
         filterByAddress = true;
     }
-
-    // iterate through SDB, dropping all records where key is not filterAddress (if filtering)
-    int count = 0;
 
     // the fee is variable based on version of STO - provide number of recipients and allow calling function to work out fee
     *numRecipients = 0;
@@ -104,7 +103,6 @@ void CMPSTOList::getRecipients(const uint256 txid, std::string filterAddress, Un
                         }
                         *total += amount;
                         recipientArray->push_back(recipient);
-                        ++count;
                     }
                 }
             }
@@ -118,7 +116,7 @@ void CMPSTOList::getRecipients(const uint256 txid, std::string filterAddress, Un
 std::string CMPSTOList::getMySTOReceipts(std::string filterAddress, interfaces::Wallet &iWallet)
 {
     if (!pdb) return "";
-    std::string mySTOReceipts = "";
+    std::string mySTOReceipts;
     leveldb::Slice skey, svalue;
     leveldb::Iterator* it = NewIterator();
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -239,7 +237,7 @@ void CMPSTOList::recordSTOReceive(std::string address, const uint256 &txid, int 
             size_t txidMatch = strValue.find(txid.ToString());
             if (txidMatch != std::string::npos) PrintToLog("STODEBUG : Duplicating entry for %s : %s\n", address, txid.ToString());
 
-            const std::string key = address;
+            const std::string& key = address;
             const std::string newValue = strprintf("%s:%d:%u:%lu,", txid.ToString(), nBlock, propertyId, amount);
             strValue += newValue;
             // write updated record
@@ -250,7 +248,7 @@ void CMPSTOList::recordSTOReceive(std::string address, const uint256 &txid, int 
             }
         }
     } else {
-        const std::string key = address;
+        const std::string& key = address;
         const std::string value = strprintf("%s:%d:%u:%lu,", txid.ToString(), nBlock, propertyId, amount);
         leveldb::Status status;
         if (pdb) {

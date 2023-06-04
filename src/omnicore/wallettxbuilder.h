@@ -6,14 +6,16 @@
 #endif
 
 class uint256;
-class CWallet;
+
+namespace node {
 struct NodeContext;
+}
 
 namespace interfaces {
 class Wallet;
 } // namespace interfaces
 
-#include <amount.h>
+#include <consensus/amount.h>
 
 #include <stdint.h>
 #include <string>
@@ -70,7 +72,7 @@ int CreateFundedTransaction(const std::string& senderAddress,
         const std::vector<unsigned char>& payload,
         uint256& retTxid,
         interfaces::Wallet* iWallet,
-        NodeContext &node);
+        node::NodeContext &node);
 
 int CreateDExTransaction(interfaces::Wallet* pwallet, const std::string& buyerAddress, const std::string& sellerAddress, const CAmount& nAmount, uint256& txid);
 #endif

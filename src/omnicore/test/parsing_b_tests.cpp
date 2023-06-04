@@ -18,13 +18,14 @@
 #include <stdint.h>
 #include <algorithm>
 #include <limits>
+#include <random>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
 
 using namespace mastercore;
 
-BOOST_FIXTURE_TEST_SUITE(omnicore_parsing_b_tests, BasicTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(omnicore_parsing_b_tests, TestingSetup)
 
 /** Creates a dummy transaction with the given inputs and outputs. */
 static CTransaction TxClassB(const std::vector<CTxOut>& txInputs, const std::vector<CTxOut>& txOuts)
@@ -118,7 +119,9 @@ BOOST_AUTO_TEST_CASE(valid_arbitrary_output_number_class_b)
         txOutputs.push_back(PayToPubKeyHash_Exodus());
     }
 
-    std::random_shuffle(txOutputs.begin(), txOutputs.end());
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(txOutputs.begin(), txOutputs.end(), g);
 
     CTransaction dummyTx = TxClassB(txInputs, txOutputs);
     BOOST_CHECK_EQUAL(dummyTx.vout.size(), nOutputs);

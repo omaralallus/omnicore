@@ -7,6 +7,7 @@
 
 #include <omnicore/walletfetchtxs.h>
 
+#include <omnicore/convert.h>
 #include <omnicore/dbstolist.h>
 #include <omnicore/dbtxlist.h>
 #include <omnicore/log.h>
@@ -21,6 +22,7 @@
 #include <tinyformat.h>
 #include <index/txindex.h>
 #ifdef ENABLE_WALLET
+#include <omnicore/walletutils.h>
 #include <wallet/wallet.h>
 #endif
 
@@ -64,9 +66,9 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
     }
     std::set<uint256> seenHashes;
     std::multimap<int64_t, const interfaces::WalletTx*> txOrdered;
-    const std::vector<interfaces::WalletTx>& transactions = iWallet.getWalletTxs();
+    const auto& transactions = iWallet.getWalletTxs();
     for (const auto& transaction : transactions)
-        txOrdered.insert(std::make_pair(transaction.order_pos, &transaction));
+        txOrdered.insert(std::make_pair(transaction.order_position, &transaction));
 
     // Iterate backwards through wallet transactions until we have count items to return:
     for (std::multimap<int64_t, const interfaces::WalletTx*>::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
@@ -76,7 +78,7 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
             LOCK(cs_tally);
             if (!pDbTransactionList->exists(txHash)) continue;
         }
-        const uint256& blockHash = pwtx->hash_block;
+        const uint256& blockHash = pwtx->block_hash;
         if (blockHash.IsNull()) continue;
         const CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
         if (pBlockIndex == nullptr) continue;
@@ -126,7 +128,7 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
         {
             for (const auto& transaction : transactions)
                 if (transaction.tx->GetHash() == txHash)
-                    blockPosition = transaction.order_pos;
+                    blockPosition = transaction.order_position;
         }
         std::string sortKey = strprintf("%06d%010d", blockHeight, blockPosition);
         mapResponse.insert(std::make_pair(sortKey, txHash));

@@ -9,7 +9,7 @@
 
 #include <qt/clientmodel.h>
 #include <key_io.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 #include <qt/walletmodel.h>
 
 #include <omnicore/createpayload.h>

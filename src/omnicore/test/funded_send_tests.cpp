@@ -3,6 +3,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include <omnicore/createpayload.h>
+#include <omnicore/omnicore.h>
 #include <omnicore/script.h>
 #include <omnicore/wallettxbuilder.h>
 
@@ -13,6 +14,7 @@
 #include <script/standard.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/spend.h>
 #include <wallet/wallet.h>
 
 #include <vector>
@@ -23,22 +25,22 @@ public:
     FundedSendTestingSetup()
     {
         CreateAndProcessBlock({}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
-        wallet = std::make_shared<CWallet>(m_chain.get(), WalletLocation(), WalletDatabase::CreateMock());
+        m_wallet_loader = interfaces::MakeWalletLoader(*m_node.chain, *Assert(m_node.args));
+        wallet = std::make_shared<wallet::CWallet>(m_node.chain.get(), "", m_args, wallet::CreateMockWalletDatabase());
         {
             LOCK(wallet->cs_wallet);
             wallet->SetLastBlockProcessed(::ChainActive().Height(), ::ChainActive().Tip()->GetBlockHash());
         }
-        bool firstRun;
-        wallet->LoadWallet(firstRun);
+        wallet->LoadWallet();
         auto spk_man = wallet->GetOrCreateLegacyScriptPubKeyMan();
         {
             LOCK2(wallet->cs_wallet, spk_man->cs_KeyStore);
             spk_man->AddKeyPubKey(coinbaseKey, coinbaseKey.GetPubKey());
         }
-        WalletRescanReserver reserver(wallet.get());
+        wallet::WalletRescanReserver reserver(*wallet);
         reserver.reserve();
-        wallet->ScanForWalletTransactions(::ChainActive().Genesis()->GetBlockHash(), {}, reserver, false);
-        interface_wallet = interfaces::MakeWallet(wallet);
+        wallet->ScanForWalletTransactions(::ChainActive().Genesis()->GetBlockHash(), 0, {}, reserver, false, false);
+        interface_wallet = interfaces::MakeWallet(*m_wallet_loader->context(), wallet);
         wallet->m_fallback_fee = CFeeRate(1000);
     }
 
@@ -47,17 +49,13 @@ public:
         wallet.reset();
     }
 
-    void AddTx(std::vector<CRecipient>& recipients)
+    void AddTx(std::vector<wallet::CRecipient>& recipients)
     {
-        CTransactionRef tx;
-        CAmount fee;
         int changePos = -1;
-        std::string error;
-        CCoinControl dummy;
-        {
-            auto locked_chain = m_chain->lock();
-            BOOST_CHECK(wallet->CreateTransaction(*locked_chain, recipients, tx, fee, changePos, error, dummy));
-        }
+        wallet::CCoinControl dummy;
+        auto result = wallet::CreateTransaction(*wallet, recipients, changePos, dummy);
+        BOOST_CHECK(result.has_value());
+        auto tx = result->tx;
         wallet->CommitTransaction(tx, {}, {});
         CMutableTransaction blocktx;
         {
@@ -66,14 +64,13 @@ public:
         }
         CreateAndProcessBlock({CMutableTransaction(blocktx)}, GetScriptForRawPubKey(coinbaseKey.GetPubKey()));
 
-        std::map<uint256, CWalletTx>::iterator it;
+        std::unordered_map<uint256, wallet::CWalletTx, SaltedTxidHasher>::iterator it;
         {
             LOCK(wallet->cs_wallet);
             it = wallet->mapWallet.find(tx->GetHash());
         }
 
-        CWalletTx::Confirmation confirm(CWalletTx::Status::CONFIRMED, ::ChainActive().Height(), ::ChainActive().Tip()->GetBlockHash(), 1);
-        it->second.m_confirm = confirm;
+        it->second.m_state = wallet::TxStateConfirmed{::ChainActive().Tip()->GetBlockHash(), ::ChainActive().Height(), 1};
         {
             LOCK(wallet->cs_wallet);
             wallet->SetLastBlockProcessed(::ChainActive().Height(), ::ChainActive().Tip()->GetBlockHash());
@@ -82,14 +79,13 @@ public:
 
     // For dust set entry in amounts to -1
     std::vector<CTxDestination> CreateDestinations(std::vector<CAmount> amounts) {
-        std::vector<CRecipient> recipients;
+        std::vector<wallet::CRecipient> recipients;
         std::vector<CTxDestination> destinations;
         for (auto amount : amounts) {
             CTxDestination dest;
             {
                 LOCK(wallet->cs_wallet);
-                std::string error;
-                wallet->GetNewDestination(OutputType::LEGACY, "", dest, error);
+                dest = wallet->GetNewDestination(OutputType::LEGACY, "").value();
             }
             destinations.push_back(dest);
             if (amount > 0) {
@@ -105,8 +101,8 @@ public:
         return destinations;
     }
 
-    std::unique_ptr<interfaces::Chain> m_chain = interfaces::MakeChain(m_node);
-    std::shared_ptr<CWallet> wallet;
+    std::unique_ptr<interfaces::WalletLoader> m_wallet_loader;
+    std::shared_ptr<wallet::CWallet> wallet;
     std::unique_ptr<interfaces::Wallet> interface_wallet;
 };
 

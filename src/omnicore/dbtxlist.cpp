@@ -1,6 +1,7 @@
-#include <omnicore/dbtxlist.h>
 
 #include <omnicore/activation.h>
+#include <omnicore/convert.h>
+#include <omnicore/dbtxlist.h>
 #include <omnicore/dbtransaction.h>
 #include <omnicore/dex.h>
 #include <omnicore/log.h>
@@ -34,6 +35,7 @@
 #include <utility>
 #include <vector>
 
+using mastercore::atoi;
 using mastercore::AddAlert;
 using mastercore::CheckAlertAuthorization;
 using mastercore::CheckExpiredAlerts;
@@ -269,7 +271,7 @@ bool CMPTxList::getPurchaseDetails(const uint256 txid, int purchaseNumber, std::
             *vout = atoi(vstr[0]);
             *buyer = vstr[1];
             *seller = vstr[2];
-            *propertyId = atoi64(vstr[3]);
+            *propertyId = boost::lexical_cast<uint64_t>(vstr[3]);
             *nValue = boost::lexical_cast<boost::uint64_t>(vstr[4]);
             return true;
         }
@@ -488,7 +490,7 @@ bool CMPTxList::getValidMPTX(const uint256& txid, int* block, unsigned int* type
 
     if (nAmended) {
         if (4 <= vstr.size()) *nAmended = boost::lexical_cast<boost::uint64_t>(vstr[3]);
-        else nAmended = 0;
+        else *nAmended = 0;
     }
 
     if (msc_debug_txdb) printStats();

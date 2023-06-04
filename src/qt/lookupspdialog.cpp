@@ -328,7 +328,7 @@ void LookupSPDialog::updateDisplayedProperty()
         // populate crowdinfo
         ui->desiredLabel->setText(QString::fromStdString(desiredText));
         ui->tokensPerUnitLabel->setText(QString::fromStdString(tokensPerUnitText));
-        ui->deadlineLabel->setText(qDeadline.toString(Qt::SystemLocaleShortDate));
+        ui->deadlineLabel->setText(QLocale{}.toString(qDeadline, QLocale::ShortFormat));
         ui->bonusLabel->setText(QString::fromStdString(FormatIndivisibleMP((int64_t)earlyBonus) + "%"));
         ui->issuerPercLabel->setText(QString::fromStdString(FormatIndivisibleMP((int64_t)percentToIssuer) + "%"));
         // show crowdinfo

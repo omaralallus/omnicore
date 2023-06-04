@@ -14,7 +14,7 @@
 #include <vector>
 
 // Default log files
-const std::string LOG_FILENAME    = "omnicore.log";
+const char* LOG_FILENAME    = "omnicore.log";
 
 // Options
 static const long LOG_BUFFERSIZE  =  8000000; //  8 MB
@@ -97,10 +97,10 @@ static fs::path GetLogPath()
     std::string strLogPath = gArgs.GetArg("-omnilogfile", "");
 
     if (!strLogPath.empty()) {
-        pathLogFile = fs::path(strLogPath);
+        pathLogFile = fs::path(strLogPath.c_str());
         TryCreateDirectories(pathLogFile.parent_path());
     } else {
-        pathLogFile = GetDataDir() / LOG_FILENAME;
+        pathLogFile = gArgs.GetDataDirNet() / LOG_FILENAME;
     }
 
     return pathLogFile;
@@ -199,6 +199,11 @@ int ConsolePrint(const std::string& str)
 {
     int ret = 0; // Number of characters written
     static bool fStartedNewLine = true;
+
+    static const bool print = gArgs.GetBoolArg("-printtoconsole", true);
+    if (!print) {
+        return 0;
+    }
 
     if (LogInstance().m_log_timestamps && fStartedNewLine) {
         ret = fprintf(stdout, "%s %s", GetTimestamp().c_str(), str.c_str());

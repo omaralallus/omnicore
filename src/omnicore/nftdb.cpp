@@ -25,10 +25,10 @@ typedef std::underlying_type<NonFungibleStorage>::type StorageType;
 
 struct NFTKey {
     static constexpr uint8_t prefix = 'A';
-    uint32_t propertyId;
-    NonFungibleStorage type;
-    int64_t tokenIdStart;
-    int64_t tokenIdEnd;
+    uint32_t propertyId = 0;
+    NonFungibleStorage type = NonFungibleStorage::None;
+    int64_t tokenIdStart = 0;
+    int64_t tokenIdEnd = 0;
 
     template<typename Stream>
     void Serialize(Stream& s) const
@@ -53,8 +53,6 @@ struct NFTKey {
         return strprintf("%010d_%u_%020d-%020d", propertyId, static_cast<StorageType>(type), tokenIdStart, tokenIdEnd);
     }
 };
-
-constexpr uint8_t NFTKey::prefix;
 
 inline bool Equal(const NFTKey& key, uint32_t propertyId, NonFungibleStorage type)
 {
@@ -245,8 +243,6 @@ struct DBHeightKey {
     }
 };
 
-constexpr uint8_t DBHeightKey::prefix;
-
 struct DBRollbackValue {
     std::unordered_map<std::string, CRollbackData>& changes;
 
@@ -307,7 +303,7 @@ void CMPNonFungibleTokensDB::RollBackAboveBlock(int height)
 void CMPNonFungibleTokensDB::StoreBlockCache(const std::string& key)
 {
     if (blockData.find(key) == blockData.end()) {
-        CRollbackData rollback{CRollbackData::PERSIST_KEY};
+        CRollbackData rollback{CRollbackData::PERSIST_KEY, {}};
         leveldb::Status status = pdb->Get(readoptions, key, &rollback.data);
         if (status.IsNotFound()) {
             rollback.type = CRollbackData::DELETE_KEY;
@@ -465,7 +461,8 @@ void CMPNonFungibleTokensDB::SanityCheck()
     for (std::map<uint32_t,int64_t>::iterator it = totals.begin(); it != totals.end(); ++it) {
         auto total = mastercore::getTotalTokens(it->first);
         if (total != it->second) {
-            AbortNode(strprintf("Failed sanity check on property %d (%d != %d)\n", it->first, total, it->second));
+            BlockValidationState state;
+            AbortNode(state, strprintf("Failed sanity check on property %d (%d != %d)\n", it->first, total, it->second));
         } else if (msc_debug_nftdb) {
             result += strprintf("%d:%d=%d,", it->first, total, it->second);
         }

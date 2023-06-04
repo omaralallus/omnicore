@@ -23,7 +23,7 @@
 #include <omnicore/wallettxbuilder.h>
 #include <omnicore/walletutils.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <base58.h>
 #include <key_io.h>
 #include <validation.h>

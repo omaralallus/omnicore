@@ -8,7 +8,7 @@
 #include <omnicore/script.h>
 #include <omnicore/walletutils.h>
 
-#include <amount.h>
+#include <consensus/amount.h>
 #include <base58.h>
 #include <coins.h>
 #include <consensus/validation.h>
@@ -28,7 +28,9 @@
 #include <uint256.h>
 #ifdef ENABLE_WALLET
 #include <wallet/coincontrol.h>
+#include <wallet/coinselection.h>
 #include <wallet/wallet.h>
+using namespace wallet;
 #endif
 
 #include <stdint.h>
@@ -38,6 +40,10 @@
 
 using mastercore::AddressToPubKey;
 using mastercore::UseEncodingClassC;
+
+#ifdef ENABLE_WALLET
+constexpr OutputType defaultOutputType = OutputType::P2SH_SEGWIT;
+#endif
 
 /** Creates and sends a transaction with multiple receivers. */
 int WalletTxBuilder(
@@ -61,6 +67,9 @@ int WalletTxBuilder(
 
     // Prepare the transaction - first setup some vars
     CCoinControl coinControl;
+    coinControl.m_mininum_fee = minFee;
+    coinControl.m_subtract_fee_from_change = true;
+    coinControl.m_change_type = defaultOutputType;
     std::vector<std::pair<CScript, int64_t> > vecSend;
 
     // Next, we set the change address to the sender
@@ -103,18 +112,13 @@ int WalletTxBuilder(
         vecRecipients.push_back(recipient);
     }
 
-    CAmount nFeeRequired{std::max(minFee, iWallet->getMinimumFee(1000, coinControl, nullptr, nullptr))};
-    CTransactionRef wtxNew;
     std::string strFailReason;
+    CTransactionRef wtxNew;
     CAmount nFeeRet{0};
-    bool createTX{true};
 
-    if (outputAmount + nFeeRequired == 0) {
-        outputAmount = 1;
-    }
+    auto nFeeRequired = std::max(minFee, iWallet->getMinimumFee(1000, coinControl, nullptr, nullptr));
 
-    while (createTX) {
-        // Select the inputs
+    while (true) {
         auto selected = mastercore::SelectCoins(*iWallet, senderAddress, coinControl, outputAmount + nFeeRequired);
 
         // Did not select anything at all!
@@ -123,23 +127,25 @@ int WalletTxBuilder(
         }
 
         // Could not select to enough to cover outputs and fee
-        if (selected < outputAmount) {
+        if (selected < outputAmount + nFeeRequired) {
             return MP_INPUTS_INVALID;
         }
 
         // Ask the wallet to create the transaction (note mining fee determined by Bitcoin Core params)
         int nChangePosInOut = vecRecipients.size();
-        wtxNew = iWallet->createTransaction(vecRecipients, coinControl, true /* sign */, nChangePosInOut, nFeeRet, strFailReason, false, minFee);
+        auto result = iWallet->createTransaction(vecRecipients, coinControl, true /* sign */, nChangePosInOut, nFeeRet, false, &nFeeRequired);
 
-        // TX creation was a success or fee no longer incremeneintg
-        if (wtxNew || nFeeRet <= nFeeRequired) {
-            createTX = false;
-        } else {
-            // Set new fee required
-            nFeeRequired = nFeeRet;
-
-            PrintToLog("Increasing fee. nFeeRequired: %d selected: %d outputAmount: %d\n", nFeeRequired, selected, outputAmount);
+        if (result.has_value()) {
+            wtxNew = result.value();
+            break;
         }
+
+        if (nFeeRet == nFeeRequired) {
+            strFailReason = ErrorString(result).original;
+            break;
+        }
+        nFeeRet = nFeeRequired;
+        PrintToLog("%s: Increase fee to: %d\n", __func__, nFeeRequired);
     }
 
     if (!wtxNew) {
@@ -258,11 +264,11 @@ static void LockUnrelatedCoins(
 
     // lock any other output
     std::vector<COutput> vCoins;
-    iWallet->availableCoins(vCoins, false, nullptr, 0);
+    iWallet->availableCoins(vCoins, nullptr, 0);
 
     for (COutput& output : vCoins) {
         CTxDestination address;
-        const CScript& scriptPubKey = output.tx->tx->vout[output.i].scriptPubKey;
+        const CScript& scriptPubKey = output.txout.scriptPubKey;
         bool fValidAddress = ExtractDestination(scriptPubKey, address);
 
         // don't lock specified coins, but any other
@@ -270,9 +276,9 @@ static void LockUnrelatedCoins(
             continue;
         }
 
-        COutPoint outpointLocked(output.tx->GetHash(), output.i);
-        iWallet->lockCoin(outpointLocked);
-        retLockedCoins.push_back(outpointLocked);
+        bool write_to_db = false;
+        iWallet->lockCoin(output.outpoint, write_to_db);
+        retLockedCoins.push_back(output.outpoint);
     }
 }
 
@@ -299,7 +305,7 @@ int CreateFundedTransaction(
         const std::vector<unsigned char>& payload,
         uint256& retTxid,
         interfaces::Wallet* iWallet,
-        NodeContext& node)
+        node::NodeContext& node)
 {
     if (!iWallet) {
         return MP_ERR_WALLET_ACCESS;
@@ -308,7 +314,7 @@ int CreateFundedTransaction(
     if (!UseEncodingClassC(payload.size())) {
         return MP_ENCODING_ERROR;
     }
-    
+
     // add payload output
     std::vector<std::pair<CScript, int64_t> > vecSend;
     if (!OmniCore_Encode_ClassC(payload, vecSend)) {
@@ -334,14 +340,14 @@ int CreateFundedTransaction(
     }
 
     bool fSuccess = false;
-    CAmount nFeeRequired = 0;
     std::string strFailReason;
     int nChangePosRet = 0; // add change first
 
     // set change
     CCoinControl coinControl;
     coinControl.destChange = DecodeDestination(feeAddress);
-    coinControl.fAllowOtherInputs = true;
+    coinControl.m_change_type = defaultOutputType;
+    coinControl.m_allow_other_inputs = true;
 
     if (!mastercore::SelectAllCoins(*iWallet, senderAddress, coinControl)) {
         PrintToLog("%s: ERROR: sender %s has no coins\n", __func__, senderAddress);
@@ -355,10 +361,15 @@ int CreateFundedTransaction(
     std::vector<COutPoint> vLockedCoins;
     LockUnrelatedCoins(iWallet, feeSources, vLockedCoins);
 
-    auto wtxNew = iWallet->createTransaction(vecRecipients, coinControl, false /* sign */, nChangePosRet, nFeeRequired, strFailReason, true);
+    CAmount nFeeRet;
+    CTransactionRef wtxNew;
+    auto result = iWallet->createTransaction(vecRecipients, coinControl, false /* sign */, nChangePosRet, nFeeRet, true /* omni */);
 
-    if (wtxNew) {
+    if (result.has_value()) {
         fSuccess = true;
+        wtxNew = result.value();
+    } else {
+        strFailReason = ErrorString(result).original;
     }
 
     if (fSuccess && nChangePosRet == -1 && receiverAddress == feeAddress) {
@@ -406,7 +417,8 @@ int CreateFundedTransaction(
     // lock selected outputs for this transaction // TODO: could be removed?
     if (fSuccess) {
         for(const CTxIn& txIn : tx.vin) {
-            iWallet->lockCoin(txIn.prevout);
+            bool write_to_db = false;
+            iWallet->lockCoin(txIn.prevout, write_to_db);
         }
     }
 
@@ -421,9 +433,11 @@ int CreateFundedTransaction(
     CCoinsView viewDummy;
     CCoinsViewCache view(&viewDummy);
     {
-        LOCK2(cs_main, mempool.cs);
+        auto mempool = ::ChainstateActive().GetMempool();
+        assert(mempool);
+        LOCK2(cs_main, mempool->cs);
         CCoinsViewCache &viewChain = ::ChainstateActive().CoinsTip();
-        CCoinsViewMemPool viewMempool(&viewChain, mempool);
+        CCoinsViewMemPool viewMempool(&viewChain, *mempool);
         view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
 
         for(const CTxIn& txin : tx.vin) {
@@ -447,7 +461,7 @@ int CreateFundedTransaction(
         const CAmount& amount = coin.out.nValue;
 
         SignatureData sigdata;
-        if (!iWallet->produceSignature(MutableTransactionSignatureCreator(&tx, i, amount, nHashType), prevPubKey, sigdata)) {
+        if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, amount, nHashType), prevPubKey, sigdata)) {
             PrintToLog("%s: ERROR: wallet transaction signing failed\n", __func__);
             return MP_ERR_CREATE_TX;
         }
@@ -457,20 +471,20 @@ int CreateFundedTransaction(
 
     // send the transaction
 
-    TxValidationState state;
     CTransactionRef ctx(MakeTransactionRef(std::move(tx)));
 
     {
         LOCK(cs_main);
-        if (!AcceptToMemoryPool(mempool, state, ctx, nullptr, false, DEFAULT_TRANSACTION_MAXFEE)) {
-            PrintToLog("%s: ERROR: failed to broadcast transaction: %s\n", __func__, state.GetRejectReason());
+        auto result = AcceptToMemoryPool(ChainstateActive(), ctx, GetTime(), false, false);
+        if (result.m_result_type != MempoolAcceptResult::ResultType::VALID) {
+            PrintToLog("%s: ERROR: failed to broadcast transaction: %s\n", __func__, result.m_state.GetRejectReason());
             return MP_ERR_COMMIT_TX;
         }
     }
 
     std::string err_string;
 
-    const TransactionError err = BroadcastTransaction(node, ctx, err_string, iWallet->getDefaultMaxTxFee(), true, false);
+    const TransactionError err = node::BroadcastTransaction(node, ctx, err_string, iWallet->getDefaultMaxTxFee(), true, false);
     if (TransactionError::OK != err) {
         LogPrintf("%s: BroadcastTransaction failed error: %s\n", __func__, err_string);
     }
@@ -492,6 +506,8 @@ int CreateDExTransaction(interfaces::Wallet* pwallet, const std::string& buyerAd
 
     // Set the change address to the sender
     CCoinControl coinControl;
+    coinControl.m_change_type = defaultOutputType;
+    coinControl.m_subtract_fee_from_change = true;
     coinControl.destChange = DecodeDestination(buyerAddress);
 
     // Create scripts for outputs
@@ -506,15 +522,14 @@ int CreateDExTransaction(interfaces::Wallet* pwallet, const std::string& buyerAd
     vecRecipients.push_back({exodus, dust, false}); // Exodus
     vecRecipients.push_back({destScript, nAmount, false}); // Seller
 
-    CAmount nFeeRequired{pwallet->getMinimumFee(1000, coinControl, nullptr, nullptr)};
-    CTransactionRef wtxNew;
     std::string strFailReason;
+    CTransactionRef wtxNew;
     CAmount nFeeRet{0};
     CAmount outputAmount{nAmount + dust};
-    bool createTX{true};
 
-    while (createTX) {
-        // Select the inputs
+    auto nFeeRequired = pwallet->getMinimumFee(1000, coinControl, nullptr, nullptr);
+
+    while (true) {
         auto selected = mastercore::SelectCoins(*pwallet, buyerAddress, coinControl, outputAmount + nFeeRequired);
 
         // Did not select anything at all!
@@ -523,25 +538,29 @@ int CreateDExTransaction(interfaces::Wallet* pwallet, const std::string& buyerAd
         }
 
         // Could not select to enough to cover outputs and fee
-        if (selected < outputAmount) {
+        if (selected < outputAmount + nFeeRequired) {
             return MP_INPUTS_INVALID;
         }
 
+        // Ask the wallet to create the transaction (note mining fee determined by Bitcoin Core params)
         int nChangePosInOut = -1;
-        wtxNew = pwallet->createTransaction(vecRecipients, coinControl, true /* sign */, nChangePosInOut, nFeeRet, strFailReason, false);
+        auto result = pwallet->createTransaction(vecRecipients, coinControl, true /* sign */, nChangePosInOut, nFeeRet, false, &nFeeRequired);
 
-        // TX creation was a success or fee no longer incremeneintg
-        if (wtxNew || nFeeRet <= nFeeRequired) {
-            createTX = false;
-        } else {
-            // Set new fee required
-            nFeeRequired = nFeeRet;
-
-            PrintToLog("Increasing fee. nFeeRequired: %d selected: %d outputAmount: %d\n", nFeeRequired, selected, outputAmount);
+        if (result.has_value()) {
+            wtxNew = result.value();
+            break;
         }
+
+        if (nFeeRet == nFeeRequired) {
+            strFailReason = ErrorString(result).original;
+            break;
+        }
+        nFeeRet = nFeeRequired;
+        PrintToLog("%s: Increase fee to: %d\n", __func__, nFeeRequired);
     }
 
     if (!wtxNew) {
+        PrintToLog("%s: ERROR: wallet transaction creation failed: %s\n", __func__, strFailReason);
         return MP_ERR_CREATE_TX;
     }
 

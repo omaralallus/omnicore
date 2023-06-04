@@ -11,7 +11,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any']]
+        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=p2sh-segwit']]
 
     def run_test(self):
         self.log.info("test dex spec using free dex")
@@ -24,28 +24,31 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         actionCancel = 3
 
         # Preparing some mature Bitcoins
+        self.nodes[0].createwallet(wallet_name="w0", descriptors=False)
         coinbase_address = self.nodes[0].getnewaddress()
-        self.nodes[0].generatetoaddress(110, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 110, coinbase_address)
 
         # Obtaining a master address to work with
         address = self.nodes[0].getnewaddress()
 
         # Funding the address with some testnet BTC for fees
-        self.nodes[0].sendtoaddress(address, 10)
-        self.nodes[0].sendtoaddress(address, 10)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.nodes[0].sendtoaddress(address, 5)
+        self.nodes[0].sendtoaddress(address, 5)
+        self.nodes[0].sendtoaddress(address, 5)
+        self.nodes[0].sendtoaddress(address, 5)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Activating Free DEx...
         activation_block = self.nodes[0].getblockcount() + 8
         txid = self.nodes[0].omni_sendactivation(address, 15, activation_block, 0)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
         assert_equal(result['valid'], True)
 
         # Mining 10 blocks to forward past the activation block
-        self.nodes[0].generatetoaddress(10, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 10, coinbase_address)
 
         # Checking the activation went live as expected...
         featureid = self.nodes[0].omni_getactivations()['completedactivations']
@@ -57,7 +60,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # Create a fixed property
         txid = self.nodes[0].omni_sendissuancefixed(address, 1, 2, 0, "Test Category", "Test Subcategory", "TST", "http://www.omnilayer.org", "This is a test for managed properties", "100000")
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -77,7 +80,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         fundedAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(fundedAddress, startBTC)
         txid = self.nodes[0].omni_send(address, fundedAddress, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -85,7 +88,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # creating an offer with action = 1
         txid = self.nodes[0].omni_senddexsell(fundedAddress, currencyOffered, amountOffered, desiredBTC, stdBlockSpan, stdCommitFee, actionNew)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -117,7 +120,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         fundedAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(fundedAddress, startBTC)
         txid = self.nodes[0].omni_send(address, fundedAddress, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -131,7 +134,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         # the amount offered for sale exceeds the sending address's available balance
         payload = self.nodes[0].omni_createpayload_dexsell(currencyOffered, str(amountOffered), desiredBTC, stdBlockSpan, stdCommitFee, actionNew)
         offerTxid = self.nodes[0].omni_sendrawtx(fundedAddress, payload)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         offerTx = self.nodes[0].omni_gettransaction(offerTxid)
@@ -158,7 +161,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         fundedAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(fundedAddress, startBTC)
         txid = self.nodes[0].omni_send(address, fundedAddress, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -169,7 +172,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # an amount is offered for sale
         txid = self.nodes[0].omni_senddexsell(fundedAddress, currencyOffered, amountOffered, desiredBTC, stdBlockSpan, stdCommitFee, actionNew)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -197,7 +200,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         fundedAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(fundedAddress, startBTC)
         txid = self.nodes[0].omni_send(address, fundedAddress, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -206,7 +209,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         # the sell offer is published
         payload = self.nodes[0].omni_createpayload_dexsell(currencyOffered, offerMSC, desiredBTC, stdBlockSpan, stdCommitFee, actionNew)
         offerTxid = self.nodes[0].omni_sendrawtx(fundedAddress, payload)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         offerBeforeReceivingMore = self.nodes[0].omni_gettransaction(offerTxid)
@@ -219,7 +222,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         otherAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(otherAddress, startBTC)
         txid = self.nodes[0].omni_send(address, otherAddress, currencyOffered, startOtherMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -227,7 +230,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # additional tokens are received
         sendTxid = self.nodes[0].omni_send(otherAddress, fundedAddress, currencyOffered, additionalMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         sendTx = self.nodes[0].omni_gettransaction(sendTxid)
@@ -258,7 +261,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         fundedAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(fundedAddress, startBTC)
         txid = self.nodes[0].omni_send(address, fundedAddress, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -266,7 +269,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # there is already an active offer accepting BTC
         txid = self.nodes[0].omni_senddexsell(fundedAddress, currencyOffered, firstOfferMSC, firstOfferBTC, stdBlockSpan, stdCommitFee, actionNew)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -275,7 +278,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         # and another offer accepting BTC is made
         payload = self.nodes[0].omni_createpayload_dexsell(currencyOffered, secondOfferMSC, secondOfferBTC, stdBlockSpan, stdCommitFee, actionNew)
         txid = self.nodes[0].omni_sendrawtx(fundedAddress, payload)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -295,7 +298,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         fundedAddress = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(fundedAddress, startBTC)
         txid = self.nodes[0].omni_send(address, fundedAddress, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -309,7 +312,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # creating an offer with action 1
         txid = self.nodes[0].omni_senddexsell(fundedAddress, currencyOffered, offeredMSC, desiredBTC, stdBlockSpan, stdCommitFee, actionNew)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -323,7 +326,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         # updating an offer with action = 2
         payload = self.nodes[0].omni_createpayload_dexsell(currencyOffered, updatedMSC, updatedBTC, stdBlockSpan, stdCommitFee, actionUpdate)
         txid = self.nodes[0].omni_sendrawtx(fundedAddress, payload)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -336,7 +339,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # cancelling an offer with action = 3
         txid = self.nodes[0].omni_senddexsell(fundedAddress, currencyOffered, "0", "0", 0, "0", actionCancel)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -359,7 +362,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         actorA = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(actorA, startBTC)
         txid = self.nodes[0].omni_send(address, actorA, currencyOffered, startMSC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -367,7 +370,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         # A offers MSC
         txid = self.nodes[0].omni_senddexsell(actorA, currencyOffered, offeredMSC, desiredBTC, stdBlockSpan, stdCommitFee, actionNew)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)
@@ -375,11 +378,11 @@ class OmniFreeDExSpec(BitcoinTestFramework):
 
         actorB = self.nodes[0].getnewaddress()
         self.nodes[0].sendtoaddress(actorB, startBTC)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # B accepts the offer
         txid = self.nodes[0].omni_senddexaccept(actorB, actorA, currencyOffered, offeredMSC, False)
-        self.nodes[0].generatetoaddress(1, coinbase_address)
+        self.generatetoaddress(self.nodes[0], 1, coinbase_address)
 
         # Checking the transaction was valid...
         result = self.nodes[0].omni_gettransaction(txid)

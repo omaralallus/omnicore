@@ -54,7 +54,7 @@ public:
     void setWalletModel(WalletModel *model);
     void setClientModel(ClientModel *model);
     GUIUtil::TableViewLastColumnResizingFixer *borrowedColumnResizingFixer;
-    virtual void resizeEvent(QResizeEvent* event);
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     Ui::tradeHistoryDialog *ui;

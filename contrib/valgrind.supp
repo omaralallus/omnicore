@@ -1,7 +1,5 @@
-# Valgrind suppressions file for Bitcoin.
-#
-# Includes known Valgrind warnings in our dependencies that cannot be fixed
-# in-tree.
+# This valgrind suppressions file includes known Valgrind warnings in our
+# dependencies that cannot be fixed in-tree.
 #
 # Example use:
 # $ valgrind --suppressions=contrib/valgrind.supp src/test/test_bitcoin
@@ -14,6 +12,9 @@
 #       --error-limit=no src/test/test_bitcoin
 #
 # Note that suppressions may depend on OS and/or library versions.
+# Tested on:
+# * aarch64 (Ubuntu 22.04 system libs, clang, without gui)
+# * x86_64  (Ubuntu 22.04 system libs, clang, without gui)
 {
    Suppress libstdc++ warning - https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65434
    Memcheck:Leak
@@ -47,8 +48,7 @@
    Suppress libdb warning
    Memcheck:Param
    pwrite64(buf)
-   fun:pwrite
-   fun:__os_io
+   ...
    obj:*/libdb_cxx-*.so
 }
 {
@@ -65,12 +65,6 @@
    obj:*/libdb_cxx-*.so
 }
 {
-   Suppress leaks on init
-   Memcheck:Leak
-   ...
-   fun:_Z11AppInitMainR11NodeContext
-}
-{
    Suppress leaks on shutdown
    Memcheck:Leak
    ...
@@ -83,19 +77,42 @@
    obj:/usr/lib64/libgdk-3.so.0.2404.7
 }
 {
-   Suppress leveldb warning (leveldb::InitModule()) - https://github.com/google/leveldb/issues/113
-   Memcheck:Leak
-   match-leak-kinds: reachable
-   fun:_Znwm
-   fun:_ZN7leveldbL10InitModuleEv
-}
-{
-   Suppress leveldb warning (leveldb::Env::Default()) - https://github.com/google/leveldb/issues/113
+   Suppress leveldb leak
    Memcheck:Leak
    match-leak-kinds: reachable
    fun:_Znwm
    ...
-   fun:_ZN7leveldbL14InitDefaultEnvEv
+   fun:_ZN7leveldb6DBImpl14BackgroundCallEv
+}
+{
+   Suppress leveldb leak
+   Memcheck:Leak
+   fun:_Znwm
+   ...
+   fun:GetCoin
+}
+{
+   Suppress LogInstance still reachable memory warning
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:_Znwm
+   fun:_Z11LogInstancev
+}
+{
+   Suppress secp256k1_context_create still reachable memory warning
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:secp256k1_context_create
+}
+{
+   Suppress BCLog::Logger::StartLogging() still reachable memory warning
+   Memcheck:Leak
+   match-leak-kinds: reachable
+   fun:malloc
+   ...
+   fun:_ZN5BCLog6Logger12StartLoggingEv
 }
 {
    Suppress leveldb leak

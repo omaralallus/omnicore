@@ -17,13 +17,14 @@
 #include <stdint.h>
 #include <algorithm>
 #include <limits>
+#include <random>
 #include <vector>
 
 #include <boost/test/unit_test.hpp>
 
 using namespace mastercore;
 
-BOOST_FIXTURE_TEST_SUITE(omnicore_sender_bycontribution_tests, BasicTestingSetup)
+BOOST_FIXTURE_TEST_SUITE(omnicore_sender_bycontribution_tests, TestingSetup)
 
 // Forward declarations
 static CTransaction TxClassB(const std::vector<CTxOut>& txInputs);
@@ -86,8 +87,11 @@ BOOST_AUTO_TEST_CASE(p2pkh_contribution_by_sum_test)
 
     std::string strExpected("16X6UDz6dMkVAAkWdY6HKe85o6EVAbzDtn");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 10; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -112,8 +116,11 @@ BOOST_AUTO_TEST_CASE(p2pkh_contribution_by_total_sum_test)
 
     std::string strExpected("1CE8bBr1dYZRMnpmyYsFEoexa1YoPz2mfB");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 10; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -135,16 +142,19 @@ BOOST_AUTO_TEST_CASE(p2pkh_contribution_by_sum_order_test)
     vouts.push_back(createTxOut(1000, "168F7az8ACWxntNqL1FathoKTbgK17GVft"));
     vouts.push_back(createTxOut(1000, "16X6UDz6dMkVAAkWdY6HKe85o6EVAbzDtn"));
     vouts.push_back(createTxOut(1000, "1BYk8d1fWy1JLcNqHyNTEg2Jxu9EDb1BmY"));
-    vouts.push_back(createTxOut(1000, "1CE8bBr1dYZRMnpmyYsFEoexa1YoPz2mfB"));    
+    vouts.push_back(createTxOut(1000, "1CE8bBr1dYZRMnpmyYsFEoexa1YoPz2mfB"));
     vouts.push_back(createTxOut(1000, "1HG3s4Ext3sTqBTHrgftyUzG3cvx5ZbPCj"));
-    vouts.push_back(createTxOut(1000, "1K6JtSvrHtyFmxdtGZyZEF7ydytTGqasNc"));    
+    vouts.push_back(createTxOut(1000, "1K6JtSvrHtyFmxdtGZyZEF7ydytTGqasNc"));
     vouts.push_back(createTxOut(1000, "1Pa6zyqnhL6LDJtrkCMi9XmEDNHJ23ffEr"));
     vouts.push_back(createTxOut(1000, "1Pr75FNvtoWHeocNfc4zTQCfK5kMVakWcn"));
 
     std::string strExpected("1471EHpnJ62MDxLw96dKcNT8sWPEbHrAUe");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 10; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -170,8 +180,11 @@ BOOST_AUTO_TEST_CASE(p2sh_contribution_by_sum_test)
 
     std::string strExpected("3KYen723gbjhJU69j8jRhZU6fDw8iVVWKy");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 10; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -180,8 +193,8 @@ BOOST_AUTO_TEST_CASE(p2sh_contribution_by_sum_test)
 }
 
 /**
- * Tests sender selection "by sum" with pay-to-pubkey-hash and pay-to-script-hash 
- * outputs mixed, where a candidate with the highest output value by sum, with more 
+ * Tests sender selection "by sum" with pay-to-pubkey-hash and pay-to-script-hash
+ * outputs mixed, where a candidate with the highest output value by sum, with more
  * than one output, is chosen.
  */
 BOOST_AUTO_TEST_CASE(p2sh_contribution_by_total_sum_test)
@@ -198,8 +211,11 @@ BOOST_AUTO_TEST_CASE(p2sh_contribution_by_total_sum_test)
 
     std::string strExpected("3CD1QW6fjgTwKq3Pj97nty28WZAVkziNom");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 10; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -221,16 +237,19 @@ BOOST_AUTO_TEST_CASE(p2sh_contribution_by_sum_order_test)
     vouts.push_back(createTxOut(1000, "34To5z7h35gQ54212gFRJSkwJUxGREr3SZ"));
     vouts.push_back(createTxOut(1000, "3CD1QW6fjgTwKq3Pj97nty28WZAVkziNom"));
     vouts.push_back(createTxOut(1000, "3GLZeQfjqFpULBzS12TjraZziNewnCE7bd"));
-    vouts.push_back(createTxOut(1000, "3HsMqdiWqaziUe9VExna46NbWBAFaioMrK"));    
+    vouts.push_back(createTxOut(1000, "3HsMqdiWqaziUe9VExna46NbWBAFaioMrK"));
     vouts.push_back(createTxOut(1000, "3KYen723gbjhJU69j8jRhZU6fDw8iVVWKy"));
-    vouts.push_back(createTxOut(1000, "3KuUrmqdM7BWfHTsyyLyYnJ57HgnKurvkK"));    
+    vouts.push_back(createTxOut(1000, "3KuUrmqdM7BWfHTsyyLyYnJ57HgnKurvkK"));
     vouts.push_back(createTxOut(1000, "3NukJ6fYZJ5Kk8bPjycAnruZkE5Q7UW7i8"));
-    vouts.push_back(createTxOut(1000, "3PeDornjuSraASTqyN7WDMexTogz29QnXu"));    
-    
+    vouts.push_back(createTxOut(1000, "3PeDornjuSraASTqyN7WDMexTogz29QnXu"));
+
     std::string strExpected("32LUY4obZmFGFVtJTs4o1qk4dxo1bYq9s8");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 10; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -239,10 +258,10 @@ BOOST_AUTO_TEST_CASE(p2sh_contribution_by_sum_order_test)
 }
 
 /**
- * Tests sender selection "by sum", where the lexicographical order of the base58 
+ * Tests sender selection "by sum", where the lexicographical order of the base58
  * representation as string (instead of uint160) determines the chosen candidate.
  *
- * In practise this implies selecting the sender "by sum" via a comparison of 
+ * In practise this implies selecting the sender "by sum" via a comparison of
  * CTxDestination objects would yield faulty results.
  *
  * Note: it reflects the behavior of Omni Core, but this edge case is not specified.
@@ -261,8 +280,11 @@ BOOST_AUTO_TEST_CASE(sender_selection_string_based_test)
 
     std::string strExpected("18d49BjkbBCoK659fuktKjB3HugxK9NbpW");
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (int i = 0; i < 24; ++i) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));
@@ -306,7 +328,7 @@ BOOST_AUTO_TEST_CASE(sender_selection_increasing_amount_test)
 
 /**
  * Tests order independence of the sender selection "by sum" for pay-to-pubkey-hash
- * and pay-to-script-hash outputs mixed together, where output values are equal for 
+ * and pay-to-script-hash outputs mixed together, where output values are equal for
  * every second output.
  */
 BOOST_AUTO_TEST_CASE(sender_selection_mixed_test)
@@ -315,7 +337,7 @@ BOOST_AUTO_TEST_CASE(sender_selection_mixed_test)
         std::vector<CTxOut> vouts;
         for (unsigned n = 0; n < nOutputs; ++n) {
             CScript scriptPubKey;
-            if (GetRandInt(2) == 0) {
+            if (GetRand(2) == 0) {
                 scriptPubKey = GetScriptForDestination(createRandomKeyId());
             } else {
                 scriptPubKey = GetScriptForDestination(createRandomScriptId());
@@ -387,7 +409,7 @@ static PKHash createRandomKeyId()
     std::vector<unsigned char> vch;
     vch.reserve(20);
     for (int i = 0; i < 20; ++i) {
-        vch.push_back(static_cast<unsigned char>(GetRandInt(256)));
+        vch.push_back(static_cast<unsigned char>(GetRand(256)));
     }
     return PKHash(uint160(vch));
 }
@@ -398,7 +420,7 @@ static ScriptHash createRandomScriptId()
     std::vector<unsigned char> vch;
     vch.reserve(20);
     for (int i = 0; i < 20; ++i) {
-        vch.push_back(static_cast<unsigned char>(GetRandInt(256)));
+        vch.push_back(static_cast<unsigned char>(GetRand(256)));
     }
     return ScriptHash(uint160(vch));
 }
@@ -414,8 +436,11 @@ void shuffleAndCheck(std::vector<CTxOut>& vouts, unsigned nRounds)
     std::string strSenderFirst;
     BOOST_CHECK(GetSenderByContribution(vouts, strSenderFirst));
 
+    std::random_device rd;
+    std::mt19937 g(rd());
+
     for (unsigned j = 0; j < nRounds; ++j) {
-        std::random_shuffle(vouts.begin(), vouts.end(), GetRandInt);
+        std::shuffle(vouts.begin(), vouts.end(), g);
 
         std::string strSender;
         BOOST_CHECK(GetSenderByContribution(vouts, strSender));

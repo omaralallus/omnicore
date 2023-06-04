@@ -46,7 +46,7 @@ private:
     QMenu *contextMenuSummary;
 
     GUIUtil::TableViewLastColumnResizingFixer *borrowedColumnResizingFixer;
-    virtual void resizeEvent(QResizeEvent *event);
+    void resizeEvent(QResizeEvent *event) override;
 
 public Q_SLOTS:
     void propSelectorChanged();

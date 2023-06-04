@@ -26,7 +26,7 @@ CMPSPInfo::Entry::Entry()
   : prop_type(0), prev_prop_id(0), num_tokens(0), property_desired(0),
     deadline(0), early_bird(0), percentage(0),
     close_early(false), max_tokens(false), missedTokens(0), timeclosed(0),
-    fixed(false), manual(false), unique(false), delegate("") {}
+    fixed(false), manual(false), unique(false) {}
 
 bool CMPSPInfo::Entry::isDivisible() const
 {
@@ -99,7 +99,7 @@ void CMPSPInfo::Entry::addDelegate(int block, int idx, const std::string& newIss
 {
     historicalDelegates[std::make_pair(block, idx)] = newIssuer;
 }
-   
+
 /**
  * Clears the delegate in the DB.
  *
@@ -212,7 +212,7 @@ bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
 
     // DB key for property entry
     CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair('s', propertyId);
+    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
     leveldb::Slice slSpKey(&ssSpKey[0], ssSpKey.size());
 
     // DB value for property entry
@@ -223,7 +223,7 @@ bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
 
     // DB key for historical property entry
     CDataStream ssSpPrevKey(SER_DISK, CLIENT_VERSION);
-    ssSpPrevKey << 'b';
+    ssSpPrevKey << uint8_t('b');
     ssSpPrevKey << info.update_block;
     ssSpPrevKey << propertyId;
     leveldb::Slice slSpPrevKey(&ssSpPrevKey[0], ssSpPrevKey.size());
@@ -275,7 +275,7 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
 
     // DB key for property entry
     CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair('s', propertyId);
+    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
     leveldb::Slice slSpKey(&ssSpKey[0], ssSpKey.size());
 
     // DB value for property entry
@@ -286,7 +286,7 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
 
     // DB key for identifier lookup entry
     CDataStream ssTxIndexKey(SER_DISK, CLIENT_VERSION);
-    ssTxIndexKey << std::make_pair('t', info.txid);
+    ssTxIndexKey << std::make_pair(uint8_t('t'), info.txid);
     leveldb::Slice slTxIndexKey(&ssTxIndexKey[0], ssTxIndexKey.size());
 
     // DB value for identifier
@@ -346,7 +346,7 @@ bool CMPSPInfo::getSP(uint32_t propertyId, Entry& info) const
 
     // DB key for property entry
     CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair('s', propertyId);
+    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
     leveldb::Slice slSpKey(&ssSpKey[0], ssSpKey.size());
 
     // DB value for property entry
@@ -407,7 +407,7 @@ bool CMPSPInfo::hasSP(uint32_t propertyId) const
 
     // DB key for property entry
     CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair('s', propertyId);
+    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
     leveldb::Slice slSpKey(&ssSpKey[0], ssSpKey.size());
 
     // DB value for property entry
@@ -423,7 +423,7 @@ uint32_t CMPSPInfo::findSPByTX(const uint256& txid) const
 
     // DB key for identifier lookup entry
     CDataStream ssTxIndexKey(SER_DISK, CLIENT_VERSION);
-    ssTxIndexKey << std::make_pair('t', txid);
+    ssTxIndexKey << std::make_pair(uint8_t('t'), txid);
     leveldb::Slice slTxIndexKey(&ssTxIndexKey[0], ssTxIndexKey.size());
 
     // DB value for identifier
@@ -452,7 +452,7 @@ int64_t CMPSPInfo::popBlock(const uint256& block_hash)
     leveldb::Iterator* iter = NewIterator();
 
     CDataStream ssSpKeyPrefix(SER_DISK, CLIENT_VERSION);
-    ssSpKeyPrefix << 's';
+    ssSpKeyPrefix << uint8_t('s');
     leveldb::Slice slSpKeyPrefix(&ssSpKeyPrefix[0], ssSpKeyPrefix.size());
 
     for (iter->Seek(slSpKeyPrefix); iter->Valid() && iter->key().starts_with(slSpKeyPrefix); iter->Next()) {
@@ -474,7 +474,7 @@ int64_t CMPSPInfo::popBlock(const uint256& block_hash)
             if (info.update_block == info.creation_block) {
                 // this is the block that created this SP, so delete the SP and the tx index entry
                 CDataStream ssTxIndexKey(SER_DISK, CLIENT_VERSION);
-                ssTxIndexKey << std::make_pair('t', info.txid);
+                ssTxIndexKey << std::make_pair(uint8_t('t'), info.txid);
                 leveldb::Slice slTxIndexKey(&ssTxIndexKey[0], ssTxIndexKey.size());
                 commitBatch.Delete(slSpKey);
                 commitBatch.Delete(slTxIndexKey);
@@ -489,7 +489,7 @@ int64_t CMPSPInfo::popBlock(const uint256& block_hash)
                 }
 
                 CDataStream ssSpPrevKey(SER_DISK, CLIENT_VERSION);
-                ssSpPrevKey << 'b';
+                ssSpPrevKey << uint8_t('b');
                 ssSpPrevKey << info.update_block;
                 ssSpPrevKey << propertyId;
                 leveldb::Slice slSpPrevKey(&ssSpPrevKey[0], ssSpPrevKey.size());
@@ -529,7 +529,7 @@ void CMPSPInfo::setWatermark(const uint256& watermark)
     leveldb::WriteBatch batch;
 
     CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-    ssKey << 'B';
+    ssKey << uint8_t('B');
     leveldb::Slice slKey(&ssKey[0], ssKey.size());
 
     CDataStream ssValue(SER_DISK, CLIENT_VERSION);
@@ -549,7 +549,7 @@ void CMPSPInfo::setWatermark(const uint256& watermark)
 bool CMPSPInfo::getWatermark(uint256& watermark) const
 {
     CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-    ssKey << 'B';
+    ssKey << uint8_t('B');
     leveldb::Slice slKey(&ssKey[0], ssKey.size());
 
     std::string strValue;
@@ -588,7 +588,7 @@ void CMPSPInfo::printAll() const
     leveldb::Iterator* iter = NewIterator();
 
     CDataStream ssSpKeyPrefix(SER_DISK, CLIENT_VERSION);
-    ssSpKeyPrefix << 's';
+    ssSpKeyPrefix << uint8_t('s');
     leveldb::Slice slSpKeyPrefix(&ssSpKeyPrefix[0], ssSpKeyPrefix.size());
 
     for (iter->Seek(slSpKeyPrefix); iter->Valid() && iter->key().starts_with(slSpKeyPrefix); iter->Next()) {

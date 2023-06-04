@@ -68,15 +68,15 @@ protected:
     leveldb::WriteOptions syncoptions;
 
     //! The database itself
-    leveldb::DB* pdb;
+    leveldb::DB* pdb = nullptr;
 
     //! Number of entries read
-    unsigned int nRead;
+    unsigned int nRead = 0;
 
     //! Number of entries written
-    unsigned int nWritten;
+    unsigned int nWritten = 0;
 
-    CDBBase() : pdb(NULL), nRead(0), nWritten(0)
+    CDBBase()
     {
         options.paranoid_checks = true;
         options.create_if_missing = true;
@@ -103,7 +103,7 @@ protected:
      */
     leveldb::Iterator* NewIterator() const
     {
-        assert(pdb != NULL);
+        assert(pdb != nullptr);
         return pdb->NewIterator(iteroptions);
     }
 
@@ -180,7 +180,7 @@ bool StringToKey(const std::string& s, T& key)
     static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
     try {
         std::vector<uint8_t> v{s.begin(), s.end()};
-        VectorReader reader(SER_DISK, CLIENT_VERSION, v, 0);
+        SpanReader reader(SER_DISK, CLIENT_VERSION, v);
         reader >> prefix >> key;
     } catch (const std::exception&) {
         return false;

@@ -19,12 +19,14 @@
 #include <validation.h>
 #include <script/standard.h>
 #include <uint256.h>
-#include <ui_interface.h>
+#include <node/interface_ui.h>
 
 #include <stdint.h>
 #include <limits>
 #include <string>
 #include <vector>
+
+extern void DoWarning(const bilingual_str& warning);
 
 namespace mastercore
 {
@@ -72,7 +74,7 @@ std::vector<TransactionRestriction> CConsensusParams::GetRestrictions() const
         { MSC_TYPE_METADEX_CANCEL_ECOSYSTEM,  MP_TX_PKT_V0,  false,   MSC_METADEX_BLOCK  },
 
         { MSC_TYPE_SEND_ALL,                  MP_TX_PKT_V0,  false,   MSC_SEND_ALL_BLOCK },
-        
+
         { MSC_TYPE_ANYDATA,                   MP_TX_PKT_V0,  true,    MSC_ANYDATA_BLOCK },
 
         { MSC_TYPE_OFFER_ACCEPT_A_BET,        MP_TX_PKT_V0,  false,   MSC_BET_BLOCK      },
@@ -418,17 +420,20 @@ void ResetConsensusParams()
 /**
  * Checks, if the script type is allowed as input.
  */
-bool IsAllowedInputType(int whichType, int nBlock)
+bool IsAllowedInputType(TxoutType whichType, int nBlock)
 {
     const CConsensusParams& params = ConsensusParams();
 
     switch (whichType)
     {
-        case TX_PUBKEYHASH:
+        case TxoutType::PUBKEYHASH:
             return (params.PUBKEYHASH_BLOCK <= nBlock);
 
-        case TX_SCRIPTHASH:
+        case TxoutType::SCRIPTHASH:
             return (params.SCRIPTHASH_BLOCK <= nBlock);
+
+        default:
+            return false;
     }
 
     return false;
@@ -437,23 +442,26 @@ bool IsAllowedInputType(int whichType, int nBlock)
 /**
  * Checks, if the script type qualifies as output.
  */
-bool IsAllowedOutputType(int whichType, int nBlock)
+bool IsAllowedOutputType(TxoutType whichType, int nBlock)
 {
     const CConsensusParams& params = ConsensusParams();
 
     switch (whichType)
     {
-        case TX_PUBKEYHASH:
+        case TxoutType::PUBKEYHASH:
             return (params.PUBKEYHASH_BLOCK <= nBlock);
 
-        case TX_SCRIPTHASH:
+        case TxoutType::SCRIPTHASH:
             return (params.SCRIPTHASH_BLOCK <= nBlock);
 
-        case TX_MULTISIG:
+        case TxoutType::MULTISIG:
             return (params.MULTISIG_BLOCK <= nBlock);
 
-        case TX_NULL_DATA:
+        case TxoutType::NULL_DATA:
             return (params.NULLDATA_BLOCK <= nBlock);
+
+        default:
+            return false;
     }
 
     return false;
@@ -554,7 +562,7 @@ bool ActivateFeature(uint16_t featureId, int activationBlock, uint32_t minClient
         std::string alertText = strprintf("Your client must be updated and will shutdown at block %d (unsupported feature %d ('%s') activated)\n",
                                           activationBlock, featureId, featureName);
         AddAlert("omnicore", ALERT_BLOCK_EXPIRY, activationBlock, alertText);
-        DoWarning(alertText);
+        DoWarning({alertText, alertText});
     }
 
     return true;
@@ -639,7 +647,7 @@ bool DeactivateFeature(uint16_t featureId, int transactionBlock)
 
     std::string alertText = strprintf("An emergency deactivation of feature ID %d (%s) has occurred.", featureId, featureName);
     AddAlert("omnicore", ALERT_BLOCK_EXPIRY, transactionBlock + 1024, alertText);
-    DoWarning(alertText);
+    DoWarning({alertText, alertText});
 
     return true;
 }

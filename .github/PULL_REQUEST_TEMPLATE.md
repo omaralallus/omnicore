@@ -3,12 +3,11 @@
 
 Pull requests without a rationale and clear improvement may be closed
 immediately.
--->
 
 <!--
 Please provide clear motivation for your patch and explain how it improves
 Omni Core user experience or Omni Core developer experience
-significantly.
+significantly:
 
 * Any test improvements or new tests that improve coverage are always welcome.
 * All other changes should have accompanying unit tests (see `src/test/`) or

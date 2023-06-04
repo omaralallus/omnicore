@@ -1,15 +1,15 @@
-// Copyright (c) 2016-2019 The Bitcoin Core developers
+// Copyright (c) 2016-2020 The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_SUPPORT_LOCKEDPOOL_H
 #define BITCOIN_SUPPORT_LOCKEDPOOL_H
 
-#include <stdint.h>
+#include <cstddef>
 #include <list>
 #include <map>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 /**
@@ -221,7 +221,8 @@ public:
     /** Return the current instance, or create it once */
     static LockedPoolManager& Instance()
     {
-        std::call_once(LockedPoolManager::init_flag, LockedPoolManager::CreateInstance);
+        static std::once_flag init_flag;
+        std::call_once(init_flag, LockedPoolManager::CreateInstance);
         return *LockedPoolManager::_instance;
     }
 
@@ -234,7 +235,6 @@ private:
     static bool LockingFailed();
 
     static LockedPoolManager* _instance;
-    static std::once_flag init_flag;
 };
 
 #endif // BITCOIN_SUPPORT_LOCKEDPOOL_H

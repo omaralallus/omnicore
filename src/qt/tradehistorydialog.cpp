@@ -13,6 +13,7 @@
 #include <qt/clientmodel.h>
 #include <qt/platformstyle.h>
 
+#include <omnicore/convert.h>
 #include <omnicore/dbtradelist.h>
 #include <omnicore/dbtxlist.h>
 #include <omnicore/mdex.h>
@@ -326,7 +327,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         std::vector<std::string> vstr;
         boost::split(vstr, tempStrValue, boost::is_any_of(":"), boost::token_compress_on);
         if (vstr.size() > 2) {
-            if (std::stoi(vstr[2]) != MSC_TYPE_METADEX_TRADE) continue;
+            if (atoi(vstr[2]) != MSC_TYPE_METADEX_TRADE) continue;
         }
 
         // check historyMap, if this tx exists don't waste resources doing anymore work on it

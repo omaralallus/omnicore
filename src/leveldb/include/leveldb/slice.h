@@ -33,9 +33,6 @@ class LEVELDB_EXPORT Slice {
   // Create a slice that refers to d[0,n-1].
   Slice(const char* d, size_t n) : data_(d), size_(n) {}
 
-  // Create a slice that refers to d[0,n-1].
-  Slice(const std::byte* d, size_t n) : data_((const char *)d), size_(n) {}
-
   // Create a slice that refers to the contents of "s"
   Slice(const std::string& s) : data_(s.data()), size_(s.size()) {}
 

@@ -169,19 +169,4 @@ void print_output_table_header_row(void) {
     printf("\n");
 }
 
-int have_flag(int argc, char** argv, char *flag) {
-    char** argm = argv + argc;
-    argv++;
-    if (argv == argm) {
-        return 1;
-    }
-    while (argv != NULL && argv != argm) {
-        if (strcmp(*argv, flag) == 0) {
-            return 1;
-        }
-        argv++;
-    }
-    return 0;
-}
-
 #endif /* SECP256K1_BENCH_H */

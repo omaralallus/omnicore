@@ -12,6 +12,7 @@
 #include <qt/walletmodel.h>
 #include <qt/platformstyle.h>
 
+#include <omnicore/convert.h>
 #include <omnicore/dbspinfo.h>
 #include <omnicore/dbstolist.h>
 #include <omnicore/dbtxlist.h>
@@ -238,7 +239,7 @@ int TXHistoryDialog::PopulateHistoryMap()
             const CMPPending& pending = pending_it->second;
             HistoryTXObject htxo;
             htxo.blockHeight = 0;
-            if (it->first.length() == 16) htxo.blockByteOffset = std::stoi(it->first.substr(6)); // use wallet position from key in lieu of block position
+            if (it->first.length() == 16) htxo.blockByteOffset = atoi(it->first.substr(6)); // use wallet position from key in lieu of block position
             htxo.valid = true; // all pending transactions are assumed to be valid prior to confirmation (wallet would not send them otherwise)
             htxo.address = pending.src;
             htxo.amount = "-" + FormatShortMP(pending.prop, pending.amount) + getTokenLabel(pending.prop);
@@ -261,8 +262,8 @@ int TXHistoryDialog::PopulateHistoryMap()
         int parseRC = ParseTransaction(*wtx, blockHeight, 0, mp_obj);
         HistoryTXObject htxo;
         if (it->first.length() == 16) {
-            htxo.blockHeight = std::stoi(it->first.substr(0,6));
-            htxo.blockByteOffset = std::stoi(it->first.substr(6));
+            htxo.blockHeight = atoi(it->first.substr(0,6));
+            htxo.blockByteOffset = atoi(it->first.substr(6));
         }
 
         // positive RC means payment, potential DEx purchase

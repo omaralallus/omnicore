@@ -7,7 +7,6 @@
 #endif
 
 #include <sync.h>
-#include <tinyformat.h>
 
 #include <logging.h>
 #include <tinyformat.h>

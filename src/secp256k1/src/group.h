@@ -91,9 +91,6 @@ static void secp256k1_ge_table_set_globalz(size_t len, secp256k1_ge *a, const se
 /** Set a group element (affine) equal to the point at infinity. */
 static void secp256k1_ge_set_infinity(secp256k1_ge *r);
 
-/** Set a group element (affine) equal to the point at infinity. */
-static void secp256k1_ge_set_infinity(secp256k1_ge *r);
-
 /** Set a group element (jacobian) equal to the point at infinity. */
 static void secp256k1_gej_set_infinity(secp256k1_gej *r);
 

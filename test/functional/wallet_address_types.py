@@ -97,13 +97,6 @@ class AddressTypeTest(BitcoinTestFramework):
         """Return a list of balances."""
         return [self.nodes[i].getbalances()['mine'][key] for i in range(4)]
 
-    # Quick test of python bech32 implementation
-    def test_python_bech32(self, addr):
-        hrp = addr[:4]
-        assert_equal(hrp, "bcrt")
-        (witver, witprog) = decode(hrp, addr)
-        assert_equal(encode(hrp, witver, witprog), addr)
-
     def test_address(self, node, address, multisig, typ):
         """Run sanity checks on an address."""
         info = self.nodes[node].getaddressinfo(address)

@@ -144,7 +144,6 @@ void secp256k1_context_preallocated_destroy(secp256k1_context* ctx) {
 }
 
 void secp256k1_context_destroy(secp256k1_context* ctx) {
-    CHECK(ctx != secp256k1_context_no_precomp);
     if (ctx != NULL) {
         secp256k1_context_preallocated_destroy(ctx);
         free(ctx);

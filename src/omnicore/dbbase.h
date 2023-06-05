@@ -112,7 +112,7 @@ protected:
     {
         static_assert(sizeof(K::prefix) == 1, "Prefix needs to be 1 byte");
         CDataStream ssKey(SER_DISK, CLIENT_VERSION, K::prefix, key);
-        leveldb::Slice slKey(ssKey.data(), ssKey.size());
+        leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
         assert(pdb);
         return pdb->Put(writeoptions, slKey, ValueToString(value)).ok();
     }
@@ -122,7 +122,7 @@ protected:
     {
         static_assert(sizeof(K::prefix) == 1, "Prefix needs to be 1 byte");
         CDataStream ssKey(SER_DISK, CLIENT_VERSION, K::prefix, key);
-        leveldb::Slice slKey(ssKey.data(), ssKey.size());
+        leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
         std::string strValue;
         assert(pdb);
         return pdb->Get(readoptions, slKey, &strValue).ok()
@@ -134,7 +134,7 @@ protected:
     {
         static_assert(sizeof(K::prefix) == 1, "Prefix needs to be 1 byte");
         CDataStream ssKey(SER_DISK, CLIENT_VERSION, K::prefix, key);
-        leveldb::Slice slKey(ssKey.data(), ssKey.size());
+        leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
         assert(pdb);
         return pdb->Delete(leveldb::WriteOptions(), slKey).ok();
     }
@@ -208,7 +208,7 @@ public:
         assert(it);
         static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
         CDataStream ssKey(SER_DISK, CLIENT_VERSION, prefix, key);
-        it->Seek({ssKey.data(), ssKey.size()});
+        it->Seek({(const char*)ssKey.data(), ssKey.size()});
     }
 
     CDBaseIterator(CDBaseIterator&&) = default;

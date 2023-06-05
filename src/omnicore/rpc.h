@@ -4,7 +4,7 @@
  * and open the template in the editor.
  */
 
-/* 
+/*
  * File:   rpc.h
  * Author: dexx
  *
@@ -17,4 +17,4 @@
 /** Throws a JSONRPCError, depending on error code. */
 void PopulateFailure(int error);
 
-#endif /* BITCOIN_OMNICORE_RPC_H */
+#endif // BITCOIN_OMNICORE_RPC_H

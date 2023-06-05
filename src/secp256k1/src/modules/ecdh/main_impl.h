@@ -39,9 +39,6 @@ int secp256k1_ecdh(const secp256k1_context* ctx, unsigned char *output, const se
     ARG_CHECK(output != NULL);
     ARG_CHECK(point != NULL);
     ARG_CHECK(scalar != NULL);
-    if (hashfp == NULL) {
-        hashfp = secp256k1_ecdh_hash_function_default;
-    }
 
     if (hashfp == NULL) {
         hashfp = secp256k1_ecdh_hash_function_default;

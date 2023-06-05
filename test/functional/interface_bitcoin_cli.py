@@ -75,9 +75,6 @@ class TestBitcoinCli(BitcoinTestFramework):
     def skip_test_if_missing_module(self):
         self.skip_if_no_cli()
 
-    def skip_test_if_missing_module(self):
-        self.skip_if_no_cli()
-
     def run_test(self):
         """Main test logic"""
         self.generate(self.nodes[0], BLOCKS)

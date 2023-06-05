@@ -20,17 +20,6 @@ import string
 import configparser
 import sys
 
-def call_with_auth(node, user, password):
-    url = urllib.parse.urlparse(node.url)
-    headers = {"Authorization": "Basic " + str_to_b64str('{}:{}'.format(user, password))}
-
-    conn = http.client.HTTPConnection(url.hostname, url.port)
-    conn.connect()
-    conn.request('POST', '/', '{"method": "getbestblockhash"}', headers)
-    resp = conn.getresponse()
-    conn.close()
-    return resp
-
 
 def call_with_auth(node, user, password):
     url = urllib.parse.urlparse(node.url)

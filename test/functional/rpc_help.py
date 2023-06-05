@@ -66,7 +66,6 @@ class HelpRpcTest(BitcoinTestFramework):
 
         # Only check if all RPC methods have been compiled (i.e. wallet is enabled)
         if self.is_wallet_compiled() and sorted(mapping_client) != sorted(mapping_server_conversion):
-            diff = set(mapping_client).symmetric_difference(mapping_server_conversion)
             pass
 
         # Check for conversion difference by argument name.

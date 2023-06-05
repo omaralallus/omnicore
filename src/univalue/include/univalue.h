@@ -116,8 +116,6 @@ public:
     const std::vector<UniValue>& getValues() const;
     template <typename Int>
     Int getInt() const;
-    int get_int() const;
-    int64_t get_int64() const;
     bool get_bool() const;
     const std::string& get_str() const;
     double get_real() const;
@@ -146,16 +144,6 @@ Int UniValue::getInt() const
         throw std::runtime_error("JSON integer out of range");
     }
     return result;
-}
-
-inline int UniValue::get_int() const
-{
-    return getInt<int>();
-}
-
-inline int64_t UniValue::get_int64() const
-{
-    return getInt<int64_t>();
 }
 
 enum jtokentype {

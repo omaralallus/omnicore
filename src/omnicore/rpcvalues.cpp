@@ -50,7 +50,7 @@ std::string ParseAddressOrWildcard(const UniValue& value)
 
 uint32_t ParsePropertyId(const UniValue& value)
 {
-    int64_t propertyId = value.get_int64();
+    int64_t propertyId = value.getInt<int64_t>();
     if (propertyId < 1 || 4294967295LL < propertyId) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier is out of range");
     }
@@ -74,7 +74,7 @@ int64_t ParseAmount(const UniValue& value, int propertyType)
 
 uint8_t ParseDExPaymentWindow(const UniValue& value)
 {
-    int64_t blocks = value.get_int64();
+    int64_t blocks = value.getInt<int64_t>();
     if (blocks < 1 || 255 < blocks) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Payment window must be within 1-255 blocks");
     }
@@ -92,7 +92,7 @@ int64_t ParseDExFee(const UniValue& value)
 
 uint8_t ParseDExAction(const UniValue& value)
 {
-    int64_t action = value.get_int64();
+    int64_t action = value.getInt<int64_t>();
     if (action <= 0 || 3 < action) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid action (1 = new, 2 = update, 3 = cancel only)");
     }
@@ -101,7 +101,7 @@ uint8_t ParseDExAction(const UniValue& value)
 
 uint8_t ParseEcosystem(const UniValue& value)
 {
-    int64_t ecosystem = value.get_int64();
+    int64_t ecosystem = value.getInt<int64_t>();
     if (ecosystem < 1 || 2 < ecosystem) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid ecosystem (1 = main, 2 = test only)");
     }
@@ -110,7 +110,7 @@ uint8_t ParseEcosystem(const UniValue& value)
 
 uint16_t ParsePropertyType(const UniValue& value)
 {
-    int64_t propertyType = value.get_int64();
+    int64_t propertyType = value.getInt<int64_t>();
     if (propertyType < 1 || 2 < propertyType) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid property type (1 = indivisible, 2 = divisible only)");
     }
@@ -119,7 +119,7 @@ uint16_t ParsePropertyType(const UniValue& value)
 
 uint16_t ParseManagedPropertyType(const UniValue& value)
 {
-    int64_t propertyType = value.get_int64();
+    int64_t propertyType = value.getInt<int64_t>();
     if (propertyType != 1 && propertyType != 2 && propertyType != 5) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid property type (1 = indivisible, 2 = divisible, 5 = non-fungible only)");
     }
@@ -128,7 +128,7 @@ uint16_t ParseManagedPropertyType(const UniValue& value)
 
 uint32_t ParsePreviousPropertyId(const UniValue& value)
 {
-    int64_t previousId = value.get_int64();
+    int64_t previousId = value.getInt<int64_t>();
     if (previousId != 0) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Property appends/replaces are not yet supported");
     }
@@ -146,7 +146,7 @@ std::string ParseText(const UniValue& value)
 
 int64_t ParseDeadline(const UniValue& value)
 {
-    int64_t deadline = value.get_int64();
+    int64_t deadline = value.getInt<int64_t>();
     if (deadline < 0) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Deadline must be positive");
     }
@@ -155,7 +155,7 @@ int64_t ParseDeadline(const UniValue& value)
 
 uint8_t ParseEarlyBirdBonus(const UniValue& value)
 {
-    int64_t percentage = value.get_int64();
+    int64_t percentage = value.getInt<int64_t>();
     if (percentage < 0 || 255 < percentage) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Early bird bonus must be in the range of 0-255 percent per week");
     }
@@ -164,7 +164,7 @@ uint8_t ParseEarlyBirdBonus(const UniValue& value)
 
 uint8_t ParseIssuerBonus(const UniValue& value)
 {
-    int64_t percentage = value.get_int64();
+    int64_t percentage = value.getInt<int64_t>();
     if (percentage < 0 || 255 < percentage) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Bonus for issuer must be in the range of 0-255 percent");
     }
@@ -173,7 +173,7 @@ uint8_t ParseIssuerBonus(const UniValue& value)
 
 uint8_t ParseMetaDExAction(const UniValue& value)
 {
-    int64_t action = value.get_int64();
+    int64_t action = value.getInt<int64_t>();
     if (action <= 0 || 4 < action) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Invalid action (1, 2, 3, 4 only)");
     }
@@ -209,7 +209,7 @@ CPubKey ParsePubKeyOrAddress(interfaces::Wallet* iWallet, const UniValue& value)
 
 uint32_t ParseOutputIndex(const UniValue& value)
 {
-    int nOut = value.get_int();
+    int nOut = value.getInt<int>();
     if (nOut < 0) {
         throw JSONRPCError(RPC_DESERIALIZATION_ERROR, "Vout index must be positive");
     }
@@ -223,7 +223,7 @@ std::vector<PrevTxsEntry> ParsePrevTxs(const UniValue& value)
 
     std::vector<PrevTxsEntry> prevTxsParsed;
     prevTxsParsed.reserve(prevTxs.size());
-    
+
     for (size_t i = 0; i < prevTxs.size(); ++i) {
         const UniValue& p = prevTxs[i];
         if (p.type() != UniValue::VOBJ) {
@@ -249,7 +249,7 @@ std::vector<PrevTxsEntry> ParsePrevTxs(const UniValue& value)
 
 uint8_t ParseStmOutputIndex(const UniValue& value)
 {
-    int64_t index = value.get_int64();
+    int64_t index = value.getInt<int64_t>();
     if (index < 0 || index > std::numeric_limits<uint8_t>::max()) {
         throw JSONRPCError(RPC_TYPE_ERROR, "Output index out of bounds (0..255)");
     }

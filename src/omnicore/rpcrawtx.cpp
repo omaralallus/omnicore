@@ -98,7 +98,7 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
 
     int blockHeight = 0;
     if (request.params.size() > 2) {
-        blockHeight = request.params[2].get_int();
+        blockHeight = request.params[2].getInt<int>();
     }
 
     UniValue txObj(UniValue::VOBJ);
@@ -295,7 +295,7 @@ static UniValue omni_createrawtx_change(const JSONRPCRequest& request)
     std::vector<PrevTxsEntry> prevTxsParsed = ParsePrevTxs(request.params[1]);
     std::string destination = ParseAddress(request.params[2]);
     int64_t txFee = AmountFromValue(request.params[3]);
-    uint32_t nOut = request.params.size() > 4 ? request.params[4].get_int64() : 0;
+    uint32_t nOut = request.params.size() > 4 ? request.params[4].getInt<int64_t>() : 0;
 
     // use a dummy coins view to store the user provided transaction inputs
     CCoinsView viewDummy;

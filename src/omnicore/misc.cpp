@@ -140,8 +140,8 @@ UniValue getaddressdeltas(const JSONRPCRequest& request)
     int end = 0;
 
     if (startValue.isNum() && endValue.isNum()) {
-        start = startValue.get_int();
-        end = endValue.get_int();
+        start = startValue.getInt<int>();
+        end = endValue.getInt<int>();
         if (start <= 0 || end <= 0) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Start and end is expected to be greater than zero");
         }
@@ -493,8 +493,8 @@ UniValue getblockhashes(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
-    unsigned int high = request.params[0].get_int();
-    unsigned int low = request.params[1].get_int();
+    unsigned int high = request.params[0].getInt<int>();
+    unsigned int low = request.params[1].getInt<int>();
     bool fActiveOnly = false;
     bool fLogicalTS = false;
 
@@ -571,7 +571,7 @@ UniValue getspentinfo(const JSONRPCRequest& request)
     }
 
     uint256 txid = ParseHashV(txidValue, "txid");
-    int outputIndex = indexValue.get_int();
+    int outputIndex = indexValue.getInt<int>();
 
     CSpentIndexKey key(txid, outputIndex);
     CSpentIndexValue value;
@@ -636,8 +636,8 @@ UniValue getaddresstxids(const JSONRPCRequest& request)
         UniValue startValue = find_value(request.params[0].get_obj(), "start");
         UniValue endValue = find_value(request.params[0].get_obj(), "end");
         if (startValue.isNum() && endValue.isNum()) {
-            start = startValue.get_int();
-            end = endValue.get_int();
+            start = startValue.getInt<int>();
+            end = endValue.getInt<int>();
         }
     }
 

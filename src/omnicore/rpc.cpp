@@ -294,7 +294,7 @@ UniValue omni_getnonfungibletokendata(const JSONRPCRequest& request)
     int64_t end = std::prev(range.end())->second.second;
 
     if (!request.params[1].isNull()) {
-        start = request.params[1].get_int();
+        start = request.params[1].getInt<int>();
 
         // Make sure start sane.
         if (start < 1) {
@@ -310,7 +310,7 @@ UniValue omni_getnonfungibletokendata(const JSONRPCRequest& request)
     }
 
     if (!request.params[2].isNull()) {
-        end = request.params[2].get_int();
+        end = request.params[2].getInt<int>();
 
         // Make sure end sane.
         if (end < start) {
@@ -428,7 +428,7 @@ static UniValue omni_getfeedistribution(const JSONRPCRequest& request)
        }
     }.Check(request);
 
-    int id = request.params[0].get_int();
+    int id = request.params[0].getInt<int>();
 
     int block = 0;
     uint32_t propertyId = 0;
@@ -756,8 +756,8 @@ static UniValue omni_getseedblocks(const JSONRPCRequest& request)
        }
     }.Check(request);
 
-    int startHeight = request.params[0].get_int();
-    int endHeight = request.params[1].get_int();
+    int startHeight = request.params[0].getInt<int>();
+    int endHeight = request.params[1].getInt<int>();
 
     RequireHeightInChain(startHeight);
     RequireHeightInChain(endHeight);
@@ -1995,7 +1995,7 @@ static UniValue omni_gettradehistoryforaddress(const JSONRPCRequest& request)
     }.Check(request);
 
     std::string address = ParseAddress(request.params[0]);
-    uint64_t count = (request.params.size() > 1) ? request.params[1].get_int64() : 10;
+    uint64_t count = (request.params.size() > 1) ? request.params[1].getInt<int64_t>() : 10;
     uint32_t propertyId = 0;
 
     if (request.params.size() > 2) {
@@ -2068,7 +2068,7 @@ static UniValue omni_gettradehistoryforpair(const JSONRPCRequest& request)
     // obtain property identifiers for pair & check valid parameters
     uint32_t propertyIdSideA = ParsePropertyId(request.params[0]);
     uint32_t propertyIdSideB = ParsePropertyId(request.params[1]);
-    uint64_t count = (request.params.size() > 2) ? request.params[2].get_int64() : 10;
+    uint64_t count = (request.params.size() > 2) ? request.params[2].getInt<int64_t>() : 10;
 
     RequireExistingProperty(propertyIdSideA);
     RequireExistingProperty(propertyIdSideB);
@@ -2231,7 +2231,7 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
        }
     }.Check(request);
 
-    int blockHeight = request.params[0].get_int();
+    int blockHeight = request.params[0].getInt<int>();
 
     RequireHeightInChain(blockHeight);
 
@@ -2284,8 +2284,8 @@ static UniValue omni_listblockstransactions(const JSONRPCRequest& request)
        }
     }.Check(request);
 
-    int blockFirst = request.params[0].get_int();
-    int blockLast = request.params[1].get_int();
+    int blockFirst = request.params[0].getInt<int>();
+    int blockLast = request.params[1].getInt<int>();
 
     std::set<uint256> txs;
     UniValue response(UniValue::VARR);
@@ -2399,16 +2399,16 @@ static UniValue omni_listtransactions(const JSONRPCRequest& request)
         if (("*" != request.params[0].get_str()) && ("" != request.params[0].get_str())) addressParam = request.params[0].get_str();
     }
     int64_t nCount = 10;
-    if (request.params.size() > 1) nCount = request.params[1].get_int64();
+    if (request.params.size() > 1) nCount = request.params[1].getInt<int64_t>();
     if (nCount < 0) throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative count");
     int64_t nFrom = 0;
-    if (request.params.size() > 2) nFrom = request.params[2].get_int64();
+    if (request.params.size() > 2) nFrom = request.params[2].getInt<int64_t>();
     if (nFrom < 0) throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative from");
     int64_t nStartBlock = 0;
-    if (request.params.size() > 3) nStartBlock = request.params[3].get_int64();
+    if (request.params.size() > 3) nStartBlock = request.params[3].getInt<int64_t>();
     if (nStartBlock < 0) throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative start block");
     int64_t nEndBlock = 999999999;
-    if (request.params.size() > 4) nEndBlock = request.params[4].get_int64();
+    if (request.params.size() > 4) nEndBlock = request.params[4].getInt<int64_t>();
     if (nEndBlock < 0) throw JSONRPCError(RPC_INVALID_PARAMETER, "Negative end block");
 
     if (wallet) {

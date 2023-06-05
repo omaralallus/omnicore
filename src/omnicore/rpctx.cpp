@@ -354,8 +354,8 @@ static UniValue omni_sendnonfungible(const JSONRPCRequest& request)
     std::string fromAddress = ParseAddress(request.params[0]);
     std::string toAddress = ParseAddress(request.params[1]);
     uint32_t propertyId = ParsePropertyId(request.params[2]);
-    int64_t tokenStart = request.params[3].get_int64(); // non-fungible tokens are always indivisible
-    int64_t tokenEnd =  request.params[4].get_int64();
+    int64_t tokenStart = request.params[3].getInt<int64_t>(); // non-fungible tokens are always indivisible
+    int64_t tokenEnd =  request.params[4].getInt<int64_t>();
     int64_t uniqueTokenAmount = (tokenEnd - tokenStart)+1;
     std::string redeemAddress = (request.params.size() > 5 && !ParseText(request.params[5]).empty()) ? ParseAddress(request.params[5]): "";
     int64_t referenceAmount = (request.params.size() > 6) ? ParseAmount(request.params[6], true): 0;
@@ -421,9 +421,9 @@ static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
     }
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
-    uint64_t tokenStart = request.params[1].get_int64();
-    int64_t tokenEnd =  request.params[2].get_int64();
-    bool issuer = request.params[3].isNum() ? (request.params[3].get_int() != 0) : request.params[3].get_bool();
+    uint64_t tokenStart = request.params[1].getInt<int64_t>();
+    int64_t tokenEnd =  request.params[2].getInt<int64_t>();
+    bool issuer = request.params[3].isNum() ? (request.params[3].getInt<int>() != 0) : request.params[3].get_bool();
     std::string data = ParseText(request.params[4]);
 
     RequireExistingProperty(propertyId);
@@ -2169,9 +2169,9 @@ static UniValue omni_sendactivation(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    uint16_t featureId = request.params[1].get_int();
-    uint32_t activationBlock = request.params[2].get_int();
-    uint32_t minClientVersion = request.params[3].get_int();
+    uint16_t featureId = request.params[1].getInt<int>();
+    uint32_t activationBlock = request.params[2].getInt<int>();
+    uint32_t minClientVersion = request.params[3].getInt<int>();
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_ActivateFeature(featureId, activationBlock, minClientVersion);
@@ -2219,7 +2219,7 @@ static UniValue omni_senddeactivation(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    uint16_t featureId = request.params[1].get_int64();
+    uint16_t featureId = request.params[1].getInt<int64_t>();
 
     // create a payload for the transaction
     std::vector<unsigned char> payload = CreatePayload_DeactivateFeature(featureId);
@@ -2269,12 +2269,12 @@ static UniValue omni_sendalert(const JSONRPCRequest& request)
 
     // obtain parameters & info
     std::string fromAddress = ParseAddress(request.params[0]);
-    int64_t tempAlertType = request.params[1].get_int64();
+    int64_t tempAlertType = request.params[1].getInt<int64_t>();
     if (tempAlertType < 1 || 65535 < tempAlertType) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Alert type is out of range");
     }
     uint16_t alertType = static_cast<uint16_t>(tempAlertType);
-    int64_t tempExpiryValue = request.params[2].get_int64();
+    int64_t tempExpiryValue = request.params[2].getInt<int64_t>();
     if (tempExpiryValue < 1 || 4294967295LL < tempExpiryValue) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Expiry value is out of range");
     }
@@ -2362,12 +2362,12 @@ static UniValue trade_MP(const JSONRPCRequest& request)
         case CMPTransaction::CANCEL_EVERYTHING:
         {
             uint8_t ecosystem = 0;
-            if (isMainEcosystemProperty(request.params[1].get_int64())
-                    && isMainEcosystemProperty(request.params[3].get_int64())) {
+            if (isMainEcosystemProperty(request.params[1].getInt<int64_t>())
+                    && isMainEcosystemProperty(request.params[3].getInt<int64_t>())) {
                 ecosystem = OMNI_PROPERTY_MSC;
             }
-            if (isTestEcosystemProperty(request.params[1].get_int64())
-                    && isTestEcosystemProperty(request.params[3].get_int64())) {
+            if (isTestEcosystemProperty(request.params[1].getInt<int64_t>())
+                    && isTestEcosystemProperty(request.params[3].getInt<int64_t>())) {
                 ecosystem = OMNI_PROPERTY_TMSC;
             }
             values.push_back(request.params[0]); // fromAddress

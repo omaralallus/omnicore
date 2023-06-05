@@ -84,8 +84,8 @@ UniValue omni_createpayload_sendnonfungible(const JSONRPCRequest& request)
     }.Check(request);
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
-    int64_t tokenStart = request.params[1].get_int64(); // non-fungible tokens are indivisible only
-    int64_t tokenEnd =  request.params[2].get_int64();
+    int64_t tokenStart = request.params[1].getInt<int64_t>(); // non-fungible tokens are indivisible only
+    int64_t tokenEnd =  request.params[2].getInt<int64_t>();
 
     RequireSaneNonFungibleRange(tokenStart, tokenEnd);
 
@@ -117,9 +117,9 @@ static UniValue omni_createpayload_setnonfungibledata(const JSONRPCRequest& requ
     }.Check(request);
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
-    uint64_t tokenStart = request.params[1].get_int64();
-    int64_t tokenEnd =  request.params[2].get_int64();
-    bool issuer = request.params[3].isNum() ? (request.params[3].get_int() != 0) : request.params[3].get_bool();
+    uint64_t tokenStart = request.params[1].getInt<int64_t>();
+    int64_t tokenEnd =  request.params[2].getInt<int64_t>();
+    bool issuer = request.params[3].isNum() ? (request.params[3].getInt<int>() != 0) : request.params[3].get_bool();
     std::string data = ParseText(request.params[4]);
 
     RequireSaneNonFungibleRange(tokenStart, tokenEnd);
@@ -174,7 +174,7 @@ static UniValue omni_createpayload_sendtomany(const JSONRPCRequest& request)
 
     std::vector<unsigned char> payload = CreatePayload_SendToMany(
         propertyId,
-        outputValues);           
+        outputValues);
 
     return HexStr(payload.begin(), payload.end());
 }

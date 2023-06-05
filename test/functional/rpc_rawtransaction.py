@@ -92,10 +92,6 @@ class RawTransactionsTest(BitcoinTestFramework):
         tx = self.wallet.send_self_transfer(from_node=self.nodes[0])
         self.generate(self.nodes[0], 1)
         txId = tx['txid']
-        err_msg = (
-            "No such mempool transaction. Use -txindex or provide a block hash to enable"
-            " blockchain transaction queries. Use gettransaction for wallet transactions."
-        )
 
         for n in [0, 2]:
             self.log.info(f"Test getrawtransaction {'with' if n == 0 else 'without'} -txindex")

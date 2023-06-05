@@ -39,7 +39,6 @@
 #include <QMessageBox>
 #include <QScreen>
 #include <QScrollBar>
-#include <QScreen>
 #include <QSettings>
 #include <QString>
 #include <QStringList>

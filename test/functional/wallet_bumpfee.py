@@ -194,11 +194,6 @@ def test_simple_bumpfee_succeeds(self, mode, rbf_node, peer_node, dest_address):
     assert_equal(bumpedwtx["replaces_txid"], rbfid)
     self.clear_mempool()
 
-def test_feerate_args(self, rbf_node, peer_node, dest_address):
-    self.log.info('Test fee_rate args')
-    rbfid = spend_one_input(rbf_node, dest_address)
-    self.sync_mempools((rbf_node, peer_node))
-    assert rbfid in rbf_node.getrawmempool() and rbfid in peer_node.getrawmempool()
 
 def test_segwit_bumpfee_succeeds(self, rbf_node, dest_address):
     self.log.info('Test that segwit-sourcing bumpfee works')
@@ -370,13 +365,6 @@ def test_small_output_with_feerate_succeeds(self, rbf_node, dest_address):
     assert_equal(rbf_node.gettransaction(rbfid)["confirmations"], 1)
     self.clear_mempool()
 
-    # input(s) have been added
-    final_input_list = rbf_node.getrawtransaction(rbfid, 1)["vin"]
-    assert_greater_than(len(final_input_list), 1)
-    # Original input is in final set
-    assert [txin for txin in final_input_list
-            if txin["txid"] == original_txin["txid"]
-            and txin["vout"] == original_txin["vout"]]
 
 def test_dust_to_fee(self, rbf_node, dest_address):
     self.log.info('Test that bumped output that is dust is dropped to fee')
@@ -616,8 +604,6 @@ def test_locked_wallet_fails(self, rbf_node, dest_address):
     rbf_node.walletpassphrase(WALLET_PASSPHRASE, WALLET_PASSPHRASE_TIMEOUT)
     self.clear_mempool()
 
-def test_change_script_match(self, rbf_node, dest_address):
-    self.log.info('Test that the same change addresses is used for the replacement transaction when possible')
 
 def test_change_script_match(self, rbf_node, dest_address):
     self.log.info('Test that the same change addresses is used for the replacement transaction when possible')
@@ -651,6 +637,7 @@ def spend_one_input(node, dest_address, change_size=Decimal("0.00049000")):
     txid = node.sendrawtransaction(signedtx["hex"])
     return txid
 
+
 def submit_block_with_tx(node, tx):
     tip = node.getbestblockhash()
     height = node.getblockcount() + 1
@@ -660,14 +647,6 @@ def submit_block_with_tx(node, tx):
     block.solve()
     node.submitblock(block.serialize().hex())
     return block
-
-def test_no_more_inputs_fails(self, rbf_node, dest_address):
-    self.log.info('Test that bumpfee fails when there are no available confirmed outputs')
-    # feerate rbf requires confirmed outputs when change output doesn't exist or is insufficient
-    rbf_node.generatetoaddress(1, dest_address)
-    # spend all funds, no change output
-    rbfid = rbf_node.sendtoaddress(rbf_node.getnewaddress(), rbf_node.getbalance(), "", "", True)
-    assert_raises_rpc_error(-4, "Unable to create transaction: Insufficient funds", rbf_node.bumpfee, rbfid)
 
 
 def test_no_more_inputs_fails(self, rbf_node, dest_address):

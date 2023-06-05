@@ -7,23 +7,6 @@
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import assert_equal
 
-def rollback_chain(node, address):
-        # Rolling back the chain to test reversing the last FREEZE tx
-        blockcount = node.getblockcount()
-        blockhash = node.getblockhash(blockcount)
-        node.invalidateblock(blockhash)
-        node.clearmempool()
-        self.generatetoaddress(node, 1, address)
-        new_blockcount = node.getblockcount()
-        new_blockhash = node.getblockhash(new_blockcount)
-
-        # Checking the block count is the same as before the rollback...
-        assert_equal(blockcount, new_blockcount)
-
-        # Checking the block hash is different from before the rollback...
-        if blockhash == new_blockhash:
-            raise AssertionError("Block hashes should differ after reorg")
-
 class OmniDelegation(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1

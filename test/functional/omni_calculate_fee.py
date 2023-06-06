@@ -11,7 +11,7 @@ class OmniFeeCalculation(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [["-addresstype=p2sh-segwit"], ["-omnidebug=all", "-paytxfee=0.00003", "-addresstype=p2sh-segwit"]] # 3,000 Sats per KB
+        self.extra_args = [[], ["-omnidebug=all", "-paytxfee=0.00003"]] # 3,000 Sats per KB
 
     def run_test(self):
         self.log.info("test fee calculation")
@@ -20,16 +20,16 @@ class OmniFeeCalculation(BitcoinTestFramework):
         node1 = self.nodes[1]
 
         # Preparing some mature Bitcoins
-        node0.createwallet(wallet_name="w0", descriptors=False)
+        node0.createwallet(wallet_name="w0", descriptors=True)
         coinbase_address = node0.getnewaddress()
         self.generatetoaddress(node0, 130, coinbase_address)
 
         # Obtaining a master address to work with
-        node1.createwallet(wallet_name="w1", descriptors=False)
-        address = node1.getnewaddress()
+        node1.createwallet(wallet_name="w1", descriptors=True)
+        address = node1.getnewaddress(address_type='bech32m')
 
         # Create and fund new address
-        omni_address = node0.getnewaddress()
+        omni_address = node0.getnewaddress(address_type='bech32')
         node0.sendtoaddress(omni_address, 20)
         self.generatetoaddress(node0, 1, coinbase_address)
 

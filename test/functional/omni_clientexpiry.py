@@ -11,7 +11,7 @@ class OmniClientExpiry(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omnialertallowsender=any', "-addresstype=legacy"]]
+        self.extra_args = [['-omnialertallowsender=any']]
 
     def run_test(self):
         self.log.info("test client expiry")

@@ -41,10 +41,6 @@ using namespace wallet;
 using mastercore::AddressToPubKey;
 using mastercore::UseEncodingClassC;
 
-#ifdef ENABLE_WALLET
-constexpr OutputType defaultOutputType = OutputType::P2SH_SEGWIT;
-#endif
-
 /** Creates and sends a transaction with multiple receivers. */
 int WalletTxBuilder(
         const std::string& senderAddress,
@@ -69,7 +65,6 @@ int WalletTxBuilder(
     CCoinControl coinControl;
     coinControl.m_mininum_fee = minFee;
     coinControl.m_subtract_fee_from_change = true;
-    coinControl.m_change_type = defaultOutputType;
     std::vector<std::pair<CScript, int64_t> > vecSend;
 
     // Next, we set the change address to the sender
@@ -346,7 +341,6 @@ int CreateFundedTransaction(
     // set change
     CCoinControl coinControl;
     coinControl.destChange = DecodeDestination(feeAddress);
-    coinControl.m_change_type = defaultOutputType;
     coinControl.m_allow_other_inputs = true;
 
     if (!mastercore::SelectAllCoins(*iWallet, senderAddress, coinControl)) {
@@ -506,7 +500,6 @@ int CreateDExTransaction(interfaces::Wallet* pwallet, const std::string& buyerAd
 
     // Set the change address to the sender
     CCoinControl coinControl;
-    coinControl.m_change_type = defaultOutputType;
     coinControl.m_subtract_fee_from_change = true;
     coinControl.destChange = DecodeDestination(buyerAddress);
 

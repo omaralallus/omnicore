@@ -11,13 +11,13 @@ class OmniReorgTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [['-addresstype=legacy'], ['-addresstype=legacy']]
+        self.extra_args = [[],[]]
 
     def run_test(self):
         self.log.info("check token balance after reorg")
 
         # Get address for mining and token issuance
-        self.nodes[0].createwallet("w0")
+        self.nodes[0].createwallet(wallet_name="w0", descriptors=True)
         token_address = self.nodes[0].getnewaddress()
         self.generatetoaddress(self.nodes[0], 101, token_address)
 

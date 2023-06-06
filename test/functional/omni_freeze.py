@@ -11,7 +11,7 @@ class OmniFreeze(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=legacy']]
+        self.extra_args = [['-omniactivationallowsender=any']]
 
     def rollback_chain(self, node, address):
         # Rolling back the chain to test reversing the last FREEZE tx
@@ -36,7 +36,7 @@ class OmniFreeze(BitcoinTestFramework):
         node = self.nodes[0]
 
         # Obtaining addresses to work with
-        node.createwallet("w0")
+        node.createwallet(wallet_name="w0", descriptors=True)
         address = node.getnewaddress()
         freeze_address = node.getnewaddress()
         coinbase_address = node.getnewaddress()

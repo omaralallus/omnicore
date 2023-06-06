@@ -1313,10 +1313,9 @@ void CTxMemPool::addSpentIndex(const CTxMemPoolEntry &entry, const CCoinsViewCac
             std::copy(prevout.scriptPubKey.begin() + 2, prevout.scriptPubKey.end(), addressBytes.begin());
             addressHash = uint256(addressBytes);
             addressType = 4;
-        } else if (prevout.scriptPubKey.IsPayToWitnessScriptHash()) {
-            std::copy(prevout.scriptPubKey.begin() + 2, prevout.scriptPubKey.end(), addressBytes.begin());
+        } else if (prevout.scriptPubKey.IsWitnessProgram(addressType, addressBytes)) {
             addressHash = uint256(addressBytes);
-            addressType = 3;
+            addressType = addressType == 0 ? 3 : 5;
         } else {
             addressHash.SetNull();
             addressType = 0;

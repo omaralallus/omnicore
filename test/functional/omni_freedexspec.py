@@ -11,7 +11,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=p2sh-segwit']]
+        self.extra_args = [['-omniactivationallowsender=any']]
 
     def run_test(self):
         self.log.info("test dex spec using free dex")
@@ -29,7 +29,7 @@ class OmniFreeDExSpec(BitcoinTestFramework):
         self.generatetoaddress(self.nodes[0], 110, coinbase_address)
 
         # Obtaining a master address to work with
-        address = self.nodes[0].getnewaddress()
+        address = self.nodes[0].getnewaddress(address_type='bech32')
 
         # Funding the address with some testnet BTC for fees
         self.nodes[0].sendtoaddress(address, 5)

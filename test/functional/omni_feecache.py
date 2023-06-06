@@ -11,7 +11,7 @@ class OmniFeeCache(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any', '-disabledevmsc=1', '-addresstype=p2sh-segwit']]
+        self.extra_args = [['-omniactivationallowsender=any', '-disabledevmsc=1']]
 
     def run_test(self):
         self.log.info("test fee cache")
@@ -19,12 +19,12 @@ class OmniFeeCache(BitcoinTestFramework):
         node = self.nodes[0]
 
         # Preparing some mature Bitcoins
-        node.createwallet("w0")
+        node.createwallet(wallet_name="w0", descriptors=True)
         coinbase_address = node.getnewaddress()
         self.generatetoaddress(node, 102, coinbase_address)
 
         # Obtaining a master address to work with
-        address = node.getnewaddress()
+        address = node.getnewaddress(address_type='bech32')
 
         # Funding the address with some testnet BTC for fees
         node.sendtoaddress(address, 20)
@@ -64,8 +64,9 @@ class OmniFeeCache(BitcoinTestFramework):
 
         # Generating addresses to use as fee recipients (OMN holders)
         addresses = []
-        for _ in range(6):
-            addresses.append(node.getnewaddress())
+        for i in range(6):
+            address_type = ('bech32m' if i % 2 == 0 else 'bech32')
+            addresses.append(node.getnewaddress(address_type=address_type))
 
         # Seeding with 50.00 OMNI
         txid = node.omni_send(address, addresses[1], 1, "50")

@@ -40,8 +40,6 @@
 #include <vector>
 #include <tuple>
 
-using boost::algorithm::token_compress_on;
-
 using namespace mastercore;
 
 extern void DoWarning(const bilingual_str& warning);
@@ -855,15 +853,42 @@ bool CMPTransaction::interpret_FreezeTokens()
               Reference outputs are ignored.
     **/
     unsigned char address_version;
-    uint160 address_hash160;
     memcpy(&address_version, &pkt[16], 1);
-    memcpy(&address_hash160, &pkt[17], 20);
-    receiver = HashToAddress(address_version, address_hash160);
+
+    if (pkt_size == 37) {
+        if (address_version == WITNESS_V0_BYTE && block < ConsensusParams().WITNESS_V0_BLOCK) {
+            PrintToLog("%s: bech32 is not activated at %d\n", __func__, block);
+            return false;
+        }
+        uint160 address_hash160;
+        memcpy(&address_hash160, &pkt[17], 20);
+        receiver = HashToAddress(address_version, address_hash160);
+    } else if (pkt_size == 49) {
+        uint256 hash;
+        memcpy(&hash, &pkt[17], 32);
+        if (address_version == WITNESS_V0_BYTE) {
+            if (block < ConsensusParams().WITNESS_V0_BLOCK) {
+                PrintToLog("%s: bech32 is not activated at %d\n", __func__, block);
+                return false;
+            }
+            receiver = EncodeDestination(WitnessV0ScriptHash(hash));
+        } else if (address_version == WITNESS_V1_BYTE) {
+            if (block < ConsensusParams().WITNESS_V1_BLOCK) {
+                PrintToLog("%s: bech32m is not activated at %d\n", __func__, block);
+                return false;
+            }
+            receiver = EncodeDestination(WitnessV1Taproot(XOnlyPubKey{hash}));
+        }
+    }
+
     if (receiver.empty()) {
+        PrintToLog("%s: no address in version: %d\n", __func__, address_version);
         return false;
     }
+
     CTxDestination recAddress = DecodeDestination(receiver);
     if (!IsValidDestination(recAddress)) {
+        PrintToLog("%s: address is not valid: %s\n", __func__, receiver);
         return false;
     }
 
@@ -896,13 +921,41 @@ bool CMPTransaction::interpret_UnfreezeTokens()
     unsigned char address_version;
     uint160 address_hash160;
     memcpy(&address_version, &pkt[16], 1);
-    memcpy(&address_hash160, &pkt[17], 20);
-    receiver = HashToAddress(address_version, address_hash160);
+
+    if (pkt_size == 37) {
+        if (address_version == WITNESS_V0_BYTE && block < ConsensusParams().WITNESS_V0_BLOCK) {
+            PrintToLog("%s: bech32 is not activated at %d\n", __func__, block);
+            return false;
+        }
+        uint160 address_hash160;
+        memcpy(&address_hash160, &pkt[17], 20);
+        receiver = HashToAddress(address_version, address_hash160);
+    } else if (pkt_size == 49) {
+        uint256 hash;
+        memcpy(&hash, &pkt[17], 32);
+        if (address_version == WITNESS_V0_BYTE) {
+            if (block < ConsensusParams().WITNESS_V0_BLOCK) {
+                PrintToLog("%s: bech32 is not activated at %d\n", __func__, block);
+                return false;
+            }
+            receiver = EncodeDestination(WitnessV0ScriptHash(hash));
+        } else if (address_version == WITNESS_V1_BYTE) {
+            if (block < ConsensusParams().WITNESS_V1_BLOCK) {
+                PrintToLog("%s: bech32m is not activated at %d\n", __func__, block);
+                return false;
+            }
+            receiver = EncodeDestination(WitnessV1Taproot(XOnlyPubKey{hash}));
+        }
+    }
+
     if (receiver.empty()) {
+        PrintToLog("%s: no address in version: %d\n", __func__, address_version);
         return false;
     }
+
     CTxDestination recAddress = DecodeDestination(receiver);
     if (!IsValidDestination(recAddress)) {
+        PrintToLog("%s: address is not valid: %s\n", __func__, receiver);
         return false;
     }
 

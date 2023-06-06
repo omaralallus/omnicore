@@ -11,7 +11,7 @@ class OmniDelegation(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
         self.setup_clean_chain = True
-        self.extra_args = [['-omniactivationallowsender=any', '-addresstype=legacy']]
+        self.extra_args = [['-omniactivationallowsender=any']]
 
     def run_test(self):
         self.log.info("Test delegation of token issuance")
@@ -19,11 +19,11 @@ class OmniDelegation(BitcoinTestFramework):
         node = self.nodes[0]
 
         # Obtaining addresses to work with
-        node.createwallet("w0")
+        node.createwallet(wallet_name="w0", descriptors=True)
         issuer_address = node.getnewaddress()
-        delegate_address = node.getnewaddress()
-        sink_address = node.getnewaddress()
-        unrelated_address = node.getnewaddress()
+        delegate_address = node.getnewaddress(address_type='p2sh-segwit')
+        sink_address = node.getnewaddress(address_type='bech32')
+        unrelated_address = node.getnewaddress(address_type='legacy')
         coinbase_address = node.getnewaddress()
 
         # Preparing some mature Bitcoins

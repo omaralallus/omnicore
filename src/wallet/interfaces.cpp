@@ -167,17 +167,17 @@ public:
     }
     CKeyID getKeyForDestination(const CTxDestination& dest) const override
     {
-        auto spk_man = m_wallet->GetLegacyScriptPubKeyMan();
-        if (spk_man) {
-            return GetKeyForDestination(*spk_man, dest);
+        auto provider = m_wallet->GetSolvingProvider(GetScriptForDestination(dest));
+        if (provider) {
+            return GetKeyForDestination(*provider, dest);
         }
         return CKeyID();
     }
     bool produceSignature(const BaseSignatureCreator& creator, const CScript& scriptPubKey, SignatureData& sigdata) override
     {
-        auto spk_man = m_wallet->GetLegacyScriptPubKeyMan();
-        if (spk_man) {
-            return ProduceSignature(*spk_man, creator, scriptPubKey, sigdata);
+        auto provider = m_wallet->GetSolvingProvider(scriptPubKey);
+        if (provider) {
+            return ProduceSignature(*provider, creator, scriptPubKey, sigdata);
         }
         return false;
     }

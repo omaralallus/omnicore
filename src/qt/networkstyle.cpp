@@ -6,21 +6,22 @@
 
 #include <qt/guiconstants.h>
 
-#include <chainparamsbase.h>
+#include <chainparams.h>
 #include <tinyformat.h>
 
 #include <QApplication>
 
-static const struct {
-    const char *networkId;
+struct CAppData {
     const char *appName;
     const int iconColorHueShift;
     const int iconColorSaturationReduction;
-} network_styles[] = {
-    {"main", QAPP_APP_NAME_DEFAULT, 0, 0},
-    {"test", QAPP_APP_NAME_TESTNET, 70, 30},
-    {"signet", QAPP_APP_NAME_SIGNET, 35, 15},
-    {"regtest", QAPP_APP_NAME_REGTEST, 160, 30},
+};
+
+static const std::map<std::string, CAppData> network_styles = {
+    {"main", {QAPP_APP_NAME_DEFAULT, 0, 0}},
+    {"test", {QAPP_APP_NAME_TESTNET, 70, 30}},
+    {"signet", {QAPP_APP_NAME_SIGNET, 35, 15}},
+    {"regtest", {QAPP_APP_NAME_REGTEST, 160, 30}},
 };
 
 // titleAddText needs to be const char* for tr()
@@ -77,17 +78,9 @@ NetworkStyle::NetworkStyle(const QString &_appName, const int iconColorHueShift,
     trayAndWindowIcon   = QIcon(pixmap.scaled(QSize(256,256)));
 }
 
-const NetworkStyle* NetworkStyle::instantiate(const std::string& networkId)
+const NetworkStyle& NetworkStyle::instance()
 {
-    std::string titleAddText = networkId == CBaseChainParams::MAIN ? "" : strprintf("[%s]", networkId);
-    for (const auto& network_style : network_styles) {
-        if (networkId == network_style.networkId) {
-            return new NetworkStyle(
-                    network_style.appName,
-                    network_style.iconColorHueShift,
-                    network_style.iconColorSaturationReduction,
-                    titleAddText.c_str());
-        }
-    }
-    return nullptr;
+    static const auto& style = network_styles.at(Params().NetworkIDString());
+    static const NetworkStyle netStyle{style.appName, style.iconColorHueShift, style.iconColorSaturationReduction, style.appName};
+    return netStyle;
 }

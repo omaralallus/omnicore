@@ -302,6 +302,13 @@ void BitcoinGUI::createActions()
     historyAction->setShortcut(QKeySequence(QStringLiteral("Alt+4")));
     tabGroup->addAction(historyAction);
 
+    exchangeAction = new QAction(platformStyle->SingleColorIcon(":/icons/exchange"), tr("&Exchange"), this);
+    exchangeAction->setStatusTip(tr("Trade properties on the distributed exchange"));
+    exchangeAction->setToolTip(exchangeAction->statusTip());
+    exchangeAction->setCheckable(true);
+    exchangeAction->setShortcut(QKeySequence(QStringLiteral("Alt+5")));
+    tabGroup->addAction(exchangeAction);
+
     toolboxAction = new QAction(platformStyle->SingleColorIcon(":/icons/tools"), tr("&Toolbox"), this);
     toolboxAction->setStatusTip(tr("Tools to obtain varions Omni Layer information and transaction information"));
     toolboxAction->setToolTip(toolboxAction->statusTip());
@@ -322,10 +329,8 @@ void BitcoinGUI::createActions()
     connect(receiveCoinsAction, &QAction::triggered, this, &BitcoinGUI::gotoReceiveCoinsPage);
     connect(historyAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(historyAction, &QAction::triggered, this, &BitcoinGUI::gotoHistoryPage);
-    /** Trading UI is disabled in this version
     connect(exchangeAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(exchangeAction, &QAction::triggered, [this]{ gotoExchangePage(); });
-    **/
     connect(toolboxAction, &QAction::triggered, [this]{ showNormalIfMinimized(); });
     connect(toolboxAction, &QAction::triggered, [this]{ gotoToolboxPage(); });
 #endif // ENABLE_WALLET
@@ -613,7 +618,7 @@ void BitcoinGUI::createToolBars()
         toolbar->addAction(balancesAction);
         toolbar->addAction(sendCoinsAction);
         toolbar->addAction(receiveCoinsAction);
-        // toolbar->addAction(exchangeAction);
+        toolbar->addAction(exchangeAction);
         toolbar->addAction(historyAction);
         toolbar->addAction(toolboxAction);
         overviewAction->setChecked(true);

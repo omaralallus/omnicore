@@ -2,10 +2,9 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <qt/omnicore_qtutils.h>
 #include <qt/metadexcanceldialog.h>
 #include <qt/forms/ui_metadexcanceldialog.h>
-
-#include <qt/omnicore_qtutils.h>
 
 #include <qt/clientmodel.h>
 #include <key_io.h>
@@ -16,9 +15,11 @@
 #include <omnicore/errors.h>
 #include <omnicore/mdex.h>
 #include <omnicore/omnicore.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/pending.h>
 #include <omnicore/utilsbitcoin.h>
+#include <omnicore/wallettxbuilder.h>
 #include <omnicore/walletutils.h>
 
 #include <stdint.h>
@@ -50,9 +51,6 @@ MetaDExCancelDialog::MetaDExCancelDialog(QWidget *parent) :
     connect(ui->radioCancelEverything, &QRadioButton::clicked,this, &MetaDExCancelDialog::UpdateCancelCombo);
     connect(ui->cancelButton, &QPushButton::clicked,this, &MetaDExCancelDialog::SendCancelTransaction);
     connect(ui->fromCombo, static_cast<void (QComboBox::*)(int)>(&QComboBox::activated), this, &MetaDExCancelDialog::fromAddressComboBoxChanged);
-
-    // perform initial from address population
-    UpdateAddressSelector();
 }
 
 MetaDExCancelDialog::~MetaDExCancelDialog()
@@ -78,6 +76,8 @@ void MetaDExCancelDialog::setClientModel(ClientModel *model)
 void MetaDExCancelDialog::setWalletModel(WalletModel *model)
 {
     this->walletModel = model;
+    // perform initial from address population
+    UpdateAddressSelector();
 }
 
 void MetaDExCancelDialog::ReinitUI()
@@ -94,20 +94,20 @@ void MetaDExCancelDialog::ReinitUI()
  */
 void MetaDExCancelDialog::UpdateAddressSelector()
 {
-    LOCK(cs_tally);
-
     QString selectedItem = ui->fromCombo->currentText();
     ui->fromCombo->clear();
 
+    LOCK(cs_tally);
     for (md_PropertiesMap::iterator my_it = metadex.begin(); my_it != metadex.end(); ++my_it) {
         md_PricesMap & prices = my_it->second;
         for (md_PricesMap::iterator it = prices.begin(); it != prices.end(); ++it) {
             md_Set & indexes = (it->second);
             for (md_Set::iterator it = indexes.begin(); it != indexes.end(); ++it) {
-                CMPMetaDEx obj = *it;
-                if(IsMyAddress(obj.getAddr(), &walletModel->wallet())) { // this address is ours and has an active MetaDEx trade
-                    int idx = ui->fromCombo->findText(QString::fromStdString(obj.getAddr())); // avoid adding duplicates
-                    if (idx == -1) ui->fromCombo->addItem(QString::fromStdString(obj.getAddr()));
+                auto& address = it->getAddr();
+                if (wallet_addresses.count(address)) { // this address is ours and has an active MetaDEx trade
+                    QString qaddress = TryEncodeOmniAddress(address).c_str();
+                    int idx = ui->fromCombo->findText(qaddress); // avoid adding duplicates
+                    if (idx == -1) ui->fromCombo->addItem(qaddress);
                 }
             }
         }
@@ -145,20 +145,21 @@ void MetaDExCancelDialog::UpdateCancelCombo()
         return; // no radio button is selected
     }
 
+    senderAddress = TryDecodeOmniAddress(senderAddress);
+
     ui->cancelCombo->clear();
 
     bool fMainEcosystem = false;
     bool fTestEcosystem = false;
 
     LOCK(cs_tally);
-
     for (md_PropertiesMap::iterator my_it = metadex.begin(); my_it != metadex.end(); ++my_it) {
         md_PricesMap & prices = my_it->second;
         for (md_PricesMap::iterator it = prices.begin(); it != prices.end(); ++it) {
             md_Set & indexes = it->second;
             for (md_Set::iterator it = indexes.begin(); it != indexes.end(); ++it) {
-                CMPMetaDEx obj = *it;
-                if(senderAddress == obj.getAddr()) {
+                const CMPMetaDEx& obj = *it;
+                if (senderAddress == obj.getAddr()) {
                     // for "cancel all":
                     if (isMainEcosystemProperty(obj.getProperty())) fMainEcosystem = true;
                     if (isTestEcosystemProperty(obj.getProperty())) fTestEcosystem = true;
@@ -208,7 +209,6 @@ void MetaDExCancelDialog::RefreshUI()
     UpdateCancelCombo();
 }
 
-
 /**
  * Takes the data from the fields in the cancellation UI and asks the wallet to construct a
  * MetaDEx cancel transaction.  Then commits & broadcast the created transaction.
@@ -242,11 +242,10 @@ void MetaDExCancelDialog::SendCancelTransaction()
         return;
     }
 
-/** TODO
     std::string dataStr = ui->cancelCombo->itemData(ui->cancelCombo->currentIndex()).toString().toStdString();
     size_t slashPos = dataStr.find("/");
     size_t colonPos = dataStr.find(":");
-    if ((slashPos==std::string::npos) && (action !=4)) {
+    if ((slashPos == std::string::npos) && (action != 4)) {
         // cancelCombo does not contain valid data - error out and abort
         QMessageBox::critical( this, "Unable to send transaction",
         "Please ensure you have selected valid cancellation criteria." );
@@ -256,20 +255,19 @@ void MetaDExCancelDialog::SendCancelTransaction()
     uint32_t intBlockDate = GetLatestBlockTime();
     QDateTime currentDate = QDateTime::currentDateTime();
     int secs = QDateTime::fromTime_t(intBlockDate).secsTo(currentDate);
-    if(secs > 90*60)
-    {
+    if(secs > 90*60) {
         // wallet is still synchronizing, potential lockup if we try to create a transaction now
         QMessageBox::critical( this, "Unable to send transaction",
         "The client is still synchronizing.  Sending transactions can currently be performed only when the client has completed synchronizing." );
         return;
     }
 
-    std::string propertyIdForSaleStr = dataStr.substr(0,slashPos);
-    std::string propertyIdDesiredStr = dataStr.substr(slashPos+1,std::string::npos);
+    std::string propertyIdForSaleStr = dataStr.substr(0, slashPos);
+    std::string propertyIdDesiredStr = dataStr.substr(slashPos + 1);
     std::string priceStr;
-    if (colonPos!=std::string::npos) {
-        propertyIdDesiredStr = dataStr.substr(slashPos+1,colonPos-slashPos-1);
-        priceStr = dataStr.substr(colonPos+1,std::string::npos);
+    if (colonPos != std::string::npos) {
+        propertyIdDesiredStr = dataStr.substr(slashPos + 1, colonPos - slashPos - 1);
+        priceStr = dataStr.substr(colonPos + 1);
     }
 
     uint8_t ecosystem = 0;
@@ -300,25 +298,29 @@ void MetaDExCancelDialog::SendCancelTransaction()
     if (action == 2) { // do not attempt to reverse calc values from price, pull suitable ForSale/Desired amounts from metadex map
         bool matched = false;
 
-        LOCK(cs_tally);
-
-        for (md_PropertiesMap::iterator my_it = metadex.begin(); my_it != metadex.end(); ++my_it) {
-            if (my_it->first != propertyIdForSale) { continue; } // move along, this isn't the prop you're looking for
-            md_PricesMap & prices = my_it->second;
-            for (md_PricesMap::iterator it = prices.begin(); it != prices.end(); ++it) {
-                md_Set & indexes = it->second;
-                for (md_Set::iterator it = indexes.begin(); it != indexes.end(); ++it) {
-                    CMPMetaDEx obj = *it;
-                    if (obj.displayUnitPrice() == priceStr) {
-                        amountForSale = obj.getAmountForSale();
-                        amountDesired = obj.getAmountDesired();
-                        matched = true;
-                        break;
+        if (!priceStr.empty()) {
+            LOCK(cs_tally);
+            for (md_PropertiesMap::iterator my_it = metadex.begin(); !matched && my_it != metadex.end(); ++my_it) {
+                if (my_it->first != propertyIdForSale) { continue; } // move along, this isn't the prop you're looking for
+                md_PricesMap & prices = my_it->second;
+                for (md_PricesMap::iterator it = prices.begin(); !matched && it != prices.end(); ++it) {
+                    md_Set & indexes = it->second;
+                    for (md_Set::iterator it = indexes.begin(); it != indexes.end(); ++it) {
+                        const CMPMetaDEx& obj = *it;
+                        if (obj.displayUnitPrice() == priceStr) {
+                            amountForSale = obj.getAmountForSale();
+                            amountDesired = obj.getAmountDesired();
+                            matched = true;
+                            break;
+                        }
                     }
                 }
-                if (matched) break;
             }
-            if (matched) break;
+        }
+
+        if (!matched) {
+            QMessageBox::critical(this, "Unable to send transaction", QString("Internal error: %1 not found").arg(priceStr.c_str()));
+            return;
         }
     }
 
@@ -333,8 +335,8 @@ void MetaDExCancelDialog::SendCancelTransaction()
 
     std::string messageStr = "Cancel all orders ";
     if (action != 4) {
-        std::string sellToken = getPropertyName(propertyIdForSale).c_str();
-        std::string desiredToken = getPropertyName(propertyIdDesired).c_str();
+        std::string sellToken = getPropertyName(propertyIdForSale);
+        std::string desiredToken = getPropertyName(propertyIdDesired);
         std::string sellId = strprintf("%d", propertyIdForSale);
         std::string desiredId = strprintf("%d", propertyIdDesired);
         if(sellToken.size()>30) sellToken=sellToken.substr(0,30)+"...";
@@ -391,8 +393,10 @@ void MetaDExCancelDialog::SendCancelTransaction()
         payload = CreatePayload_MetaDExCancelEcosystem(ecosystem);
     }
 
+    fromAddress = TryDecodeOmniAddress(fromAddress);
+
     // request the wallet build the transaction (and if needed commit it)
-    uint256 txid = 0;
+    uint256 txid;
     std::string rawHex;
     int result = WalletTxBuilder(fromAddress, "", "", 0, payload, txid, rawHex, autoCommit, &walletModel->wallet());
 
@@ -412,5 +416,4 @@ void MetaDExCancelDialog::SendCancelTransaction()
             PopulateTXSentDialog(txid.GetHex());
         }
     }
-**/
 }

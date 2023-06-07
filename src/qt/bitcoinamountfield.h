@@ -52,6 +52,9 @@ public:
     /** Perform input validation, mark field as invalid if entered value is not valid. */
     bool validate();
 
+    /** Get unit used to display amount. */
+    BitcoinUnit getDisplayUnit();
+
     /** Change unit used to display amount. */
     void setDisplayUnit(BitcoinUnit new_unit);
 
@@ -68,6 +71,7 @@ public:
 
 Q_SIGNALS:
     void valueChanged();
+    void unitChanged();
 
 protected:
     /** Intercept focus-in event and ',' key presses */
@@ -78,7 +82,7 @@ private:
     QValueComboBox *unit;
 
 private Q_SLOTS:
-    void unitChanged(int idx);
+    void slotUnitChanged(int idx);
 
 };
 

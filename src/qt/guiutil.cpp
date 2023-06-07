@@ -23,6 +23,8 @@
 #include <util/system.h>
 #include <util/time.h>
 
+#include <omnicore/rules.h>
+
 #ifdef WIN32
 #include <shellapi.h>
 #include <shlobj.h>
@@ -83,6 +85,9 @@ using namespace std::chrono_literals;
 
 namespace GUIUtil {
 
+static const QString omniScheme = "omni";
+static const QString bitcoinScheme = "bitcoin";
+
 QString dateTimeStr(const QDateTime &date)
 {
     return QLocale::system().toString(date.date(), QLocale::ShortFormat) + QString(" ") + date.toString("hh:mm");
@@ -137,10 +142,10 @@ void AddButtonShortcut(QAbstractButton* button, const QKeySequence& shortcut)
     QObject::connect(new QShortcut(shortcut, button), &QShortcut::activated, [button]() { button->animateClick(); });
 }
 
-bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
+bool parseSchemeURI(const QUrl &uri, SendCoinsRecipient *out)
 {
     // return if URI is not valid or is no bitcoin: URI
-    if(!uri.isValid() || uri.scheme() != QString("bitcoin"))
+    if(!uri.isValid() || (uri.scheme() != omniScheme && uri.scheme() != bitcoinScheme))
         return false;
 
     SendCoinsRecipient rv;
@@ -176,10 +181,15 @@ bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
         {
             if(!i->second.isEmpty())
             {
-                if (!BitcoinUnits::parse(BitcoinUnit::BTC, i->second, &rv.amount)) {
+                if (!BitcoinUnits::parse(BitcoinUnits::BTC, i->second, &rv.amount)) {
                     return false;
                 }
             }
+            fShouldReturnFalse = false;
+        }
+        else if (i->first == "unit")
+        {
+            rv.unit = i->second.toUInt();
             fShouldReturnFalse = false;
         }
 
@@ -193,40 +203,32 @@ bool parseBitcoinURI(const QUrl &uri, SendCoinsRecipient *out)
     return true;
 }
 
-bool parseBitcoinURI(QString uri, SendCoinsRecipient *out)
+bool parseSchemeURI(QString uri, SendCoinsRecipient *out)
 {
     QUrl uriInstance(uri);
-    return parseBitcoinURI(uriInstance, out);
+    return parseSchemeURI(uriInstance, out);
 }
 
-QString formatBitcoinURI(const SendCoinsRecipient &info)
+QString formatSchemeURI(const SendCoinsRecipient &info)
 {
-    bool bech_32 = info.address.startsWith(QString::fromStdString(Params().Bech32HRP() + "1"));
-
-    QString ret = QString("bitcoin:%1").arg(bech_32 ? info.address.toUpper() : info.address);
-    int paramCount = 0;
+    QUrlQuery query;
 
     if (info.amount)
-    {
-        ret += QString("?amount=%1").arg(BitcoinUnits::format(BitcoinUnit::BTC, info.amount, false, BitcoinUnits::SeparatorStyle::NEVER));
-        paramCount++;
-    }
+        query.addQueryItem("amount", BitcoinUnits::format(info.unit, info.amount, false, BitcoinUnits::SeparatorStyle::NEVER));
+
+    if (info.unit != BitcoinUnits::BTC)
+        query.addQueryItem("unit", QString::number(info.unit - BitcoinUnits::SAT));
 
     if (!info.label.isEmpty())
-    {
-        QString lbl(QUrl::toPercentEncoding(info.label));
-        ret += QString("%1label=%2").arg(paramCount == 0 ? "?" : "&").arg(lbl);
-        paramCount++;
-    }
+        query.addQueryItem("label", QUrl::toPercentEncoding(info.label));
 
     if (!info.message.isEmpty())
-    {
-        QString msg(QUrl::toPercentEncoding(info.message));
-        ret += QString("%1message=%2").arg(paramCount == 0 ? "?" : "&").arg(msg);
-        paramCount++;
-    }
+        query.addQueryItem("message", QUrl::toPercentEncoding(info.message));
 
-    return ret;
+    static const QString omniPrefix = QString::fromStdString(mastercore::ConsensusParams().GetBech32HRO());
+    const auto& scheme = info.address.startsWith(omniPrefix) ? omniScheme : bitcoinScheme;
+
+    return QString("%1:%2?%3").arg(scheme, info.address, query.toString(QUrl::FullyEncoded));
 }
 
 bool isDust(interfaces::Node& node, const QString& address, const CAmount& amount)

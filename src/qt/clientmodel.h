@@ -146,6 +146,13 @@ Q_SIGNALS:
 
     // Show progress dialog e.g. for verifychain
     void showProgress(const QString &title, int nProgress);
+
+public Q_SLOTS:
+    // Additional Omni slots
+    void updateOmniState();
+    void updateOmniPending(bool pending);
+    void updateOmniBalance();
+    void invalidateOmniState();
 };
 
 #endif // BITCOIN_QT_CLIENTMODEL_H

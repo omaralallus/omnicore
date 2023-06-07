@@ -40,6 +40,8 @@
 #include <qt/walletmodel.h>
 #endif // ENABLE_WALLET
 
+#include <omnicore/utilsui.h>
+
 #include <boost/signals2/connection.hpp>
 #include <chrono>
 #include <memory>
@@ -96,11 +98,7 @@ static void RegisterMetaTypes()
     qRegisterMetaType<QMessageBox::Icon>("QMessageBox::Icon");
     qRegisterMetaType<interfaces::BlockAndHeaderTipInfo>("interfaces::BlockAndHeaderTipInfo");
 
-#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
-    qRegisterMetaTypeStreamOperators<BitcoinUnit>("BitcoinUnit");
-#else
-    qRegisterMetaType<BitcoinUnit>("BitcoinUnit");
-#endif
+    qRegisterMetaType<BitcoinUnits::Unit>("BitcoinUnits::Unit");
 }
 
 static QString GetLangTerritory()
@@ -294,9 +292,9 @@ bool BitcoinApplication::createOptionsModel(bool resetSettings)
     return true;
 }
 
-void BitcoinApplication::createWindow(const NetworkStyle *networkStyle)
+void BitcoinApplication::createWindow()
 {
-    window = new BitcoinGUI(node(), platformStyle, networkStyle, nullptr);
+    window = new BitcoinGUI(node(), platformStyle, &NetworkStyle::instance(), nullptr);
     connect(window, &BitcoinGUI::quitRequested, this, &BitcoinApplication::requestShutdown);
 
     pollShutdownTimer = new QTimer(window);
@@ -305,12 +303,16 @@ void BitcoinApplication::createWindow(const NetworkStyle *networkStyle)
             window->detectShutdown();
         }
     });
+
+#if defined(Q_OS_WIN)
+    WinShutdownMonitor::registerShutdownBlockReason(QObject::tr("%1 didn't yet exit safely…").arg(PACKAGE_NAME), (HWND)getMainWinId());
+#endif
 }
 
-void BitcoinApplication::createSplashScreen(const NetworkStyle *networkStyle)
+void BitcoinApplication::createSplashScreen()
 {
     assert(!m_splash);
-    m_splash = new SplashScreen(networkStyle);
+    m_splash = new SplashScreen(&NetworkStyle::instance());
     // We don't hold a direct pointer to the splash screen after creation, but the splash
     // screen will take care of deleting itself when finish() happens.
     m_splash->show();
@@ -416,6 +418,7 @@ void BitcoinApplication::initializeResult(bool success, interfaces::BlockAndHead
     returnValue = success ? EXIT_SUCCESS : EXIT_FAILURE;
     if(success)
     {
+        createWindow();
         // Log this only after AppInitMain finishes, as then logging setup is guaranteed complete
         qInfo() << "Platform customization:" << platformStyle->getName();
         clientModel = new ClientModel(node(), optionsModel);
@@ -513,6 +516,8 @@ int GuiMain(int argc, char* argv[])
     util::WinCmdLineArgs winArgs;
     std::tie(argc, argv) = winArgs.get();
 #endif
+
+    fQtMode = true;
 
     std::unique_ptr<interfaces::Init> init = interfaces::MakeGuiInit(argc, argv);
 
@@ -630,10 +635,8 @@ int GuiMain(int argc, char* argv[])
         return EXIT_FAILURE;
     }
 
-    QScopedPointer<const NetworkStyle> networkStyle(NetworkStyle::instantiate(Params().NetworkIDString()));
-    assert(!networkStyle.isNull());
     // Allow for separate UI settings for testnets
-    QApplication::setApplicationName(networkStyle->getAppName());
+    QApplication::setApplicationName(NetworkStyle::instance().getAppName());
     // Re-initialize translations after changing application name (language in network-specific settings can be different)
     initTranslations(qtTranslatorBase, qtTranslator, translatorBase, translator);
 
@@ -668,7 +671,7 @@ int GuiMain(int argc, char* argv[])
     GUIUtil::LogQtInfo();
 
     if (gArgs.GetBoolArg("-splash", DEFAULT_SPLASHSCREEN) && !gArgs.GetBoolArg("-min", false))
-        app.createSplashScreen(networkStyle.data());
+        app.createSplashScreen();
 
     app.createNode(*init);
 
@@ -685,15 +688,11 @@ int GuiMain(int argc, char* argv[])
     int rv = EXIT_SUCCESS;
     try
     {
-        app.createWindow(networkStyle.data());
         // Perform base initialization before spinning up initialization/shutdown thread
         // This is acceptable because this function only contains steps that are quick to execute,
         // so the GUI thread won't be held up.
         if (app.baseInitialize()) {
             app.requestInitialize();
-#if defined(Q_OS_WIN)
-            WinShutdownMonitor::registerShutdownBlockReason(QObject::tr("%1 didn't yet exit safely…").arg(PACKAGE_NAME), (HWND)app.getMainWinId());
-#endif
             app.exec();
             rv = app.getReturnValue();
         } else {

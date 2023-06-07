@@ -36,6 +36,7 @@ public:
     void sendMPTransaction();
     void updateProperty();
     void updatePropSelector();
+    bool handlePaymentRequest(const SendCoinsRecipient& recipient);
 
 public Q_SLOTS:
     void propertyComboBoxChanged(int idx);
@@ -54,6 +55,16 @@ private:
 Q_SIGNALS:
     // Fired when a message should be reported to the user
     void message(const QString &title, const QString &message, unsigned int style);
+};
+
+class QOmniAddressValidator : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit QOmniAddressValidator(QObject *parent) : QObject(parent) {}
+protected:
+    bool eventFilter(QObject *obj, QEvent *event);
 };
 
 #endif // BITCOIN_QT_SENDMPDIALOG_H

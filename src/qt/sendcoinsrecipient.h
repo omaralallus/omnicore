@@ -9,6 +9,8 @@
 #include <config/bitcoin-config.h>
 #endif
 
+#include <qt/bitcoinunits.h>
+
 #include <consensus/amount.h>
 #include <serialize.h>
 
@@ -40,6 +42,7 @@ public:
     QString authenticatedMerchant;
 
     bool fSubtractFeeFromAmount; // memory only
+    BitcoinUnit unit = BitcoinUnits::BTC;
 
     static const int CURRENT_VERSION = 1;
     int nVersion;
@@ -53,7 +56,7 @@ public:
         SER_WRITE(obj, message_str = obj.message.toStdString());
         SER_WRITE(obj, auth_merchant_str = obj.authenticatedMerchant.toStdString());
 
-        READWRITE(obj.nVersion, address_str, label_str, obj.amount, message_str, obj.sPaymentRequest, auth_merchant_str);
+        READWRITE(obj.nVersion, address_str, label_str, obj.amount, message_str, obj.sPaymentRequest, auth_merchant_str, obj.unit);
 
         SER_READ(obj, obj.address = QString::fromStdString(address_str));
         SER_READ(obj, obj.label = QString::fromStdString(label_str));

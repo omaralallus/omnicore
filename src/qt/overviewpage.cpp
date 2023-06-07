@@ -22,6 +22,7 @@
 #include <omnicore/notifications.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/rules.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/tx.h>
 #include <omnicore/parsing.h>
@@ -30,6 +31,7 @@
 #include <omnicore/walletutils.h>
 
 #include <chainparams.h>
+#include <key_io.h>
 #include <validation.h>
 #include <sync.h>
 
@@ -76,12 +78,11 @@ class TxViewDelegate : public QAbstractItemDelegate
 {
     Q_OBJECT
 
-    WalletModel *walletModel;
+    WalletModel *walletModel = nullptr;
 
 public:
-    explicit TxViewDelegate(const PlatformStyle *_platformStyle, QObject *parent=nullptr):
+    explicit TxViewDelegate(const PlatformStyle *_platformStyle, QObject *parent = nullptr):
         QAbstractItemDelegate(parent),
-        walletModel(nullptr),
         platformStyle(_platformStyle)
     {
         connect(this, &TxViewDelegate::width_changed, this, &TxViewDelegate::sizeHintChanged);
@@ -120,6 +121,8 @@ public:
         bool omniOverride = false, omniSendToSelf = false, valid = false, omniOutbound = true;
         QString omniAmountStr;
 
+        address = TryDecodeOmniAddress(address.toStdString()).c_str();
+
         // check pending
         {
             LOCK(cs_pending);
@@ -130,11 +133,7 @@ public:
                 valid = true; // assume all outbound pending are valid prior to confirmation
                 CMPPending *p_pending = &(it->second);
                 address = QString::fromStdString(p_pending->src);
-                if (isPropertyDivisible(p_pending->prop)) {
-                    omniAmountStr = QString::fromStdString(FormatDivisibleShortMP(p_pending->amount) + getTokenLabel(p_pending->prop));
-                } else {
-                    omniAmountStr = QString::fromStdString(FormatIndivisibleMP(p_pending->amount) + getTokenLabel(p_pending->prop));
-                }
+                omniAmountStr = QString::fromStdString(FormatShortMP(p_pending->prop, p_pending->amount) + ' ' + getTokenLabel(p_pending->prop));
                 // override amount for cancels
                 if (p_pending->type == MSC_TYPE_METADEX_CANCEL_PRICE || p_pending->type == MSC_TYPE_METADEX_CANCEL_PAIR ||
                     p_pending->type == MSC_TYPE_METADEX_CANCEL_ECOSYSTEM || p_pending->type == MSC_TYPE_SEND_ALL) {
@@ -171,23 +170,19 @@ public:
                                 valid = true;
                                 std::string tmpBuyer, tmpSeller;
                                 uint64_t total = 0, tmpVout = 0, tmpNValue = 0, tmpPropertyId = 0;
-                                {
-                                    LOCK(cs_tally);
-                                    pDbTransactionList->getPurchaseDetails(hash,1,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
-                                }
+                                pDbTransactionList->getPurchaseDetails(hash,1,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
                                 bool bIsBuy = IsMyAddress(tmpBuyer, &walletModel->wallet());
-                                LOCK(cs_tally);
-                                int numberOfPurchases=pDbTransactionList->getNumberOfSubRecords(hash);
+                                int numberOfPurchases = pDbTransactionList->getNumberOfSubRecords(hash);
                                 if (0<numberOfPurchases) { // calculate total bought/sold
                                     for(int purchaseNumber = 1; purchaseNumber <= numberOfPurchases; purchaseNumber++) {
                                         pDbTransactionList->getPurchaseDetails(hash,purchaseNumber,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
                                         total += tmpNValue;
                                     }
                                     if (!bIsBuy) {
-                                          address = QString::fromStdString(tmpSeller);
+                                        address = QString::fromStdString(tmpSeller);
                                     } else {
-                                          address = QString::fromStdString(tmpBuyer);
-                                          omniOutbound = false;
+                                        address = QString::fromStdString(tmpBuyer);
+                                        omniOutbound = false;
                                     }
                                     omniAmountStr = QString::fromStdString(FormatDivisibleMP(total));
                                 }
@@ -196,11 +191,7 @@ public:
                                     valid = pDbTransactionList->getValidMPTX(hash);
                                     uint32_t omniPropertyId = mp_obj.getProperty();
                                     int64_t omniAmount = mp_obj.getAmount();
-                                    if (isPropertyDivisible(omniPropertyId)) {
-                                        omniAmountStr = QString::fromStdString(FormatDivisibleShortMP(omniAmount) + getTokenLabel(omniPropertyId));
-                                    } else {
-                                        omniAmountStr = QString::fromStdString(FormatIndivisibleMP(omniAmount) + getTokenLabel(omniPropertyId));
-                                    }
+                                    omniAmountStr = QString::fromStdString(FormatShortMP(omniPropertyId, omniAmount) + ' ' + getTokenLabel(omniPropertyId));
                                     if (!mp_obj.getReceiver().empty()) {
                                         if (IsMyAddress(mp_obj.getReceiver(), &walletModel->wallet())) {
                                             omniOutbound = false;
@@ -263,6 +254,9 @@ public:
 
         painter->setPen(foreground);
         QRect boundingRect;
+
+        address = TryEncodeOmniAddress(address.toStdString()).c_str();
+
         painter->drawText(addressRect, Qt::AlignLeft | Qt::AlignVCenter, address, &boundingRect);
 
         if(amount < 0)
@@ -314,7 +308,7 @@ public:
         return {DECORATION_SIZE + 8 + minimum_text_width, DECORATION_SIZE};
     }
 
-    BitcoinUnit unit{BitcoinUnit::BTC};
+    BitcoinUnit unit{BitcoinUnits::BTC};
 
 Q_SIGNALS:
     //! An intermediate signal for emitting from the `paint() const` member function.
@@ -451,7 +445,7 @@ void OverviewPage::UpdatePropertyBalance(unsigned int propertyId, uint64_t avail
         tokenStr = " BTC";
     } else {
         divisible = isPropertyDivisible(propertyId);
-        tokenStr = getTokenLabel(propertyId);
+        tokenStr += ' ' + getTokenLabel(propertyId);
     }
 
     // Left Panel

@@ -21,6 +21,7 @@
 #include <omnicore/pending.h>
 #include <omnicore/rpc.h>
 #include <omnicore/rpctxobject.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/tx.h>
 #include <omnicore/utilsbitcoin.h>
@@ -62,11 +63,12 @@
 
 using namespace mastercore;
 
-TXHistoryDialog::TXHistoryDialog(QWidget *parent) :
+TXHistoryDialog::TXHistoryDialog(const PlatformStyle *platformStyle, QWidget *parent) :
     QDialog(parent),
     ui(new Ui::txHistoryDialog),
     clientModel(nullptr),
-    walletModel(nullptr)
+    walletModel(nullptr),
+    platformStyle(platformStyle)
 {
     ui->setupUi(this);
     // setup
@@ -128,8 +130,8 @@ TXHistoryDialog::TXHistoryDialog(QWidget *parent) :
     // since there is no model we can't do this before we add some data, so now let's do the resizing
     // *after* we've populated the initial content for the table
     ui->txHistoryTable->setColumnWidth(2, 23);
-    ui->txHistoryTable->resizeColumnToContents(3);
     ui->txHistoryTable->resizeColumnToContents(4);
+    ui->txHistoryTable->resizeColumnToContents(5);
     ui->txHistoryTable->resizeColumnToContents(6);
     ui->txHistoryTable->setColumnHidden(0, true); // hidden txid for displaying transaction details
     ui->txHistoryTable->setColumnHidden(1, true); // hideen sort key
@@ -186,14 +188,6 @@ void TXHistoryDialog::setWalletModel(WalletModel *model)
 
 int TXHistoryDialog::PopulateHistoryMap()
 {
-    // TODO: locks may not be needed here -- looks like wallet lock can be removed
-    //if (NULL == pwalletMain) return 0;
-    // try and fix intermittent freeze on startup and while running by only updating if we can get required locks
-    TRY_LOCK(cs_main,lckMain);
-    if (!lckMain) return 0;
-    //TRY_LOCK(pwalletMain->cs_wallet, lckWallet);
-    //if (!lckWallet) return 0;
-
     int64_t nProcessed = 0; // counter for how many transactions we've added to history this time
 
     // obtain a sorted list of Omni layer wallet transactions (including STO receipts and pending) - default last 65535
@@ -242,7 +236,7 @@ int TXHistoryDialog::PopulateHistoryMap()
             if (it->first.length() == 16) htxo.blockByteOffset = atoi(it->first.substr(6)); // use wallet position from key in lieu of block position
             htxo.valid = true; // all pending transactions are assumed to be valid prior to confirmation (wallet would not send them otherwise)
             htxo.address = pending.src;
-            htxo.amount = "-" + FormatShortMP(pending.prop, pending.amount) + getTokenLabel(pending.prop);
+            htxo.amount = "-" + FormatShortMP(pending.prop, pending.amount) + ' ' + getTokenLabel(pending.prop);
             bool fundsMoved = true;
             htxo.txType = shrinkTxType(pending.type, &fundsMoved);
             if (pending.type == MSC_TYPE_METADEX_CANCEL_PRICE || pending.type == MSC_TYPE_METADEX_CANCEL_PAIR ||
@@ -276,15 +270,12 @@ int TXHistoryDialog::PopulateHistoryMap()
             uint64_t tmpPropertyId = 0;
             bool bIsBuy = false;
             int numberOfPurchases = 0;
-            {
-                LOCK(cs_tally);
-                pDbTransactionList->getPurchaseDetails(txHash, 1, &tmpBuyer, &tmpSeller, &tmpVout, &tmpPropertyId, &tmpNValue);
-            }
+            pDbTransactionList->getPurchaseDetails(txHash, 1, &tmpBuyer, &tmpSeller, &tmpVout, &tmpPropertyId, &tmpNValue);
+
             bIsBuy = IsMyAddress(tmpBuyer, &walletModel->wallet());
             numberOfPurchases = pDbTransactionList->getNumberOfSubRecords(txHash);
             if (0 >= numberOfPurchases) continue;
             for (int purchaseNumber = 1; purchaseNumber <= numberOfPurchases; purchaseNumber++) {
-                LOCK(cs_tally);
                 pDbTransactionList->getPurchaseDetails(txHash, purchaseNumber, &tmpBuyer, &tmpSeller, &tmpVout, &tmpPropertyId, &tmpNValue);
                 total += tmpNValue;
             }
@@ -296,7 +287,7 @@ int TXHistoryDialog::PopulateHistoryMap()
                 htxo.address = tmpBuyer;
             }
             htxo.valid = true; // only valid DEx payments are recorded in txlistdb
-            htxo.amount = (!bIsBuy ? "-" : "") + FormatDivisibleShortMP(total) + getTokenLabel(tmpPropertyId);
+            htxo.amount = (!bIsBuy ? "-" : "") + FormatDivisibleShortMP(total) + ' ' + getTokenLabel(tmpPropertyId);
             htxo.fundsMoved = true;
             txHistoryMap.insert(std::make_pair(txHash, htxo));
             nProcessed++;
@@ -312,7 +303,7 @@ int TXHistoryDialog::PopulateHistoryMap()
         uint64_t amountNew = 0;
         htxo.valid = pDbTransactionList->getValidMPTX(txHash, &tmpBlock, &type, &amountNew);
         if (htxo.valid && type == MSC_TYPE_TRADE_OFFER && amountNew > 0) amount = amountNew; // override for when amount for sale has been auto-adjusted
-        std::string displayAmount = FormatShortMP(mp_obj.getProperty(), amount) + getTokenLabel(mp_obj.getProperty());
+        std::string displayAmount = FormatShortMP(mp_obj.getProperty(), amount) + ' ' + getTokenLabel(mp_obj.getProperty());
         htxo.fundsMoved = true;
         htxo.txType = shrinkTxType(mp_obj.getType(), &htxo.fundsMoved);
         if (!htxo.valid) htxo.fundsMoved = false; // funds never move in invalid txs
@@ -326,7 +317,7 @@ int TXHistoryDialog::PopulateHistoryMap()
             displayAmount = "N/A";
             if (htxo.valid) {
                 uint32_t propertyId = pDbSpInfo->findSPByTX(txHash);
-                if (type == MSC_TYPE_CREATE_PROPERTY_FIXED) displayAmount = FormatShortMP(propertyId, getTotalTokens(propertyId)) + getTokenLabel(propertyId);
+                if (type == MSC_TYPE_CREATE_PROPERTY_FIXED) displayAmount = FormatShortMP(propertyId, getTotalTokens(propertyId)) + ' ' + getTokenLabel(propertyId);
             }
         }
         // override - hide display amount for cancels and unknown transactions as we can't display amount/property as no prop exists
@@ -338,9 +329,8 @@ int TXHistoryDialog::PopulateHistoryMap()
         if (type == MSC_TYPE_SEND_TO_OWNERS && !isMyAddress) {
             UniValue receiveArray(UniValue::VARR);
             uint64_t tmpAmount = 0, stoFee = 0;
-            LOCK(cs_tally);
             pDbStoList->getRecipients(txHash, "", &receiveArray, &tmpAmount, &stoFee, &walletModel->wallet());
-            displayAmount = FormatShortMP(mp_obj.getProperty(), tmpAmount) + getTokenLabel(mp_obj.getProperty());
+            displayAmount = FormatShortMP(mp_obj.getProperty(), tmpAmount) + ' ' + getTokenLabel(mp_obj.getProperty());
         }
         htxo.amount = displayAmount;
         txHistoryMap.insert(std::make_pair(txHash, htxo));
@@ -380,8 +370,7 @@ void TXHistoryDialog::UpdateConfirmations()
         if (confirmations > 5) ic = QIcon(":/icons/transaction_confirmed");
         if (!valid) ic = QIcon(":/icons/transaction_conflicted");
         QTableWidgetItem *iconCell = new QTableWidgetItem;
-//        ic = platformStyle->SingleColorIcon(ic);
-        iconCell->setIcon(ic);
+        iconCell->setIcon(platformStyle->SingleColorIcon(ic));
         ui->txHistoryTable->setItem(row, 2, iconCell);
     }
 }
@@ -420,8 +409,9 @@ void TXHistoryDialog::UpdateHistory()
                 } else {
                     dateCell->setData(Qt::DisplayRole, QString::fromStdString("Unconfirmed"));
                 }
+                std::string address = TryEncodeOmniAddress(htxo.address);
                 QTableWidgetItem *typeCell = new QTableWidgetItem(QString::fromStdString(htxo.txType));
-                QTableWidgetItem *addressCell = new QTableWidgetItem(QString::fromStdString(htxo.address));
+                QTableWidgetItem *addressCell = new QTableWidgetItem(QString::fromStdString(address));
                 QTableWidgetItem *amountCell = new QTableWidgetItem(QString::fromStdString(htxo.amount));
                 QTableWidgetItem *iconCell = new QTableWidgetItem;
                 QTableWidgetItem *txidCell = new QTableWidgetItem(QString::fromStdString(txid.GetHex()));
@@ -429,13 +419,10 @@ void TXHistoryDialog::UpdateHistory()
                 if(htxo.blockHeight == 0) sortKey = strprintf("%06d%010D",999999,htxo.blockByteOffset); // spoof the hidden value to ensure pending txs are sorted top
                 QTableWidgetItem *sortKeyCell = new QTableWidgetItem(QString::fromStdString(sortKey));
                 addressCell->setTextAlignment(Qt::AlignLeft + Qt::AlignVCenter);
-                addressCell->setForeground(QColor("#707070"));
                 amountCell->setTextAlignment(Qt::AlignRight + Qt::AlignVCenter);
-                amountCell->setForeground(QColor("#00AA00"));
                 if (htxo.amount.length() > 0) { // protect against an empty value
                     if (htxo.amount.substr(0,1) == "-") amountCell->setForeground(QColor("#EE0000")); // outbound
                 }
-                if (!htxo.fundsMoved) amountCell->setForeground(QColor("#404040"));
                 ui->txHistoryTable->setItem(workingRow, 0, txidCell);
                 ui->txHistoryTable->setItem(workingRow, 1, sortKeyCell);
                 ui->txHistoryTable->setItem(workingRow, 2, iconCell);

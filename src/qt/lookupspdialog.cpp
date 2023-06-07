@@ -9,6 +9,8 @@
 
 #include <omnicore/dbspinfo.h>
 #include <omnicore/omnicore.h>
+#include <omnicore/rules.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 
 #include <base58.h>
@@ -90,8 +92,17 @@ void LookupSPDialog::searchSP()
     // next if not positive numerical, lets see if the string is a valid bitcoin address for issuer search
     if (searchParamType == 0)
     {
-        CTxDestination address = DecodeDestination(searchText); // no null check on searchText required we've already checked it's not empty above
-        if (IsValidDestination(address)) searchParamType = 2; // search by address;
+        CTxDestination dest = CNoDestination{};
+        if (fOmniSafeAddresses) {
+            dest = DecodeOmniDestination(searchText);
+        }
+        if (IsValidDestination(dest)) {
+            searchParamType = 2;
+            searchText = EncodeDestination(dest);
+        } else {
+            dest = DecodeDestination(searchText); // no null check on searchText required we've already checked it's not empty above
+            if (IsValidDestination(dest)) searchParamType = 2; // search by address;
+        }
     }
 
     // next if we have a "*" only, we'll assume the user wants to request all properties
@@ -156,21 +167,22 @@ void LookupSPDialog::searchSP()
                }
            }
         break;
-        case 3: //search by freetext
+        case 3: { //search by freetext
            // iterate through my_sps and see if property name contains the search text
            nextSPID = pDbSpInfo->peekNextSPID(1);
            nextTestSPID = pDbSpInfo->peekNextSPID(2);
+           std::string lowerSearch = searchText;
+           std::transform(lowerSearch.begin(), lowerSearch.end(), lowerSearch.begin(), ::tolower);
+           bool isAddress = fOmniSafeAddresses && lowerSearch.find(ConsensusParams().GetBech32HRO()) == 0;
            for (tmpPropertyId = 1; tmpPropertyId<nextSPID; tmpPropertyId++)
            {
                CMPSPInfo::Entry sp;
                if (false != pDbSpInfo->getSP(tmpPropertyId, sp))
                {
                    // make the search case insensitive
-                   std::string lowerName = sp.name;
+                   std::string lowerName = isAddress ? TryEncodeOmniAddress(sp.issuer) : sp.name;
                    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-                   std::string lowerSearch = searchText;
-                   std::transform(lowerSearch.begin(), lowerSearch.end(), lowerSearch.begin(), ::tolower);
-                   size_t loc = lowerName.find(lowerSearch);
+                    size_t loc = lowerName.find(lowerSearch);
                    if (loc!=std::string::npos)
                    {
                        addSPToMatchingResults(tmpPropertyId);
@@ -183,10 +195,8 @@ void LookupSPDialog::searchSP()
                if (false != pDbSpInfo->getSP(tmpPropertyId, sp))
                {
                    // make the search case insensitive
-                   std::string lowerName = sp.name;
+                   std::string lowerName = isAddress ? TryEncodeOmniAddress(sp.issuer) : sp.name;;
                    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
-                   std::string lowerSearch = searchText;
-                   std::transform(lowerSearch.begin(), lowerSearch.end(), lowerSearch.begin(), ::tolower);
                    size_t loc = lowerName.find(lowerSearch);
                    if (loc!=std::string::npos)
                    {
@@ -194,6 +204,7 @@ void LookupSPDialog::searchSP()
                    }
                }
            }
+        }
         break;
         case 4: // grab everything
            nextSPID = pDbSpInfo->peekNextSPID(1);

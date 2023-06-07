@@ -49,7 +49,7 @@ class TradeHistoryDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit TradeHistoryDialog(QWidget *parent = 0);
+    explicit TradeHistoryDialog(const PlatformStyle *platformStyle, QWidget *parent = nullptr);
     ~TradeHistoryDialog();
     void setWalletModel(WalletModel *model);
     void setClientModel(ClientModel *model);
@@ -61,6 +61,7 @@ private:
     ClientModel *clientModel;
     WalletModel *walletModel;
     QMenu *contextMenu;
+    const PlatformStyle *platformStyle;
     TradeHistoryMap tradeHistoryMap;
 
 public Q_SLOTS:

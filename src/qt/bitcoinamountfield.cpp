@@ -125,7 +125,7 @@ public:
 
             const QFontMetrics fm(fontMetrics());
             int h = lineEdit()->minimumSizeHint().height();
-            int w = GUIUtil::TextWidth(fm, BitcoinUnits::format(BitcoinUnit::BTC, BitcoinUnits::maxMoney(), false, BitcoinUnits::SeparatorStyle::ALWAYS));
+            int w = GUIUtil::TextWidth(fm, BitcoinUnits::format(BitcoinUnits::BTC, BitcoinUnits::maxMoney(), false, BitcoinUnits::SeparatorStyle::ALWAYS));
             w += 2; // cursor blinking space
 
             QStyleOptionSpinBox opt;
@@ -150,7 +150,7 @@ public:
     }
 
 private:
-    BitcoinUnit currentUnit{BitcoinUnit::BTC};
+    BitcoinUnit currentUnit{BitcoinUnits::BTC};
     CAmount singleStep{CAmount(100000)}; // satoshis
     mutable QSize cachedMinimumSizeHint;
     bool m_allow_empty{true};
@@ -242,9 +242,10 @@ BitcoinAmountField::BitcoinAmountField(QWidget *parent) :
     // If one if the widgets changes, the combined content changes as well
     connect(amount, &AmountSpinBox::valueChanged, this, &BitcoinAmountField::valueChanged);
     connect(unit, qOverload<int>(&QComboBox::currentIndexChanged), this, &BitcoinAmountField::unitChanged);
+    connect(unit, qOverload<int>(&QComboBox::currentIndexChanged), this, &BitcoinAmountField::slotUnitChanged);
 
     // Set default based on configuration
-    unitChanged(unit->currentIndex());
+    slotUnitChanged(unit->currentIndex());
 }
 
 void BitcoinAmountField::clear()
@@ -322,7 +323,7 @@ void BitcoinAmountField::setReadOnly(bool fReadOnly)
     amount->setReadOnly(fReadOnly);
 }
 
-void BitcoinAmountField::unitChanged(int idx)
+void BitcoinAmountField::slotUnitChanged(int idx)
 {
     // Use description tooltip for current unit for the combobox
     unit->setToolTip(unit->itemData(idx, Qt::ToolTipRole).toString());
@@ -331,6 +332,11 @@ void BitcoinAmountField::unitChanged(int idx)
     QVariant new_unit = unit->currentData(BitcoinUnits::UnitRole);
     assert(new_unit.isValid());
     amount->setDisplayUnit(new_unit.value<BitcoinUnit>());
+}
+
+BitcoinUnit BitcoinAmountField::getDisplayUnit()
+{
+    return unit->value().value<BitcoinUnit>();
 }
 
 void BitcoinAmountField::setDisplayUnit(BitcoinUnit new_unit)

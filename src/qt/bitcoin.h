@@ -51,9 +51,9 @@ public:
     /// Initialize prune setting
     void InitPruneSetting(int64_t prune_MiB);
     /// Create main window
-    void createWindow(const NetworkStyle *networkStyle);
+    void createWindow();
     /// Create splash screen
-    void createSplashScreen(const NetworkStyle *networkStyle);
+    void createSplashScreen();
     /// Create or spawn node
     void createNode(interfaces::Init& init);
     /// Basic initialization, before starting initialization/shutdown thread. Return true on success.

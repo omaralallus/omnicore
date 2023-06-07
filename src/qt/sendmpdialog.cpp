@@ -2,7 +2,11 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <qt/bitcoinunits.h>
+#include <qt/guiutil.h>
+#include <qt/guiconstants.h>
 #include <qt/sendmpdialog.h>
+#include <qt/sendcoinsrecipient.h>
 #include <qt/forms/ui_sendmpdialog.h>
 
 #include <qt/omnicore_qtutils.h>
@@ -17,6 +21,8 @@
 #include <omnicore/omnicore.h>
 #include <omnicore/parse_string.h>
 #include <omnicore/pending.h>
+#include <omnicore/rules.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/tally.h>
 #include <omnicore/utilsbitcoin.h>
@@ -27,6 +33,7 @@
 #include <base58.h>
 #include <key_io.h>
 #include <validation.h>
+#include <script/standard.h>
 #include <sync.h>
 #include <uint256.h>
 #include <wallet/wallet.h>
@@ -47,6 +54,35 @@
 using std::ostringstream;
 
 using namespace mastercore;
+
+bool QOmniAddressValidator::eventFilter(QObject *obj, QEvent *event)
+{
+    switch(event->type()) {
+    case QEvent::FocusIn: {
+        auto *lineEdit = qobject_cast<QLineEdit*>(obj);
+        lineEdit->setStyleSheet("");
+        return true;
+    }
+    case QEvent::FocusOut: {
+        bool validAddress = true;
+        auto *lineEdit = qobject_cast<QLineEdit*>(obj);
+        auto address = lineEdit->text().toStdString();
+        if (!address.empty()) {
+            if (address.find(ConsensusParams().GetBech32HRO()) == 0) {
+                validAddress = IsValidDestination(DecodeOmniDestination(address));
+            } else {
+                auto dest = DecodeDestination(address);
+                validAddress = IsValidDestination(dest) && dest.index() < 3;
+            }
+        }
+        lineEdit->setStyleSheet(validAddress ? "" : STYLE_INVALID);
+        return true;
+    }
+    default:
+        // standard event processing
+        return QObject::eventFilter(obj, event);
+    }
+}
 
 SendMPDialog::SendMPDialog(const PlatformStyle *platformStyle, QWidget *parent) :
     QDialog(parent),
@@ -78,6 +114,9 @@ SendMPDialog::SendMPDialog(const PlatformStyle *platformStyle, QWidget *parent) 
     connect(ui->clearButton, &QPushButton::clicked, this, &SendMPDialog::clearButtonClicked);
     connect(ui->sendButton, &QPushButton::clicked, this, &SendMPDialog::sendButtonClicked);
 
+    if (fOmniSafeAddresses) {
+        ui->sendToLineEdit->installEventFilter(new QOmniAddressValidator(this));
+    }
     // initial update
     /**
     * Cannot be run as no wallet is available until after setWalletModel
@@ -168,10 +207,11 @@ void SendMPDialog::updateFrom()
         ui->feeWarningLabel->setVisible(false);
     } else {
         // update the balance for the selected address
+        currentSetFromAddress = TryDecodeOmniAddress(currentSetFromAddress);
         QString spId = ui->propertyComboBox->itemData(ui->propertyComboBox->currentIndex()).toString();
         uint32_t propertyId = spId.toUInt();
         if (propertyId > 0) {
-            ui->balanceLabel->setText(QString::fromStdString("Address Balance: " + FormatMP(propertyId, GetAvailableTokenBalance(currentSetFromAddress, propertyId)) + getTokenLabel(propertyId)));
+            ui->balanceLabel->setText(QString::fromStdString("Address Balance: " + FormatMP(propertyId, GetAvailableTokenBalance(currentSetFromAddress, propertyId)) + ' ' + getTokenLabel(propertyId)));
         }
         // warning label will be lit if insufficient fees for simple send (16 byte payload)
         if (CheckFee(walletModel->wallet(), currentSetFromAddress, 16)) {
@@ -193,18 +233,21 @@ void SendMPDialog::updateProperty()
     QString spId = ui->propertyComboBox->itemData(ui->propertyComboBox->currentIndex()).toString();
     uint32_t propertyId = spId.toUInt();
     LOCK(cs_tally);
-    for (std::unordered_map<std::string, CMPTally>::iterator my_it = mp_tally_map.begin(); my_it != mp_tally_map.end(); ++my_it) {
-        std::string address = (my_it->first).c_str();
+    for (const auto& wallet_address : wallet_addresses) {
+        auto my_it = mp_tally_map.find(wallet_address);
+        if (my_it == mp_tally_map.end()) continue;
+        std::string address = my_it->first;
         uint32_t id = 0;
-        bool includeAddress=false;
+        bool includeAddress = false;
         (my_it->second).init();
         while (0 != (id = (my_it->second).next())) {
-            if(id == propertyId) { includeAddress=true; break; }
+            if(id == propertyId) { includeAddress = true; break; }
         }
         if (!includeAddress) continue; //ignore this address, has never transacted in this propertyId
-        if (!walletModel->wallet().isSpendable(DecodeDestination(address))) continue; // ignore this address, it's not spendable
-        if (!GetAvailableTokenBalance(address, propertyId)) continue; // ignore this address, has no available balance to spend
-        ui->sendFromComboBox->addItem(QString::fromStdString(address + " \t" + FormatMP(propertyId, GetAvailableTokenBalance(address, propertyId)) + getTokenLabel(propertyId)));
+        auto balance = GetAvailableTokenBalance(address, propertyId);
+        if (!balance) continue; // ignore this address, has no available balance to spend
+        address = TryEncodeOmniAddress(address);
+        ui->sendFromComboBox->addItem(QString::fromStdString(address + " \t" + FormatMP(propertyId, balance) + ' ' + getTokenLabel(propertyId)));
     }
 
     // attempt to set from address back to cached value
@@ -237,7 +280,10 @@ void SendMPDialog::sendMPTransaction()
 
     // push recipient address into a CTxDestination type and check validity
     CTxDestination fromAddress;
-    if (false == strFromAddress.empty()) { fromAddress = DecodeDestination(strFromAddress); }
+    if (!strFromAddress.empty()) {
+        strFromAddress = TryDecodeOmniAddress(strFromAddress);
+        fromAddress = DecodeDestination(strFromAddress);
+    }
     if (!IsValidDestination(fromAddress)) {
         QMessageBox::critical( this, "Unable to send transaction",
         "The sender address selected is not valid.\n\nPlease double-check the transction details thoroughly before retrying your send transaction." );
@@ -248,13 +294,28 @@ void SendMPDialog::sendMPTransaction()
     std::string strRefAddress = ui->sendToLineEdit->text().toStdString();
     // push recipient address into a CTxDestination type and check validity
     CTxDestination refAddress;
-    if (false == strRefAddress.empty()) { refAddress = DecodeDestination(strRefAddress); }
+    if (!strRefAddress.empty()) {
+        refAddress = DecodeDestination(strRefAddress);
+        if (fOmniSafeAddresses) {
+            // taproot/segwit address should be Omni encoded
+            if (refAddress.index() > 2) {
+                QMessageBox::critical( this, "Address error",
+                                       QString("%1 is not Omni address\n").arg(strRefAddress.c_str()) +
+                                       QString("If you want to disable this warning, add cli parameter or config entry -omnisafeaddresses=0"));
+                return;
+            }
+            if (!IsValidDestination(refAddress)) {
+                refAddress = DecodeOmniDestination(strRefAddress);
+            }
+        }
+    }
     if (!IsValidDestination(refAddress)) {
         QMessageBox::critical( this, "Unable to send transaction",
         "The recipient address entered is not valid.\n\nPlease double-check the transction details thoroughly before retrying your send transaction." );
         return;
     }
 
+    strRefAddress = EncodeDestination(refAddress);
     // warn if we have to truncate the amount due to a decimal amount for an indivisible property, but allow send to continue
     std::string strAmount = ui->amountLineEdit->text().toStdString();
     if (!divisible) {
@@ -286,7 +347,7 @@ void SendMPDialog::sendMPTransaction()
     }
 
     // check if sending address has enough funds
-    int64_t balanceAvailable = GetAvailableTokenBalance(EncodeDestination(fromAddress), propertyId); //getMPbalance(fromAddress.ToString(), propertyId, MONEY);
+    int64_t balanceAvailable = GetAvailableTokenBalance(strFromAddress, propertyId); //getMPbalance(fromAddress.ToString(), propertyId, MONEY);
     if (sendAmount>balanceAvailable) {
         QMessageBox::critical( this, "Unable to send transaction",
         "The selected sending address does not have a sufficient balance to cover the amount entered.\n\nPlease double-check the transction details thoroughly before retrying your send transaction." );
@@ -309,7 +370,9 @@ void SendMPDialog::sendMPTransaction()
     std::string propDetails = getPropertyName(propertyId).c_str();
     std::string spNum = strprintf("%d", propertyId);
     propDetails += " (#" + spNum + ")";
-    strMsgText += "From: " + EncodeDestination(fromAddress) + "\nTo: " + EncodeDestination(refAddress) + "\nProperty: " + propDetails + "\nAmount that will be sent: ";
+    auto fromAddressToShow = TryEncodeOmniAddress(strFromAddress);
+    auto refAddressToShow = TryEncodeOmniAddress(strRefAddress);
+    strMsgText += "From: " + fromAddressToShow + "\nTo: " + refAddressToShow + "\nProperty: " + propDetails + "\nAmount that will be sent: ";
     if (divisible) { strMsgText += FormatDivisibleMP(sendAmount); } else { strMsgText += FormatIndivisibleMP(sendAmount); }
     strMsgText += "\n\nAre you sure you wish to send this transaction?";
     QString msgText = QString::fromStdString(strMsgText);
@@ -335,7 +398,7 @@ void SendMPDialog::sendMPTransaction()
     // request the wallet build the transaction (and if needed commit it) - note UI does not support added reference amounts currently
     uint256 txid;
     std::string rawHex;
-    int result = WalletTxBuilder(EncodeDestination(fromAddress), EncodeDestination(refAddress), "", 0, payload, txid, rawHex, autoCommit, &walletModel->wallet());
+    int result = WalletTxBuilder(strFromAddress, strRefAddress, "", 0, payload, txid, rawHex, autoCommit, &walletModel->wallet());
 
     // check error and return the txid (or raw hex depending on autocommit)
     if (result != 0) {
@@ -346,11 +409,22 @@ void SendMPDialog::sendMPTransaction()
         if (!autoCommit) {
             PopulateSimpleDialog(rawHex, "Raw Hex (auto commit is disabled)", "Raw transaction hex");
         } else {
-            PendingAdd(txid, EncodeDestination(fromAddress), MSC_TYPE_SIMPLE_SEND, propertyId, sendAmount);
+            PendingAdd(txid, strFromAddress, MSC_TYPE_SIMPLE_SEND, propertyId, sendAmount);
             PopulateTXSentDialog(txid.GetHex());
         }
     }
     clearFields();
+}
+
+bool SendMPDialog::handlePaymentRequest(const SendCoinsRecipient& recipient)
+{
+    QString spId = QString::number(recipient.unit);
+    int propIdx = ui->propertyComboBox->findData(spId);
+    if (propIdx != -1) { ui->propertyComboBox->setCurrentIndex(propIdx); }
+    ui->sendToLineEdit->setText(recipient.address);
+    const auto unit = recipient.unit + BitcoinUnits::SAT;
+    ui->amountLineEdit->setText(BitcoinUnits::format(unit, recipient.amount));
+    return true;
 }
 
 void SendMPDialog::sendFromComboBoxChanged(int idx)
@@ -377,7 +451,6 @@ void SendMPDialog::sendButtonClicked()
 void SendMPDialog::balancesUpdated()
 {
     updatePropSelector();
-    if (walletModel)
-        updateProperty();
+    updateProperty();
     updateFrom();
 }

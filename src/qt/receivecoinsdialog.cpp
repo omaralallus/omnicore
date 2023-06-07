@@ -4,6 +4,7 @@
 
 #include <wallet/wallet.h>
 
+#include <qt/bitcoinunits.h>
 #include <qt/receivecoinsdialog.h>
 #include <qt/forms/ui_receivecoinsdialog.h>
 
@@ -15,11 +16,14 @@
 #include <qt/recentrequeststablemodel.h>
 #include <qt/walletmodel.h>
 
+#include <omnicore/omnicore.h>
+
 #include <QAction>
 #include <QCursor>
 #include <QMessageBox>
 #include <QScrollBar>
 #include <QSettings>
+#include <QStandardItemModel>
 #include <QTextDocument>
 
 ReceiveCoinsDialog::ReceiveCoinsDialog(const PlatformStyle *_platformStyle, QWidget *parent) :
@@ -77,6 +81,7 @@ void ReceiveCoinsDialog::setModel(WalletModel *_model)
     {
         _model->getRecentRequestsTableModel()->sort(RecentRequestsTableModel::Date, Qt::DescendingOrder);
         connect(_model->getOptionsModel(), &OptionsModel::displayUnitChanged, this, &ReceiveCoinsDialog::updateDisplayUnit);
+        connect(ui->reqAmount, &BitcoinAmountField::unitChanged, this, &ReceiveCoinsDialog::unitChanged);
         updateDisplayUnit();
 
         QTableView* tableView = ui->recentRequestsView;
@@ -136,11 +141,26 @@ void ReceiveCoinsDialog::accept()
     clear();
 }
 
+void ReceiveCoinsDialog::unitChanged()
+{
+    auto unit = ui->reqAmount->getDisplayUnit();
+    // disable base58 addresses for omni
+    auto enabled = unit <= BitcoinUnits::SAT;
+    if (auto model = qobject_cast<QStandardItemModel*>(ui->addressType->model())) {
+        for (int i = 0; i < 2; i++) {
+            if (auto item = model->item(i)) {
+                item->setEnabled(enabled);
+            }
+        }
+    }
+}
+
 void ReceiveCoinsDialog::updateDisplayUnit()
 {
     if(model && model->getOptionsModel())
     {
-        ui->reqAmount->setDisplayUnit(model->getOptionsModel()->getDisplayUnit());
+        auto unit = model->getOptionsModel()->getDisplayUnit();
+        ui->reqAmount->setDisplayUnit(unit);
     }
 }
 
@@ -161,6 +181,12 @@ void ReceiveCoinsDialog::on_receiveButton_clicked()
         // Success
         SendCoinsRecipient info(address, label,
             ui->reqAmount->value(), ui->reqMessage->text());
+
+        auto unit = ui->reqAmount->getDisplayUnit();
+        if (fOmniSafeAddresses && unit > BitcoinUnits::SAT) {
+            info.unit = unit;
+        }
+
         ReceiveRequestDialog *dialog = new ReceiveRequestDialog(this);
         dialog->setAttribute(Qt::WA_DeleteOnClose);
         dialog->setModel(model);
@@ -280,7 +306,7 @@ void ReceiveCoinsDialog::copyURI()
     }
 
     const RecentRequestsTableModel * const submodel = model->getRecentRequestsTableModel();
-    const QString uri = GUIUtil::formatBitcoinURI(submodel->entry(sel.row()).recipient);
+    const QString uri = GUIUtil::formatSchemeURI(submodel->entry(sel.row()).recipient);
     GUIUtil::setClipboard(uri);
 }
 

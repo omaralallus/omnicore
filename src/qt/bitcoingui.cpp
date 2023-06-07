@@ -309,6 +309,11 @@ void BitcoinGUI::createActions()
     exchangeAction->setShortcut(QKeySequence(QStringLiteral("Alt+5")));
     tabGroup->addAction(exchangeAction);
 
+    if (!gArgs.GetBoolArg("-showdex", false)) {
+        exchangeAction->setVisible(false);
+        exchangeAction->setDisabled(true);
+    }
+
     toolboxAction = new QAction(platformStyle->SingleColorIcon(":/icons/tools"), tr("&Toolbox"), this);
     toolboxAction->setStatusTip(tr("Tools to obtain varions Omni Layer information and transaction information"));
     toolboxAction->setToolTip(toolboxAction->statusTip());

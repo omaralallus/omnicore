@@ -71,8 +71,7 @@ int CreateFundedTransaction(const std::string& senderAddress,
         const std::string& feeAddress,
         const std::vector<unsigned char>& payload,
         uint256& retTxid,
-        interfaces::Wallet* iWallet,
-        node::NodeContext &node);
+        interfaces::Wallet* iWallet);
 
 int CreateDExTransaction(interfaces::Wallet* pwallet, const std::string& buyerAddress, const std::string& sellerAddress, const CAmount& nAmount, uint256& txid);
 #endif

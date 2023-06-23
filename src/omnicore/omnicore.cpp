@@ -850,8 +850,6 @@ static bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
         if (GetTransaction(txIn.prevout.hash, txPrev, Params().GetConsensus(), hashBlock)) {
             newcoin.out.scriptPubKey = txPrev->vout[nOut].scriptPubKey;
             newcoin.out.nValue = txPrev->vout[nOut].nValue;
-            auto index = ::GetBlockIndex(hashBlock);
-            newcoin.nHeight = index ? index->nHeight : 1;
         } else {
             return false;
         }
@@ -1642,6 +1640,8 @@ void RewindDBsAndState(int nHeight, int nBlockPrev = 0, bool fInitialParse = fal
 
 class COmniValidationInterface : public CValidationInterface {
     static std::atomic_bool initialBlockDownload;
+    static std::atomic_uint32_t lastBlockTime;
+    static std::atomic_int lastBlockHeight;
 public:
     /**
      * Notifies listeners when the block chain tip advances.
@@ -1652,8 +1652,10 @@ public:
      *
      * Called on a background thread.
      */
-    void UpdatedBlockTip(const CBlockIndex *, const CBlockIndex *, bool fInitialDownload) override
+    void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *, bool fInitialDownload) override
     {
+        lastBlockTime = pindexNew->nTime;
+        lastBlockHeight = pindexNew->nHeight;
         initialBlockDownload = fInitialDownload;
     }
     /**
@@ -1740,7 +1742,7 @@ public:
                     if (auto result = ScriptToUint(out.scriptPubKey)) {
                         auto& [index, address] = *result;
                         // record receiving activity
-                        addressIndex.emplace_back(CAddressIndexKey{index, address, pindex->nHeight, i, tx.GetHash(), k, false}, out.nValue);
+                        addressIndex.emplace_back(CAddressIndexKey{index, address, pindex->nHeight, i, tx.GetHash(), k}, out.nValue);
                         // record unspent output
                         addressUnspentIndex.emplace_back(CAddressUnspentKey{index, address, tx.GetHash(), k}, CAddressUnspentValue{out.nValue, out.scriptPubKey, pindex->nHeight, isTxCoinBase});
                     }
@@ -1808,9 +1810,42 @@ public:
      * has been received and connected to the headers tree, though not validated yet */
     void NewPoWValidBlock(const CBlockIndex*, const std::shared_ptr<const CBlock>&) override {}
 
-    static bool IsInitialBlockDownload() { return initialBlockDownload; }
+    template <typename T>
+    static T LoadRelaxed(const std::atomic<T>& value) { return value.load(std::memory_order_relaxed); }
+    static bool IsInitialBlockDownload() { return LoadRelaxed(initialBlockDownload); }
+    static uint32_t LastBlockTime() { return LoadRelaxed(lastBlockTime); }
+    static int LastBlockHeight() { return LoadRelaxed(lastBlockHeight); }
 };
 
+bool IsInitialBlockDownload()
+{
+    return COmniValidationInterface::IsInitialBlockDownload();
+}
+
+namespace mastercore {
+/**
+ * @return The current chain length.
+ */
+int GetHeight()
+{
+    return COmniValidationInterface::LastBlockHeight();
+}
+
+/**
+ * @return The timestamp of the latest block.
+ */
+uint32_t GetLatestBlockTime()
+{
+    if (auto lastBlockTime = COmniValidationInterface::LastBlockTime()) {
+        return lastBlockTime;
+    }
+    return Params().GenesisBlock().nTime;
+}
+
+}
+
+std::atomic_int COmniValidationInterface::lastBlockHeight = 0;
+std::atomic_uint32_t COmniValidationInterface::lastBlockTime = 0;
 std::atomic_bool COmniValidationInterface::initialBlockDownload = false;
 
 /**
@@ -2274,40 +2309,39 @@ void mastercore_handler_disc_begin(const std::shared_ptr<const CBlock>& pblock, 
 {
     LOCK(cs_tally);
 
-    if (fAddressIndex) {
-        for (int i = pblock->vtx.size() - 1; i >= 0; i--) {
-            const CTransaction &tx = *(pblock->vtx[i]);
-            for (unsigned int k = tx.vout.size(); k-- > 0;) {
-                const CTxOut &out = tx.vout[k];
-                if (auto result = ScriptToUint(out.scriptPubKey)) {
-                    auto& [index, address] = *result;
-                    // undo receiving activity
-                    addressIndexToDelete.emplace_back(CAddressIndexKey{index, address, pBlockIndex->nHeight, unsigned(i), tx.GetHash(), k, false}, 0);
-                    // undo unspent index
-                    addressUnspentIndexToUpdate.emplace_back(CAddressUnspentKey{index, address, tx.GetHash(), k}, CAddressUnspentValue{});
-                }
-            }
-            if (i > 0) {
-                const bool isTxCoinBase = tx.IsCoinBase();
-                for (unsigned int j = tx.vin.size(); j-- > 0;) {
-                    const CTxIn& input = tx.vin[j];
-
-                    CSpentIndexValue spend;
-                    if (pDbAddress->ReadSpentIndex({input.prevout.hash, input.prevout.n}, spend)) {
-                        // undo spending activity
-                        addressIndexToDelete.emplace_back(CAddressIndexKey{spend.addressType, spend.addressHash, pBlockIndex->nHeight, unsigned(i), tx.GetHash(), j, true}, 0);
-                        // restore unspent index
-                        addressUnspentIndexToUpdate.emplace_back(CAddressUnspentKey{spend.addressType, spend.addressHash, input.prevout.hash, input.prevout.n},
-                                                                 CAddressUnspentValue{spend.satoshis, GetScriptFromIndex(spend.addressType, spend.addressHash), spend.blockHeight, isTxCoinBase});
-                    }
-                    spentIndexToUdpdate.emplace_back(CSpentIndexKey{input.prevout.hash, input.prevout.n}, CSpentIndexValue{});
-                }
-            }
-        }
-    }
-
     reorgRecoveryMode = 1;
     reorgRecoveryMaxHeight = (pBlockIndex->nHeight > reorgRecoveryMaxHeight) ? pBlockIndex->nHeight : reorgRecoveryMaxHeight;
+
+    if (!fAddressIndex) {
+        return;
+    }
+
+    for (int i = pblock->vtx.size() - 1; i >= 0; i--) {
+        const CTransaction &tx = *(pblock->vtx[i]);
+        for (int k = tx.vout.size() - 1; k >= 0; k--) {
+            const CTxOut &out = tx.vout[k];
+            if (auto result = ScriptToUint(out.scriptPubKey)) {
+                auto& [index, address] = *result;
+                // undo receiving activity
+                addressIndexToDelete.emplace_back(CAddressIndexKey{index, address, pBlockIndex->nHeight, unsigned(i), tx.GetHash(), unsigned(k), false}, 0);
+                // undo unspent index
+                addressUnspentIndexToUpdate.emplace_back(CAddressUnspentKey{index, address, tx.GetHash(), unsigned(k)}, CAddressUnspentValue{});
+            }
+        }
+        const bool isTxCoinBase = tx.IsCoinBase();
+        for (int j = tx.vin.size() - 1; j >= 0; j--) {
+            const CTxIn& input = tx.vin[j];
+            CSpentIndexValue spend;
+            if (pDbAddress->ReadSpentIndex({input.prevout.hash, input.prevout.n}, spend)) {
+                // undo spending activity
+                addressIndexToDelete.emplace_back(CAddressIndexKey{spend.addressType, spend.addressHash, pBlockIndex->nHeight, unsigned(i), tx.GetHash(), unsigned(j), true}, 0);
+                // restore unspent index
+                addressUnspentIndexToUpdate.emplace_back(CAddressUnspentKey{spend.addressType, spend.addressHash, input.prevout.hash, input.prevout.n},
+                                                        CAddressUnspentValue{spend.satoshis, GetScriptFromIndex(spend.addressType, spend.addressHash), spend.blockHeight, isTxCoinBase});
+            }
+            spentIndexToUdpdate.emplace_back(CSpentIndexKey{input.prevout.hash, input.prevout.n}, CSpentIndexValue{});
+        }
+    }
 }
 
 /**
@@ -2369,37 +2403,13 @@ const std::vector<unsigned char> GetOmMarker()
 
 std::optional<std::reference_wrapper<node::NodeContext>> g_context;
 
-static ChainstateManager& ChainManager()
-{
-    LOCK(cs_main);
-    assert(g_context && g_context->get().chainman);
-    return *(g_context->get().chainman);
-}
-
-// m_block_tree_db
-static node::BlockManager& BlockManager()
-{
-    return ChainManager().m_blockman;
-}
-
-/** @returns the most-work valid chainstate. */
-Chainstate& ChainstateActive()
-{
-    return ChainManager().ActiveChainstate();
-}
-
 // GetBlockTime, Height, GetBlockHash, Contains
 /** @returns the most-work chain. */
 CChain& ChainActive()
 {
-    return ChainManager().ActiveChain();
-}
-
-// GetBlockIndex
-/** @returns the global block index map. */
-node::BlockMap& BlockIndex()
-{
-    return ChainManager().BlockIndex();
+    LOCK(cs_main);
+    assert(g_context && g_context->get().chainman);
+    return g_context->get().chainman->ActiveChain();
 }
 
 /**

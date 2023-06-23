@@ -72,19 +72,12 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
     for (std::multimap<int64_t, const interfaces::WalletTx*>::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
         const interfaces::WalletTx* pwtx = it->second;
         const uint256& txHash = pwtx->tx->GetHash();
-        {
-            LOCK(cs_tally);
-            if (!pDbTransactionList->exists(txHash)) continue;
-        }
-        const uint256& blockHash = pwtx->block_hash;
-        if (blockHash.IsNull()) continue;
-        const CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
-        if (pBlockIndex == nullptr) continue;
-        int blockHeight = pBlockIndex->nHeight;
+        if (!pDbTransactionList->exists(txHash)) continue;
+        int blockHeight = 0;
         if (blockHeight < startBlock || blockHeight > endBlock) continue;
         int blockPosition = GetTransactionByteOffset(txHash);
         std::string sortKey = strprintf("%06d%010d", blockHeight, blockPosition);
-        mapResponse.insert(std::make_pair(sortKey, txHash));
+        mapResponse.emplace(sortKey, txHash);
         seenHashes.insert(txHash);
         if (mapResponse.size() >= count) break;
     }

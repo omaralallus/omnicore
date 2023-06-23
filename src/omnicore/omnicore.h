@@ -187,16 +187,12 @@ void CheckWalletUpdate();
 /** Used to notify that the number of tokens for a property has changed. */
 void NotifyTotalTokensChanged(uint32_t propertyId, int block);
 
-class Chainstate;
-/** @returns the most-work valid chainstate. */
-Chainstate& ChainstateActive();
+/** Used to inform the node is in initial block download. */
+bool IsInitialBlockDownload();
 
 class CChain;
 /** @returns the most-work chain. */
 CChain& ChainActive();
-
-/** @returns the global block index map. */
-node::BlockMap& BlockIndex();
 
 namespace Consensus {
 struct Params;

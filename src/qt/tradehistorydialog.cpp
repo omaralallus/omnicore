@@ -339,8 +339,8 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         CTransactionRef wtx;
         uint256 blockHash;
         if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) continue;
-        if (blockHash.IsNull() || nullptr == GetBlockIndex(blockHash)) continue;
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
+        // Port GetTransaction to return height and time
+        CBlockIndex* pBlockIndex = nullptr;
         if (nullptr == pBlockIndex) continue;
         int blockHeight = pBlockIndex->nHeight;
 

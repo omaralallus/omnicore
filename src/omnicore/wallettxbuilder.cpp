@@ -300,8 +300,7 @@ int CreateFundedTransaction(
         const std::string& feeAddress,
         const std::vector<unsigned char>& payload,
         uint256& retTxid,
-        interfaces::Wallet* iWallet,
-        node::NodeContext& node)
+        interfaces::Wallet* iWallet)
 {
     if (!iWallet) {
         return MP_ERR_WALLET_ACCESS;
@@ -451,23 +450,7 @@ int CreateFundedTransaction(
     // send the transaction
 
     CTransactionRef ctx(MakeTransactionRef(std::move(tx)));
-
-    {
-        LOCK(cs_main);
-        auto result = AcceptToMemoryPool(ChainstateActive(), ctx, GetTime(), false, false);
-        if (result.m_result_type != MempoolAcceptResult::ResultType::VALID) {
-            PrintToLog("%s: ERROR: failed to broadcast transaction: %s\n", __func__, result.m_state.GetRejectReason());
-            return MP_ERR_COMMIT_TX;
-        }
-    }
-
-    std::string err_string;
-
-    const TransactionError err = node::BroadcastTransaction(node, ctx, err_string, iWallet->getDefaultMaxTxFee(), true, false);
-    if (TransactionError::OK != err) {
-        LogPrintf("%s: BroadcastTransaction failed error: %s\n", __func__, err_string);
-    }
-
+    iWallet->commitTransaction(ctx, {}, {});
     retTxid = ctx->GetHash();
 
     return 0;

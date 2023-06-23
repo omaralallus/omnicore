@@ -103,7 +103,7 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
 
     // create the raw transaction
     uint256 retTxid;
-    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), g_context->get());
+    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get());
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
     }
@@ -148,7 +148,7 @@ static UniValue omni_funded_sendall(const JSONRPCRequest& request)
 
     // create the raw transaction
     uint256 retTxid;
-    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), g_context->get());
+    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get());
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
     }

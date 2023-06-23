@@ -30,6 +30,7 @@
 #include <algorithm>
 #include <map>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -49,21 +50,19 @@ CMPTradeList::~CMPTradeList()
 
 void CMPTradeList::recordMatchedTrade(const uint256& txid1, const uint256& txid2, const std::string& address1, const std::string& address2, uint32_t prop1, uint32_t prop2, int64_t amount1, int64_t amount2, int blockNum, int64_t fee)
 {
-    if (!pdb) return;
     const std::string key = txid1.ToString() + "+" + txid2.ToString();
     const std::string value = strprintf("%s:%s:%u:%u:%lu:%lu:%d:%d", address1, address2, prop1, prop2, amount1, amount2, blockNum, fee);
-    leveldb::Status status = pdb->Put(writeoptions, key, value);
+    bool status = Write(key, value);
     ++nWritten;
-    if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status.ToString());
+    if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status ? "OK" : "NOK");
 }
 
 void CMPTradeList::recordNewTrade(const uint256& txid, const std::string& address, uint32_t propertyIdForSale, uint32_t propertyIdDesired, int blockNum, int blockIndex)
 {
-    if (!pdb) return;
     std::string strValue = strprintf("%s:%d:%d:%d:%d", address, propertyIdForSale, propertyIdDesired, blockNum, blockIndex);
-    leveldb::Status status = pdb->Put(writeoptions, txid.ToString(), strValue);
+    bool status = Write(txid.ToString(), strValue);
     ++nWritten;
-    if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status.ToString());
+    if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status ? "OK" : "NOK");
 }
 
 /**
@@ -88,7 +87,7 @@ int CMPTradeList::deleteAboveBlock(int blockNum)
         if (block >= blockNum) {
             ++n_found;
             PrintToLog("%s() DELETING FROM TRADEDB: %s=%s\n", __func__, skey.ToString(), svalue.ToString());
-            pdb->Delete(writeoptions, skey);
+            Delete(std::string_view{skey.data(), skey.size()});
         }
     }
 
@@ -122,8 +121,6 @@ void CMPTradeList::printAll()
 
 bool CMPTradeList::getMatchingTrades(const uint256& txid, uint32_t propertyId, UniValue& tradeArray, int64_t& totalSold, int64_t& totalReceived)
 {
-    if (!pdb) return false;
-
     int count = 0;
     totalReceived = 0;
     totalSold = 0;
@@ -212,8 +209,6 @@ bool CMPTradeList::getMatchingTrades(const uint256& txid, uint32_t propertyId, U
 // sorted by block then index
 void CMPTradeList::getTradesForAddress(const std::string& address, std::vector<uint256>& vecTransactions, uint32_t propertyIdFilter)
 {
-    if (!pdb) return;
-
     std::map<std::string, uint256> mapTrades;
     leveldb::Iterator* it = NewIterator();
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -247,7 +242,7 @@ void CMPTradeList::getTradesForAddress(const std::string& address, std::vector<u
 // obtains an array of matching trades with pricing and volume details for a pair sorted by blocknumber
 void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyIdSideB, UniValue& responseArray, uint64_t count)
 {
-    if (!pdb || !count) return;
+    if (!count) return;
     leveldb::Iterator* it = NewIterator();
     std::vector<std::pair<int64_t, UniValue> > vecResponse;
     bool propertyIdSideAIsDivisible = isPropertyDivisible(propertyIdSideA);

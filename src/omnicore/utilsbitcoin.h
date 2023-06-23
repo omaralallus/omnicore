@@ -17,8 +17,6 @@ namespace mastercore
 int GetHeight();
 /** Returns the timestamp of the latest block. */
 uint32_t GetLatestBlockTime();
-/** Returns the CBlockIndex for a given block hash, or NULL. */
-CBlockIndex* GetBlockIndex(const uint256& hash);
 
 std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey);
 

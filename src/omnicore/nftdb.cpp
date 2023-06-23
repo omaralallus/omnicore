@@ -296,16 +296,14 @@ void CMPNonFungibleTokensDB::RollBackAboveBlock(int height)
             batch.Put(m_it->first, m_it->second.data);
         }
     }
-    assert(pdb);
-    pdb->Write(writeoptions, &batch);
+    WriteBatch(batch);
 }
 
 void CMPNonFungibleTokensDB::StoreBlockCache(const std::string& key)
 {
     if (blockData.find(key) == blockData.end()) {
         CRollbackData rollback{CRollbackData::PERSIST_KEY, {}};
-        leveldb::Status status = pdb->Get(readoptions, key, &rollback.data);
-        if (status.IsNotFound()) {
+        if (!Read(key, rollback.data)) {
             rollback.type = CRollbackData::DELETE_KEY;
         }
         blockData.emplace(key, std::move(rollback));

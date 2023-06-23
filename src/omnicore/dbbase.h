@@ -11,8 +11,11 @@
 #include <streams.h>
 
 #include <assert.h>
+#include <functional>
 #include <memory>
 #include <stddef.h>
+#include <string_view>
+#include <variant>
 
 template<typename T>
 bool StringToValue(std::string&& s, T& value)
@@ -56,6 +59,22 @@ std::string KeyToString(const T& key)
     return {v.begin(), v.end()};
 }
 
+inline std::string_view KeyToString(const std::string& key)
+{
+    return key;
+}
+
+inline std::string_view KeyToString(const std::string_view& key)
+{
+    return key;
+}
+
+template<size_t N>
+std::string_view KeyToString(const char (&key)[N])
+{
+    return {key, N > 0 && key[N - 1] == '\0' ? N - 1 : N};
+}
+
 template<typename T>
 bool StringToKey(const std::string& s, T& key)
 {
@@ -75,11 +94,9 @@ bool StringToKey(const std::string& s, T& key)
  */
 class CDBBase
 {
-private:
     //! Options used when iterating over values of the database
     leveldb::ReadOptions iteroptions;
 
-protected:
     //! Database options used
     leveldb::Options options;
 
@@ -95,6 +112,7 @@ protected:
     //! The database itself
     leveldb::DB* pdb = nullptr;
 
+protected:
     //! Number of entries read
     unsigned int nRead = 0;
 
@@ -135,24 +153,45 @@ protected:
     template<typename K, typename V>
     bool Write(const K& key, const V& value)
     {
-        assert(pdb);
-        return pdb->Put(writeoptions, KeyToString(key), ValueToString(value)).ok();
+        return Write(KeyToString(key), ValueToString(value));
     }
 
     template<typename K, typename V>
-    bool Read(const K& key, V& value) const
+    bool Read(const K& key, V&& value) const
     {
-        assert(pdb);
         std::string strValue;
-        return pdb->Get(readoptions, KeyToString(key), &strValue).ok()
+        return Read(KeyToString(key), strValue)
             && StringToValue(std::move(strValue), value);
     }
 
     template<typename K>
     bool Delete(const K& key)
     {
+        return Delete(KeyToString(key));
+    }
+
+    bool Write(const std::string_view& key, const std::string& value)
+    {
         assert(pdb);
-        return pdb->Delete(writeoptions, KeyToString(key)).ok();
+        return pdb->Put(writeoptions, {key.data(), key.size()}, value).ok();
+    }
+
+    bool Read(const std::string_view& key, std::string& value) const
+    {
+        assert(pdb);
+        return pdb->Get(readoptions, {key.data(), key.size()}, &value).ok();
+    }
+
+    bool Delete(const std::string_view& key)
+    {
+        assert(pdb);
+        return pdb->Delete(writeoptions, {key.data(), key.size()}).ok();
+    }
+
+    bool WriteBatch(leveldb::WriteBatch& batch)
+    {
+        assert(pdb);
+        return pdb->Write(writeoptions, &batch).ok();
     }
 
     /**
@@ -268,6 +307,34 @@ public:
             return false;
         }
         return true;
+    }
+};
+
+template<typename T>
+class CRef {
+    using ref = std::reference_wrapper<T>;
+    using cref = std::reference_wrapper<const T>;
+    std::variant<ref, cref> value;
+
+public:
+    CRef(T& ref) : value(std::ref(ref)) {}
+    CRef(const T& ref) : value(ref) {}
+    CRef(T&&) = delete;
+    CRef(const T&&) = delete;
+    CRef(const CRef&) = delete;
+    CRef(CRef&&) = default;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const
+    {
+        std::visit([&](auto& v) { ::Serialize(s, v.get()); }, value);
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s)
+    {
+        if (auto v = std::get_if<ref>(&value)) {
+            ::Unserialize(s, v->get());
+        }
     }
 };
 

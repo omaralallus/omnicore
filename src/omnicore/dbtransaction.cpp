@@ -30,16 +30,14 @@ COmniTransactionDB::~COmniTransactionDB()
 }
 
 /**
- * Retrieves the serialized transaction details from the DB. 
+ * Retrieves the serialized transaction details from the DB.
  */
 std::vector<std::string> COmniTransactionDB::FetchTransactionDetails(const uint256& txid)
 {
-    assert(pdb);
     std::string strValue;
     std::vector<std::string> vTransactionDetails;
 
-    leveldb::Status status = pdb->Get(readoptions, txid.ToString(), &strValue);
-    if (status.ok()) {
+    if (Read(txid.ToString(), strValue)) {
         std::vector<std::string> vStr;
         boost::split(vStr, strValue, boost::is_any_of(":"), boost::token_compress_on);
         if (vStr.size() == 2) {
@@ -60,12 +58,10 @@ std::vector<std::string> COmniTransactionDB::FetchTransactionDetails(const uint2
  */
 void COmniTransactionDB::RecordTransaction(const uint256& txid, uint32_t posInBlock, int processingResult)
 {
-    assert(pdb);
-
     const std::string key = txid.ToString();
     const std::string value = strprintf("%d:%d", posInBlock, processingResult);
 
-    leveldb::Status status = pdb->Put(writeoptions, key, value);
+    Write(key, value);
     ++nWritten;
 }
 

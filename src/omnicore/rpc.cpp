@@ -807,7 +807,8 @@ static UniValue omni_getpayload(const JSONRPCRequest& request)
     int blockTime = 0;
     int blockHeight = GetHeight();
     if (!blockHash.IsNull()) {
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
+        // Port GetTransaction to return height and time
+        CBlockIndex* pBlockIndex = nullptr;
         if (nullptr != pBlockIndex) {
             blockTime = pBlockIndex->nTime;
             blockHeight = pBlockIndex->nHeight;
@@ -1633,8 +1634,9 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
     const std::string& txidClosed = sp.txid_close.GetHex();
 
     int64_t startTime = -1;
-    if (!hashBlock.IsNull() && GetBlockIndex(hashBlock)) {
-        startTime = GetBlockIndex(hashBlock)->nTime;
+    // Port GetTransaction to return height and time
+    if (!hashBlock.IsNull()) {
+        startTime = 0;
     }
 
     // note the database is already deserialized here and there is minimal performance penalty to iterate recipients to calculate amountRaised
@@ -1747,8 +1749,9 @@ static UniValue omni_getactivecrowdsales(const JSONRPCRequest& request)
         }
 
         int64_t startTime = -1;
-        if (!hashBlock.IsNull() && GetBlockIndex(hashBlock)) {
-            startTime = GetBlockIndex(hashBlock)->nTime;
+        // Port GetTransaction to return height and time
+        if (!hashBlock.IsNull()) {
+            startTime = 0;
         }
 
         UniValue responseObj(UniValue::VOBJ);

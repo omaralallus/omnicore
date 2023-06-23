@@ -88,7 +88,7 @@ struct CAddressIndexKey {
     unsigned int txindex = 0;
     uint256 txhash;
     size_t index = 0;
-    bool spending = 0;
+    bool spending = false;
 
     size_t GetSerializeSize(int nType, int nVersion) const {
         return 78;

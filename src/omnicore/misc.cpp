@@ -699,16 +699,10 @@ static UniValue clearmempool(const JSONRPCRequest& request)
         }
     ).Check(request);
 
-    auto mempool = ::ChainstateActive().GetMempool();
-    if (!mempool)
-        throw JSONRPCError(RPC_MISC_ERROR, "No mempool available");
-
     auto vtxid = ClearMempool();
     UniValue removed(UniValue::VARR);
     for (const uint256& hash : vtxid)
         removed.push_back(hash.ToString());
-
-    mempool->clear();
 
     return removed;
 }

@@ -43,8 +43,6 @@ CMPSTOList::~CMPSTOList()
 
 void CMPSTOList::getRecipients(const uint256 txid, std::string filterAddress, UniValue* recipientArray, uint64_t* total, uint64_t* numRecipients, interfaces::Wallet* iWallet)
 {
-    if (!pdb) return;
-
     bool filter = true; //default
     bool filterByWallet = true; //default
     bool filterByAddress = false; //default
@@ -111,7 +109,6 @@ void CMPSTOList::getRecipients(const uint256 txid, std::string filterAddress, Un
 
 std::string CMPSTOList::getMySTOReceipts(std::string filterAddress, interfaces::Wallet &iWallet)
 {
-    if (!pdb) return "";
     std::string mySTOReceipts;
     leveldb::Slice skey, svalue;
     leveldb::Iterator* it = NewIterator();
@@ -169,9 +166,9 @@ int CMPSTOList::deleteAboveBlock(int blockNum)
         }
         if (needsUpdate) { // rewrite record with existing key and new value
             ++n_found;
-            leveldb::Status status = pdb->Put(writeoptions, it->key().ToString(), newValue);
+            bool status = Write(it->key().ToString(), newValue);
             PrintToLog("DEBUG STO - rewriting STO data after reorg\n");
-            PrintToLog("STODBDEBUG : %s(): %s, line %d, file: %s\n", __FUNCTION__, status.ToString(), __LINE__, __FILE__);
+            PrintToLog("STODBDEBUG : %s(): %s, line %d, file: %s\n", __FUNCTION__, status ? "OK" : "NOK", __LINE__, __FILE__);
         }
     }
 
@@ -203,31 +200,20 @@ void CMPSTOList::printAll()
     delete it;
 }
 
-bool CMPSTOList::exists(std::string address)
+bool CMPSTOList::exists(const std::string& address)
 {
-    if (!pdb) return false;
-
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, address, &strValue);
-
-    if (!status.ok()) {
-        if (status.IsNotFound()) return false;
-    }
-
-    return true;
+    return Read(address, strValue);
 }
 
-void CMPSTOList::recordSTOReceive(std::string address, const uint256 &txid, int nBlock, unsigned int propertyId, uint64_t amount)
+void CMPSTOList::recordSTOReceive(const std::string& address, const uint256 &txid, int nBlock, unsigned int propertyId, uint64_t amount)
 {
-    if (!pdb) return;
-
     bool addressExists = exists(address);
     if (addressExists) {
         // retrieve existing record
         std::vector<std::string> vstr;
         std::string strValue;
-        leveldb::Status status = pdb->Get(readoptions, address, &strValue);
-        if (status.ok()) {
+        if (Read(address, strValue)) {
             // add details to record
             // see if we are overwriting (check)
             size_t txidMatch = strValue.find(txid.ToString());
@@ -237,19 +223,13 @@ void CMPSTOList::recordSTOReceive(std::string address, const uint256 &txid, int 
             const std::string newValue = strprintf("%s:%d:%u:%lu,", txid.ToString(), nBlock, propertyId, amount);
             strValue += newValue;
             // write updated record
-            leveldb::Status status;
-            if (pdb) {
-                status = pdb->Put(writeoptions, key, strValue);
-                PrintToLog("STODBDEBUG : %s(): %s, line %d, file: %s\n", __FUNCTION__, status.ToString(), __LINE__, __FILE__);
-            }
+            bool status = Write(key, strValue);
+            PrintToLog("STODBDEBUG : %s(): %s, line %d, file: %s\n", __FUNCTION__, status ? "OK" : "NOK", __LINE__, __FILE__);
         }
     } else {
         const std::string& key = address;
         const std::string value = strprintf("%s:%d:%u:%lu,", txid.ToString(), nBlock, propertyId, amount);
-        leveldb::Status status;
-        if (pdb) {
-            status = pdb->Put(writeoptions, key, value);
-            PrintToLog("STODBDEBUG : %s(): %s, line %d, file: %s\n", __FUNCTION__, status.ToString(), __LINE__, __FILE__);
-        }
+        bool status = Write(key, value);
+        PrintToLog("STODBDEBUG : %s(): %s, line %d, file: %s\n", __FUNCTION__, status ? "OK" : "NOK", __LINE__, __FILE__);
     }
 }

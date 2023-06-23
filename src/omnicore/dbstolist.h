@@ -26,7 +26,7 @@ public:
 
     void getRecipients(const uint256 txid, std::string filterAddress, UniValue* recipientArray, uint64_t* total, uint64_t* numRecipients, interfaces::Wallet* iWallet = nullptr);
     std::string getMySTOReceipts(std::string filterAddress, interfaces::Wallet& iWallet);
-    
+
     /**
      * This function deletes records of STO receivers above/equal to a specific block from the STO database.
      *
@@ -35,8 +35,8 @@ public:
     int deleteAboveBlock(int blockNum);
     void printStats();
     void printAll();
-    bool exists(std::string address);
-    void recordSTOReceive(std::string, const uint256&, int, unsigned int, uint64_t);
+    bool exists(const std::string& address);
+    void recordSTOReceive(const std::string&, const uint256&, int, unsigned int, uint64_t);
 };
 
 namespace mastercore

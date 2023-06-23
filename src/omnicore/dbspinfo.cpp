@@ -17,10 +17,11 @@
 
 #include <boost/lexical_cast.hpp>
 
-#include <stdint.h>
-
+#include <cstdint>
+#include <functional>
 #include <string>
-
+#include <utility>
+#include <variant>
 
 CMPSPInfo::Entry::Entry()
   : prop_type(0), prev_prop_id(0), num_tokens(0), property_desired(0),
@@ -72,20 +73,8 @@ void CMPSPInfo::Entry::updateIssuer(int block, int idx, const std::string& newIs
  */
 std::string CMPSPInfo::Entry::getIssuer(int block) const
 {
-    std::string _issuer = issuer;
-
-    for (auto const& entry : historicalIssuers) {
-        int currentBlock = entry.first.first;
-        std::string currentIssuer = entry.second;
-
-        if (currentBlock > block) {
-            break;
-        }
-
-        _issuer = currentIssuer;
-    }
-
-    return _issuer;
+    auto it = historicalIssuers.upper_bound(std::make_pair(block, INT_MAX));
+    return it != historicalIssuers.begin() ? (--it)->second : issuer;
 }
 
 /**
@@ -120,20 +109,8 @@ void CMPSPInfo::Entry::removeDelegate(int block, int idx)
  */
 std::string CMPSPInfo::Entry::getDelegate(int block) const
 {
-    std::string _delegate = delegate;
-
-    for (auto const& entry : historicalDelegates) {
-        int currentBlock = entry.first.first;
-        std::string currentDelegate = entry.second;
-
-        if (currentBlock > block) {
-            break;
-        }
-
-        _delegate = currentDelegate;
-    }
-
-    return _delegate;
+    auto it = historicalDelegates.upper_bound(std::make_pair(block, INT_MAX));
+    return it != historicalDelegates.begin() ? (--it)->second : delegate;
 }
 
 
@@ -203,6 +180,63 @@ uint32_t CMPSPInfo::peekNextSPID(uint8_t ecosystem) const
     return nextId;
 }
 
+struct CUpdateProperty {
+    static constexpr uint8_t prefix = 's';
+    uint32_t& propertyId;
+
+    SERIALIZE_METHODS(CUpdateProperty, obj) {
+        READWRITE(obj.propertyId);
+    }
+};
+
+struct CDelegateProperty {
+    static constexpr uint8_t prefix = 'd';
+    const uint32_t& propertyId;
+
+    SERIALIZE_METHODS(CDelegateProperty, obj) {
+        READWRITE(obj.propertyId);
+    }
+};
+
+struct CUniqueProperty {
+    static constexpr uint8_t prefix = 'u';
+    const uint32_t& propertyId;
+
+    SERIALIZE_METHODS(CUniqueProperty, obj) {
+        READWRITE(obj.propertyId);
+    }
+};
+
+struct CHistoricalProperty {
+    static constexpr uint8_t prefix = 'b';
+    const uint256& blockHash;
+    const uint32_t& propertyId;
+
+    SERIALIZE_METHODS(CHistoricalProperty, obj) {
+        READWRITE(obj.blockHash);
+        READWRITE(obj.propertyId);
+    }
+};
+
+struct CLookupTx {
+    static constexpr uint8_t prefix = 't';
+    const uint256& txid;
+
+    SERIALIZE_METHODS(CLookupTx, obj) {
+        READWRITE(obj.txid);
+    }
+};
+
+struct CDelegateValue {
+    CRef<std::string> delegate;
+    CRef<std::map<std::pair<int, int>, std::string>> historicalDelegates;
+
+    SERIALIZE_METHODS(CDelegateValue, obj) {
+        READWRITE(obj.delegate);
+        READWRITE(obj.historicalDelegates);
+    }
+};
+
 bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
 {
     // cannot update implied SP
@@ -211,46 +245,29 @@ bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
     }
 
     // DB key for property entry
-    CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
-    leveldb::Slice slSpKey((const char*)&ssSpKey[0], ssSpKey.size());
+    auto sKey = KeyToString(CUpdateProperty{propertyId});
 
     // DB value for property entry
-    CDataStream ssSpValue(SER_DISK, CLIENT_VERSION);
-    ssSpValue.reserve(::GetSerializeSize(info, CLIENT_VERSION));
-    ssSpValue << info;
-    leveldb::Slice slSpValue((const char*)&ssSpValue[0], ssSpValue.size());
-
-    // DB key for historical property entry
-    CDataStream ssSpPrevKey(SER_DISK, CLIENT_VERSION);
-    ssSpPrevKey << uint8_t('b');
-    ssSpPrevKey << info.update_block;
-    ssSpPrevKey << propertyId;
-    leveldb::Slice slSpPrevKey((const char*)&ssSpPrevKey[0], ssSpPrevKey.size());
+    auto sValue = ValueToString(info);
 
     leveldb::WriteBatch batch;
     std::string strSpPrevValue;
 
     // if a value exists move it to the old key
-    if (!pdb->Get(readoptions, slSpKey, &strSpPrevValue).IsNotFound()) {
-        batch.Put(slSpPrevKey, strSpPrevValue);
+    if (Read(sKey, strSpPrevValue)) {
+        // DB key for historical property entry
+        auto slPrevKey = KeyToString(CHistoricalProperty{info.update_block, propertyId});
+        batch.Put(slPrevKey, strSpPrevValue);
     }
-    batch.Put(slSpKey, slSpValue);
+    batch.Put(sKey, sValue);
 
     // Update delegate info if set
     if (!info.historicalDelegates.empty()) {
-        std::string delegateKey = strprintf("DE-%d", propertyId);
-        CDataStream ssDelegateValue(SER_DISK, CLIENT_VERSION);
-        ssDelegateValue << info.delegate;
-        ssDelegateValue << info.historicalDelegates;
-        leveldb::Slice slDelegateValue((const char*)&ssDelegateValue[0], ssDelegateValue.size());
-        batch.Put(delegateKey, slDelegateValue);
+        batch.Put(KeyToString(CDelegateProperty{propertyId}), ValueToString(CDelegateValue{info.delegate, info.historicalDelegates}));
     }
 
-    leveldb::Status status = pdb->Write(syncoptions, &batch);
-
-    if (!status.ok()) {
-        PrintToLog("%s(): ERROR for SP %d: %s\n", __func__, propertyId, status.ToString());
+    if (!WriteBatch(batch)) {
+        PrintToLog("%s(): ERROR for SP %d: NOK\n", __func__, propertyId);
         return false;
     }
 
@@ -274,42 +291,32 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
     }
 
     // DB key for property entry
-    CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
-    leveldb::Slice slSpKey((const char*)&ssSpKey[0], ssSpKey.size());
+    auto sKey = KeyToString(CUpdateProperty{propertyId});
 
     // DB value for property entry
-    CDataStream ssSpValue(SER_DISK, CLIENT_VERSION);
-    ssSpValue.reserve(::GetSerializeSize(info, CLIENT_VERSION));
-    ssSpValue << info;
-    leveldb::Slice slSpValue((const char*)&ssSpValue[0], ssSpValue.size());
+    auto sValue = ValueToString(info);
 
     // DB key for identifier lookup entry
-    CDataStream ssTxIndexKey(SER_DISK, CLIENT_VERSION);
-    ssTxIndexKey << std::make_pair(uint8_t('t'), info.txid);
-    leveldb::Slice slTxIndexKey((const char*)&ssTxIndexKey[0], ssTxIndexKey.size());
+    auto lKey = KeyToString(CLookupTx{info.txid});
 
     // DB value for identifier
-    CDataStream ssTxValue(SER_DISK, CLIENT_VERSION);
-    ssTxValue.reserve(::GetSerializeSize(propertyId, CLIENT_VERSION));
-    ssTxValue << propertyId;
-    leveldb::Slice slTxValue((const char*)&ssTxValue[0], ssTxValue.size());
+    auto lValue = ValueToString(propertyId);
 
     // sanity checking
     std::string existingEntry;
-    if (!pdb->Get(readoptions, slSpKey, &existingEntry).IsNotFound() && slSpValue.compare(existingEntry) != 0) {
+    if (Read(sKey, existingEntry) && sValue.compare(existingEntry) != 0) {
         std::string strError = strprintf("writing SP %d to DB, when a different SP already exists for that identifier", propertyId);
         PrintToLog("%s() ERROR: %s\n", __func__, strError);
-    } else if (!pdb->Get(readoptions, slTxIndexKey, &existingEntry).IsNotFound() && slTxValue.compare(existingEntry) != 0) {
+    } else if (Read(lKey, existingEntry) && lValue.compare(existingEntry) != 0) {
         std::string strError = strprintf("writing index txid %s : SP %d is overwriting a different value", info.txid.ToString(), propertyId);
         PrintToLog("%s() ERROR: %s\n", __func__, strError);
     }
 
     // Create and check unique field
-    std::string uniqueKey = strprintf("UE-%d", propertyId);
+    auto uKey = KeyToString(CUniqueProperty{propertyId});
     if (info.unique) {
         // sanity checking
-        if (!pdb->Get(readoptions, uniqueKey, &existingEntry).IsNotFound() && existingEntry != strprintf("%d", info.unique)) {
+        if (Read(uKey, existingEntry) && existingEntry != strprintf("%d", info.unique)) {
             std::string strError = strprintf("writing SP %d unique field to DB, when a different SP already exists for that identifier", propertyId);
             PrintToLog("%s() ERROR: %s\n", __func__, strError);
         }
@@ -317,17 +324,15 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
 
     // atomically write both the the SP and the index to the database
     leveldb::WriteBatch batch;
-    batch.Put(slSpKey, slSpValue);
-    batch.Put(slTxIndexKey, slTxValue);
+    batch.Put(sKey, sValue);
+    batch.Put(lKey, lValue);
 
     if (info.unique) {
-        batch.Put(uniqueKey, strprintf("%d", info.unique));
+        batch.Put(uKey, ValueToString(info.unique));
     }
 
-    leveldb::Status status = pdb->Write(syncoptions, &batch);
-
-    if (!status.ok()) {
-        PrintToLog("%s(): ERROR for SP %d: %s\n", __func__, propertyId, status.ToString());
+    if (!WriteBatch(batch)) {
+        PrintToLog("%s(): ERROR for SP %d: NOK\n", __func__, propertyId);
     }
 
     return propertyId;
@@ -344,55 +349,19 @@ bool CMPSPInfo::getSP(uint32_t propertyId, Entry& info) const
         return true;
     }
 
-    // DB key for property entry
-    CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
-    leveldb::Slice slSpKey((const char*)&ssSpKey[0], ssSpKey.size());
-
     // DB value for property entry
-    std::string strSpValue;
-    leveldb::Status status = pdb->Get(readoptions, slSpKey, &strSpValue);
-    if (!status.ok()) {
-        if (!status.IsNotFound()) {
-            PrintToLog("%s(): ERROR for SP %d: %s\n", __func__, propertyId, status.ToString());
-        }
-        return false;
-    }
-
-    try {
-        CDataStream ssSpValue(strSpValue.data(), strSpValue.data() + strSpValue.size(), SER_DISK, CLIENT_VERSION);
-        ssSpValue >> info;
-    } catch (const std::exception& e) {
-        PrintToLog("%s(): ERROR for SP %d: %s\n", __func__, propertyId, e.what());
+    if (!Read(CUpdateProperty{propertyId}, info)) {
+        PrintToLog("%s(): ERROR for SP %d: not found\n", __func__, propertyId);
         return false;
     }
 
     // Check for unique entry
-    std::string uniqueKey = strprintf("UE-%d", propertyId);
-    std::string uniqueValue;
-    leveldb::Status statusUnique = pdb->Get(readoptions, uniqueKey, &uniqueValue);
-    if (statusUnique.ok() && !statusUnique.IsNotFound()) {
-        try {
-            info.unique = boost::lexical_cast<bool>(uniqueValue);
-        } catch (boost::bad_lexical_cast const &e) {
-            PrintToLog("%s(): ERROR for SP unique field %d: %s\n", __func__, propertyId, e.what());
-            return false;
-        }
-    }
+    info.unique = Read(CUniqueProperty{propertyId}, info.unique) && info.unique;
 
     // Check for delegate entry
-    std::string delegateKey = strprintf("DE-%d", propertyId);
-    std::string delegateValue;
-    leveldb::Status statusDelegate = pdb->Get(readoptions, delegateKey, &delegateValue);
-    if (statusDelegate.ok() && !statusDelegate.IsNotFound()) {
-        try {
-            CDataStream ssDelegateValue(delegateValue.data(), delegateValue.data() + delegateValue.size(), SER_DISK, CLIENT_VERSION);
-            ssDelegateValue >> info.delegate;
-            ssDelegateValue >> info.historicalDelegates;
-        } catch (const std::exception& e) {
-            PrintToLog("%s(): ERROR for SP delegates %d: %s\n", __func__, propertyId, e.what());
-            return false;
-        }
+    if (!Read(CDelegateProperty{propertyId}, CDelegateValue{info.delegate, info.historicalDelegates})) {
+        info.delegate.clear();
+        info.historicalDelegates.clear();
     }
 
     return true;
@@ -406,104 +375,50 @@ bool CMPSPInfo::hasSP(uint32_t propertyId) const
     }
 
     // DB key for property entry
-    CDataStream ssSpKey(SER_DISK, CLIENT_VERSION);
-    ssSpKey << std::make_pair(uint8_t('s'), propertyId);
-    leveldb::Slice slSpKey((const char*)&ssSpKey[0], ssSpKey.size());
+    auto sKey = KeyToString(CUpdateProperty{propertyId});
 
     // DB value for property entry
     std::string strSpValue;
-    leveldb::Status status = pdb->Get(readoptions, slSpKey, &strSpValue);
-
-    return status.ok();
+    return Read(sKey, strSpValue);
 }
 
 uint32_t CMPSPInfo::findSPByTX(const uint256& txid) const
 {
     uint32_t propertyId = 0;
-
     // DB key for identifier lookup entry
-    CDataStream ssTxIndexKey(SER_DISK, CLIENT_VERSION);
-    ssTxIndexKey << std::make_pair(uint8_t('t'), txid);
-    leveldb::Slice slTxIndexKey((const char*)&ssTxIndexKey[0], ssTxIndexKey.size());
-
-    // DB value for identifier
-    std::string strTxIndexValue;
-    if (!pdb->Get(readoptions, slTxIndexKey, &strTxIndexValue).ok()) {
-        std::string strError = strprintf("failed to find property created with %s", txid.GetHex());
-        PrintToLog("%s(): ERROR: %s", __func__, strError);
-        return 0;
-    }
-
-    try {
-        CDataStream ssValue(strTxIndexValue.data(), strTxIndexValue.data() + strTxIndexValue.size(), SER_DISK, CLIENT_VERSION);
-        ssValue >> propertyId;
-    } catch (const std::exception& e) {
-        PrintToLog("%s(): ERROR: %s\n", __func__, e.what());
-        return 0;
-    }
-
-    return propertyId;
+    return Read(CLookupTx{txid}, propertyId) ? propertyId : 0;
 }
 
 int64_t CMPSPInfo::popBlock(const uint256& block_hash)
 {
     int64_t remainingSPs = 0;
     leveldb::WriteBatch commitBatch;
-    leveldb::Iterator* iter = NewIterator();
+    CDBaseIterator it{NewIterator(), CUniqueProperty{0}};
 
-    CDataStream ssSpKeyPrefix(SER_DISK, CLIENT_VERSION);
-    ssSpKeyPrefix << uint8_t('s');
-    leveldb::Slice slSpKeyPrefix((const char*)&ssSpKeyPrefix[0], ssSpKeyPrefix.size());
-
-    for (iter->Seek(slSpKeyPrefix); iter->Valid() && iter->key().starts_with(slSpKeyPrefix); iter->Next()) {
+    for (; it.Valid(); ++it) {
         // deserialize the persisted value
-        leveldb::Slice slSpValue = iter->value();
         Entry info;
-        try {
-            CDataStream ssValue(slSpValue.data(), slSpValue.data() + slSpValue.size(), SER_DISK, CLIENT_VERSION);
-            ssValue >> info;
-        } catch (const std::exception& e) {
-            PrintToLog("%s(): ERROR: %s\n", __func__, e.what());
-            return -1;
+        if (!it.Value(info)) {
+            continue;
         }
         // pop the block
         if (info.update_block == block_hash) {
-            leveldb::Slice slSpKey = iter->key();
-
             // need to roll this SP back
             if (info.update_block == info.creation_block) {
-                // this is the block that created this SP, so delete the SP and the tx index entry
-                CDataStream ssTxIndexKey(SER_DISK, CLIENT_VERSION);
-                ssTxIndexKey << std::make_pair(uint8_t('t'), info.txid);
-                leveldb::Slice slTxIndexKey((const char*)&ssTxIndexKey[0], ssTxIndexKey.size());
-                commitBatch.Delete(slSpKey);
-                commitBatch.Delete(slTxIndexKey);
+                // this is the block that created this SP, so delete the SP and the tx index ent
+                commitBatch.Delete(it.Key());
+                commitBatch.Delete(KeyToString(CLookupTx{info.txid}));
             } else {
-                uint32_t propertyId = 0;
-                try {
-                    CDataStream ssValue(1+slSpKey.data(), 1+slSpKey.data()+slSpKey.size(), SER_DISK, CLIENT_VERSION);
-                    ssValue >> propertyId;
-                } catch (const std::exception& e) {
-                    PrintToLog("%s(): ERROR: %s\n", __func__, e.what());
-                    return -2;
-                }
-
-                CDataStream ssSpPrevKey(SER_DISK, CLIENT_VERSION);
-                ssSpPrevKey << uint8_t('b');
-                ssSpPrevKey << info.update_block;
-                ssSpPrevKey << propertyId;
-                leveldb::Slice slSpPrevKey((const char*)&ssSpPrevKey[0], ssSpPrevKey.size());
-
+                auto propertyId = it.Key<uint32_t>();
+                auto hKey = KeyToString(CHistoricalProperty{info.update_block, propertyId});
                 std::string strSpPrevValue;
-                if (!pdb->Get(readoptions, slSpPrevKey, &strSpPrevValue).IsNotFound()) {
+                if (Read(hKey, strSpPrevValue)) {
                     // copy the prev state to the current state and delete the old state
-                    commitBatch.Put(slSpKey, strSpPrevValue);
-                    commitBatch.Delete(slSpPrevKey);
+                    commitBatch.Put(it.Key(), strSpPrevValue);
+                    commitBatch.Delete(hKey);
                     ++remainingSPs;
                 } else {
-                    // failed to find a previous SP entry, trigger reparse
-                    PrintToLog("%s(): ERROR: failed to retrieve previous SP entry\n", __func__);
-                    return -3;
+                    continue;
                 }
             }
         } else {
@@ -511,65 +426,18 @@ int64_t CMPSPInfo::popBlock(const uint256& block_hash)
         }
     }
 
-    // clean up the iterator
-    delete iter;
-
-    leveldb::Status status = pdb->Write(syncoptions, &commitBatch);
-
-    if (!status.ok()) {
-        PrintToLog("%s(): ERROR: %s\n", __func__, status.ToString());
-        return -4;
-    }
-
+    WriteBatch(commitBatch);
     return remainingSPs;
 }
 
 void CMPSPInfo::setWatermark(const uint256& watermark)
 {
-    leveldb::WriteBatch batch;
-
-    CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-    ssKey << uint8_t('B');
-    leveldb::Slice slKey((const char*)&ssKey[0], ssKey.size());
-
-    CDataStream ssValue(SER_DISK, CLIENT_VERSION);
-    ssValue.reserve(::GetSerializeSize(watermark, CLIENT_VERSION));
-    ssValue << watermark;
-    leveldb::Slice slValue((const char*)&ssValue[0], ssValue.size());
-
-    batch.Delete(slKey);
-    batch.Put(slKey, slValue);
-
-    leveldb::Status status = pdb->Write(syncoptions, &batch);
-    if (!status.ok()) {
-        PrintToLog("%s(): ERROR: failed to write watermark: %s\n", __func__, status.ToString());
-    }
+    Write("B", watermark);
 }
 
 bool CMPSPInfo::getWatermark(uint256& watermark) const
 {
-    CDataStream ssKey(SER_DISK, CLIENT_VERSION);
-    ssKey << uint8_t('B');
-    leveldb::Slice slKey((const char*)&ssKey[0], ssKey.size());
-
-    std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, slKey, &strValue);
-    if (!status.ok()) {
-        if (!status.IsNotFound()) {
-            PrintToLog("%s(): ERROR: failed to retrieve watermark: %s\n", __func__, status.ToString());
-        }
-        return false;
-    }
-
-    try {
-        CDataStream ssValue(strValue.data(), strValue.data() + strValue.size(), SER_DISK, CLIENT_VERSION);
-        ssValue >> watermark;
-    } catch (const std::exception& e) {
-        PrintToLog("%s(): ERROR: failed to deserialize watermark: %s\n", __func__, e.what());
-        return false;
-    }
-
-    return true;
+    return Read("B", watermark);
 }
 
 void CMPSPInfo::printAll() const
@@ -585,39 +453,14 @@ void CMPSPInfo::printAll() const
         }
     }
 
-    leveldb::Iterator* iter = NewIterator();
-
-    CDataStream ssSpKeyPrefix(SER_DISK, CLIENT_VERSION);
-    ssSpKeyPrefix << uint8_t('s');
-    leveldb::Slice slSpKeyPrefix((const char*)&ssSpKeyPrefix[0], ssSpKeyPrefix.size());
-
-    for (iter->Seek(slSpKeyPrefix); iter->Valid() && iter->key().starts_with(slSpKeyPrefix); iter->Next()) {
-        leveldb::Slice slSpKey = iter->key();
-        uint32_t propertyId = 0;
-        try {
-            CDataStream ssValue(1+slSpKey.data(), 1+slSpKey.data()+slSpKey.size(), SER_DISK, CLIENT_VERSION);
-            ssValue >> propertyId;
-        } catch (const std::exception& e) {
-            PrintToLog("%s(): ERROR: %s\n", __func__, e.what());
-            PrintToConsole("<Malformed key in DB>\n");
-            continue;
-        }
+    CDBaseIterator it{NewIterator(), CUniqueProperty{0}};
+    for (; it.Valid(); ++it) {
+        auto propertyId = it.Key<uint32_t>();
         PrintToConsole("%10s => ", propertyId);
-
         // deserialize the persisted data
-        leveldb::Slice slSpValue = iter->value();
         Entry info;
-        try {
-            CDataStream ssSpValue(slSpValue.data(), slSpValue.data() + slSpValue.size(), SER_DISK, CLIENT_VERSION);
-            ssSpValue >> info;
-        } catch (const std::exception& e) {
-            PrintToConsole("<Malformed value in DB>\n");
-            PrintToLog("%s(): ERROR: %s\n", __func__, e.what());
-            continue;
+        if (it.Value(info)) {
+            info.print();
         }
-        info.print();
     }
-
-    // clean up the iterator
-    delete iter;
 }

@@ -140,7 +140,7 @@ BOOST_AUTO_TEST_CASE(create_token_funded_by_source)
     std::vector<CTxDestination> destinations = CreateDestinations({1 * COIN, 0});
 
     uint256 hash;
-    BOOST_CHECK_EQUAL(CreateFundedTransaction(EncodeDestination(destinations[0] /* source */), EncodeDestination(destinations[1] /* receiver */), EncodeDestination(destinations[1] /* receiver */), dummy_payload(), hash, interface_wallet.get(), m_node), 0);
+    BOOST_CHECK_EQUAL(CreateFundedTransaction(EncodeDestination(destinations[0] /* source */), EncodeDestination(destinations[1] /* receiver */), EncodeDestination(destinations[1] /* receiver */), dummy_payload(), hash, interface_wallet.get()), 0);
 
     // Expect two outputs
     check_outputs(hash, 2);
@@ -151,7 +151,7 @@ BOOST_AUTO_TEST_CASE(create_token_funded_by_receiver_address)
     std::vector<CTxDestination> destinations = CreateDestinations({-1 /* Dust */, 1 * COIN});
 
     uint256 hash;
-    BOOST_CHECK_EQUAL(CreateFundedTransaction(EncodeDestination(destinations[0] /* source */), EncodeDestination(destinations[1] /* receiver */), EncodeDestination(destinations[1] /* receiver */), dummy_payload(), hash, interface_wallet.get(), m_node), 0);
+    BOOST_CHECK_EQUAL(CreateFundedTransaction(EncodeDestination(destinations[0] /* source */), EncodeDestination(destinations[1] /* receiver */), EncodeDestination(destinations[1] /* receiver */), dummy_payload(), hash, interface_wallet.get()), 0);
 
     // Expect two outputs
     check_outputs(hash, 2);
@@ -162,7 +162,7 @@ BOOST_AUTO_TEST_CASE(create_token_funded_by_fee_address)
     std::vector<CTxDestination> destinations = CreateDestinations({-1 /* Dust */, 0, 1 * COIN});
 
     uint256 hash;
-    BOOST_CHECK_EQUAL(CreateFundedTransaction(EncodeDestination(destinations[0] /* source */), EncodeDestination(destinations[1] /* receiver */), EncodeDestination(destinations[2] /* fee */), dummy_payload(), hash, interface_wallet.get(), m_node), 0);
+    BOOST_CHECK_EQUAL(CreateFundedTransaction(EncodeDestination(destinations[0] /* source */), EncodeDestination(destinations[1] /* receiver */), EncodeDestination(destinations[2] /* fee */), dummy_payload(), hash, interface_wallet.get()), 0);
 
     // Expect three outputs
     check_outputs(hash, 3);

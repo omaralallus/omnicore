@@ -34,8 +34,7 @@ bool COmniAddressDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndex
     leveldb::WriteBatch batch;
     for (auto it = vect.begin(); it != vect.end(); it++)
         batch.Put(KeyToString(it->first), ValueToString(it->second));
-    assert(pdb);
-    return pdb->Write(writeoptions, &batch).ok();
+    return WriteBatch(batch);
 }
 
 bool COmniAddressDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount>>& vect)
@@ -43,8 +42,7 @@ bool COmniAddressDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndex
     leveldb::WriteBatch batch;
     for (auto it = vect.begin(); it != vect.end(); it++)
         batch.Delete(KeyToString(it->first));
-    assert(pdb);
-    return pdb->Write(writeoptions, &batch).ok();
+    return WriteBatch(batch);
 }
 
 bool COmniAddressDB::ReadAddressIndex(const uint256& addressHash, unsigned int type,
@@ -78,8 +76,7 @@ bool COmniAddressDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddr
             batch.Put(KeyToString(it->first), ValueToString(it->second));
         }
     }
-    assert(pdb);
-    return pdb->Write(writeoptions, &batch).ok();
+    return WriteBatch(batch);
 }
 
 bool COmniAddressDB::ReadAddressUnspentIndex(const uint256& addressHash, unsigned int type,
@@ -103,10 +100,7 @@ bool COmniAddressDB::ReadAddressUnspentIndex(const uint256& addressHash, unsigne
 
 bool COmniAddressDB::WriteTimestampIndex(const CTimestampIndexKey& timestampIndex)
 {
-    leveldb::WriteBatch batch;
-    batch.Put(KeyToString(timestampIndex), {});
-    assert(pdb);
-    return pdb->Write(writeoptions, &batch).ok();
+    return Write(timestampIndex, "");
 }
 
 bool COmniAddressDB::ReadTimestampIndex(const unsigned int high, const unsigned int low, const bool fActiveOnly, std::vector<std::pair<uint256, unsigned int>>& hashes)
@@ -117,9 +111,7 @@ bool COmniAddressDB::ReadTimestampIndex(const unsigned int high, const unsigned 
         if (key.timestamp > high) {
             break;
         }
-        if (!fActiveOnly || mastercore::GetBlockIndex(key.blockHash)) {
-            hashes.emplace_back(key.blockHash, key.timestamp);
-        }
+        hashes.emplace_back(key.blockHash, key.timestamp);
     }
     return true;
 }
@@ -158,8 +150,7 @@ bool COmniAddressDB::UpdateSpentIndex(const std::vector<std::pair<CSpentIndexKey
             batch.Put(KeyToString(it->first), ValueToString(it->second));
         }
     }
-    assert(pdb);
-    return pdb->Write(writeoptions, &batch).ok();
+    return WriteBatch(batch);
 }
 
 struct CFlagKey {

@@ -32,6 +32,7 @@
 
 #include <algorithm>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -41,7 +42,6 @@ using mastercore::CheckAlertAuthorization;
 using mastercore::CheckExpiredAlerts;
 using mastercore::CheckLiveActivations;
 using mastercore::DeleteAlerts;
-using mastercore::GetBlockIndex;
 using mastercore::isNonMainNet;
 using mastercore::pDbTransaction;
 
@@ -58,11 +58,8 @@ CMPTxList::~CMPTxList()
 
 void CMPTxList::recordTX(const uint256 &txid, bool fValid, int nBlock, unsigned int type, uint64_t nValue)
 {
-    if (!pdb) return;
-
     const std::string key = txid.ToString();
     const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, nValue);
-    leveldb::Status status;
 
     // overwrite detection, we should never be overwriting a tx, as that means we have redone something a second time
     // reorgs delete all txs from levelDB above reorg_chain_height
@@ -74,14 +71,12 @@ void CMPTxList::recordTX(const uint256 &txid, bool fValid, int nBlock, unsigned 
     PrintToLog("%s(%s, valid=%s, block= %d, type= %d, value= %lu)\n",
             __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, type, nValue);
 
-    status = pdb->Put(writeoptions, key, value);
+    Write(key, value);
     ++nWritten;
 }
 
 void CMPTxList::recordPaymentTX(const uint256& txid, bool fValid, int nBlock, unsigned int vout, unsigned int propertyId, uint64_t nValue, std::string buyer, std::string seller)
 {
-    if (!pdb) return;
-
     // Prep - setup vars
     unsigned int type = 99999999;
     uint64_t numberOfPayments = 1;
@@ -97,8 +92,7 @@ void CMPTxList::recordPaymentTX(const uint256& txid, bool fValid, int nBlock, un
         //retrieve old numberOfPayments
         std::vector<std::string> vstr;
         std::string strValue;
-        leveldb::Status status = pdb->Get(readoptions, txid.ToString(), &strValue);
-        if (status.ok()) {
+        if (Read(txid.ToString(), strValue)) {
             // parse the string returned
             boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
 
@@ -114,9 +108,8 @@ void CMPTxList::recordPaymentTX(const uint256& txid, bool fValid, int nBlock, un
     // Step 3 - Create new/update master record for payment tx in TXList
     const std::string key = txid.ToString();
     const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, numberOfPayments);
-    leveldb::Status status;
     PrintToLog("DEXPAYDEBUG : Writing master record %s(%s, valid=%s, block= %d, type= %d, number of payments= %lu)\n", __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, type, numberOfPayments);
-    status = pdb->Put(writeoptions, key, value);
+    Write(key, value);
 
     // Step 4 - Write sub-record with payment details
     const std::string txidStr = txid.ToString();
@@ -124,13 +117,11 @@ void CMPTxList::recordPaymentTX(const uint256& txid, bool fValid, int nBlock, un
     const std::string subValue = strprintf("%d:%s:%s:%d:%lu", vout, buyer, seller, propertyId, nValue);
     leveldb::Status subStatus;
     PrintToLog("DEXPAYDEBUG : Writing sub-record %s with value %s\n", subKey, subValue);
-    subStatus = pdb->Put(writeoptions, subKey, subValue);
+    Write(subKey, subValue);
 }
 
 void CMPTxList::recordMetaDExCancelTX(const uint256& txidMaster, const uint256& txidSub, bool fValid, int nBlock, unsigned int propertyId, uint64_t nValue)
 {
-    if (!pdb) return;
-
     // Prep - setup vars
     unsigned int type = 99992104;
     unsigned int refNumber = 1;
@@ -142,8 +133,7 @@ void CMPTxList::recordMetaDExCancelTX(const uint256& txidMaster, const uint256& 
     // Step 2b - If does exist add +1 to existing ref and set this ref as new number of affected
     std::vector<std::string> vstr;
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, txidMasterStr, &strValue);
-    if (status.ok()) {
+    if (Read(txidMasterStr, strValue)) {
         // parse the string returned
         boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
 
@@ -158,15 +148,15 @@ void CMPTxList::recordMetaDExCancelTX(const uint256& txidMaster, const uint256& 
     const std::string& key = txidMasterStr;
     const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, refNumber);
     PrintToLog("METADEXCANCELDEBUG : Writing master record %s(%s, valid=%s, block= %d, type= %d, number of affected transactions= %d)\n", __func__, txidMaster.ToString(), fValid ? "YES" : "NO", nBlock, type, refNumber);
-    status = pdb->Put(writeoptions, key, value);
+    Write(key, value);
 
     // Step 4 - Write sub-record with cancel details
     const std::string txidStr = txidMaster.ToString() + "-C";
     const std::string subKey = STR_REF_SUBKEY_TXID_REF_COMBO(txidStr, refNumber);
     const std::string subValue = strprintf("%s:%d:%lu", txidSub.ToString(), propertyId, nValue);
     PrintToLog("METADEXCANCELDEBUG : Writing sub-record %s with value %s\n", subKey, subValue);
-    status = pdb->Put(writeoptions, subKey, subValue);
-    if (msc_debug_txdb) PrintToLog("%s(): store: %s=%s, status: %s\n", __func__, subKey, subValue, status.ToString());
+    bool status = Write(subKey, subValue);
+    if (msc_debug_txdb) PrintToLog("%s(): store: %s=%s, status: %s\n", __func__, subKey, subValue, status ? "OK" : "NOK");
 }
 
 
@@ -178,22 +168,16 @@ void CMPTxList::recordSendAllSubRecord(const uint256& txid, int subRecordNumber,
     std::string strKey = strprintf("%s-%d", txid.ToString(), subRecordNumber);
     std::string strValue = strprintf("%d:%d", propertyId, nValue);
 
-    leveldb::Status status = pdb->Put(writeoptions, strKey, strValue);
+    bool status = Write(strKey, strValue);
     ++nWritten;
-    if (msc_debug_txdb) PrintToLog("%s(): store: %s=%s, status: %s\n", __func__, strKey, strValue, status.ToString());
+    if (msc_debug_txdb) PrintToLog("%s(): store: %s=%s, status: %s\n", __func__, strKey, strValue, status ? "OK" : "NOK");
 }
 
 
 std::string CMPTxList::getKeyValue(const std::string& key)
 {
-    if (!pdb) return "";
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, key, &strValue);
-    if (status.ok()) {
-        return strValue;
-    } else {
-        return "";
-    }
+    return Read(key, strValue) ? strValue : "";
 }
 
 uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
@@ -230,8 +214,7 @@ int CMPTxList::getNumberOfSubRecords(const uint256& txid)
     int numberOfSubRecords = 0;
 
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, txid.ToString(), &strValue);
-    if (status.ok()) {
+    if (Read(txid.ToString(), strValue)) {
         std::vector<std::string> vstr;
         boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
         if (4 <= vstr.size()) {
@@ -244,12 +227,10 @@ int CMPTxList::getNumberOfSubRecords(const uint256& txid)
 
 int CMPTxList::getNumberOfMetaDExCancels(const uint256& txid)
 {
-    if (!pdb) return 0;
     int numberOfCancels = 0;
     std::vector<std::string> vstr;
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, txid.ToString() + "-C", &strValue);
-    if (status.ok()) {
+    if (Read(txid.ToString() + "-C", strValue)) {
         // parse the string returned
         boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
         // obtain the number of cancels
@@ -262,11 +243,9 @@ int CMPTxList::getNumberOfMetaDExCancels(const uint256& txid)
 
 bool CMPTxList::getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t* propertyId, uint64_t* nValue)
 {
-    if (!pdb) return 0;
     std::vector<std::string> vstr;
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, txid.ToString() + "-" + std::to_string(purchaseNumber), &strValue);
-    if (status.ok()) {
+    if (Read(txid.ToString() + "-" + std::to_string(purchaseNumber), strValue)) {
         // parse the string returned
         boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
         // obtain the requisite details
@@ -289,8 +268,7 @@ bool CMPTxList::getSendAllDetails(const uint256& txid, int subSend, uint32_t& pr
 {
     std::string strKey = strprintf("%s-%d", txid.ToString(), subSend);
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, strKey, &strValue);
-    if (status.ok()) {
+    if (Read(strKey, strValue)) {
         std::vector<std::string> vstr;
         boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
         if (2 == vstr.size()) {
@@ -378,12 +356,12 @@ int CMPTxList::getDBVersion()
     std::string strValue;
     int verDB = 0;
 
-    leveldb::Status status = pdb->Get(readoptions, "dbversion", &strValue);
-    if (status.ok()) {
+    bool status = Read("dbversion", strValue);
+    if (status) {
         verDB = boost::lexical_cast<uint64_t>(strValue);
     }
 
-    if (msc_debug_txdb) PrintToLog("%s(): dbversion %s status %s, line %d, file: %s\n", __func__, strValue, status.ToString(), __LINE__, __FILE__);
+    if (msc_debug_txdb) PrintToLog("%s(): dbversion %s status %s, line %d, file: %s\n", __func__, strValue, status ? "OK" : "NOK", __LINE__, __FILE__);
 
     return verDB;
 }
@@ -396,9 +374,9 @@ int CMPTxList::getDBVersion()
 int CMPTxList::setDBVersion()
 {
     std::string verStr = boost::lexical_cast<std::string>(DB_VERSION);
-    leveldb::Status status = pdb->Put(writeoptions, "dbversion", verStr);
+    bool status = Write("dbversion", verStr);
 
-    if (msc_debug_txdb) PrintToLog("%s(): dbversion %s status %s, line %d, file: %s\n", __func__, verStr, status.ToString(), __LINE__, __FILE__);
+    if (msc_debug_txdb) PrintToLog("%s(): dbversion %s status %s, line %d, file: %s\n", __func__, verStr, status ? "OK" : "NOK", __LINE__, __FILE__);
 
     return getDBVersion();
 }
@@ -407,8 +385,7 @@ std::pair<int64_t,int64_t> CMPTxList::GetNonFungibleGrant(const uint256& txid)
 {
     std::string strKey = strprintf("%s-UG", txid.ToString());
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, strKey, &strValue);
-    if (status.ok()) {
+    if (Read(strKey, strValue)) {
         std::vector<std::string> vstr;
         boost::split(vstr, strValue, boost::is_any_of("-"), boost::token_compress_on);
         if (2 == vstr.size()) {
@@ -420,39 +397,24 @@ std::pair<int64_t,int64_t> CMPTxList::GetNonFungibleGrant(const uint256& txid)
 
 void CMPTxList::RecordNonFungibleGrant(const uint256& txid, int64_t start, int64_t end)
 {
-    assert(pdb);
-
     const std::string key = txid.ToString() + "-UG";
     const std::string value = strprintf("%d-%d", start, end);
 
-    leveldb::Status status = pdb->Put(writeoptions, key, value);
-    PrintToLog("%s(): Writing Non-Fungible Grant range %s:%d-%d (%s), line %d, file: %s\n", __FUNCTION__, key, start, end, status.ToString(), __LINE__, __FILE__);
+    bool status = Write(key, value);
+    PrintToLog("%s(): Writing Non-Fungible Grant range %s:%d-%d (%s), line %d, file: %s\n", __FUNCTION__, key, start, end, status ? "OK" : "NOK", __LINE__, __FILE__);
 }
 
 bool CMPTxList::exists(const uint256 &txid)
 {
-    if (!pdb) return false;
-
     std::string strValue;
-    leveldb::Status status = pdb->Get(readoptions, txid.ToString(), &strValue);
-
-    if (!status.ok()) {
-        if (status.IsNotFound()) return false;
-    }
-
-    return true;
+    return Read(txid.ToString(), strValue);
 }
 
 bool CMPTxList::getTX(const uint256 &txid, std::string& value)
 {
-    leveldb::Status status = pdb->Get(readoptions, txid.ToString(), &value);
+    bool status = Read(txid.ToString(), value);
     ++nRead;
-
-    if (status.ok()) {
-        return true;
-    }
-
-    return false;
+    return status;
 }
 
 // call it like so (variable # of parameters):
@@ -468,8 +430,6 @@ bool CMPTxList::getValidMPTX(const uint256& txid, int* block, unsigned int* type
     int validity = 0;
 
     if (msc_debug_txdb) PrintToLog("%s()\n", __func__);
-
-    if (!pdb) return false;
 
     if (!getTX(txid, result)) return false;
 
@@ -507,8 +467,6 @@ std::set<int> CMPTxList::GetSeedBlocks(int startHeight, int endHeight)
 {
     std::set<int> setSeedBlocks;
 
-    if (!pdb) return setSeedBlocks;
-
     leveldb::Iterator* it = NewIterator();
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -527,29 +485,21 @@ std::set<int> CMPTxList::GetSeedBlocks(int startHeight, int endHeight)
     return setSeedBlocks;
 }
 
-static void ProcessActivations(const std::vector<std::pair<int64_t, uint256>>& activations, int blockHeight, std::function<void(CMPTransaction&)> callback)
+using activation = std::pair<std::pair<int, uint32_t>, uint256>;
+
+static void ProcessActivations(const std::vector<activation>& activations, std::function<void(CMPTransaction&)> callback)
 {
     CCoinsViewCacheOnly view;
-    for (const auto& [_, hash] : activations) {
+    for (const auto& [hidx, hash] : activations) {
         uint256 blockHash;
         CTransactionRef wtx;
         CMPTransaction mp_obj;
-        CBlockIndex* pBlockIndex;
 
         if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
             PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
             continue;
         }
-        if (blockHash.IsNull() || !(pBlockIndex = GetBlockIndex(blockHash))) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed to retrieve block hash.\n", hash.GetHex());
-            continue;
-        }
-        int currentBlockHeight = pBlockIndex->nHeight;
-        if (currentBlockHeight > blockHeight) {
-            // skipping, because it's in the future
-            continue;
-        }
-        if (0 != ParseTransaction(view, *wtx, currentBlockHeight, 0, mp_obj)) {
+        if (0 != ParseTransaction(view, *wtx, hidx.first, 0, mp_obj)) {
             PrintToLog("ERROR: While loading activation transaction %s: failed ParseTransaction.\n", hash.GetHex());
             continue;
         }
@@ -563,11 +513,10 @@ static void ProcessActivations(const std::vector<std::pair<int64_t, uint256>>& a
 
 void CMPTxList::LoadAlerts(int blockHeight)
 {
-    if (!pdb) return;
     leveldb::Slice skey, svalue;
     leveldb::Iterator* it = NewIterator();
 
-    std::vector<std::pair<int64_t, uint256>> loadOrder;
+    std::vector<activation> loadOrder;
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string itData = it->value().ToString();
@@ -575,13 +524,15 @@ void CMPTxList::LoadAlerts(int blockHeight)
         boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
         if (4 != vstr.size()) continue; // unexpected number of tokens
         if (atoi(vstr[2]) != OMNICORE_MESSAGE_TYPE_ALERT || atoi(vstr[0]) != 1) continue; // not a valid alert
+        int height = atoi(vstr[1]);
+        if (height > blockHeight) continue;
         uint256 txid = uint256S(it->key().ToString());
-        loadOrder.push_back(std::make_pair(atoi(vstr[1]), txid));
+        loadOrder.emplace_back(std::make_pair(height, 0), txid);
     }
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
-    ProcessActivations(loadOrder, blockHeight, [&](CMPTransaction& mp_obj) {
+    ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
         if (OMNICORE_MESSAGE_TYPE_ALERT != mp_obj.getType()) {
             PrintToLog("ERROR: While loading alert %s: levelDB type mismatch, not an alert.\n", mp_obj.getHash().GetHex());
             return;
@@ -613,14 +564,12 @@ void CMPTxList::LoadAlerts(int blockHeight)
 
 void CMPTxList::LoadActivations(int blockHeight)
 {
-    if (!pdb) return;
-
     leveldb::Slice skey, svalue;
     leveldb::Iterator* it = NewIterator();
 
     PrintToLog("Loading feature activations from levelDB\n");
 
-    std::vector<std::pair<int64_t, uint256>> loadOrder;
+    std::vector<activation> loadOrder;
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string itData = it->value().ToString();
@@ -628,13 +577,15 @@ void CMPTxList::LoadActivations(int blockHeight)
         boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
         if (4 != vstr.size()) continue; // unexpected number of tokens
         if (atoi(vstr[2]) != OMNICORE_MESSAGE_TYPE_ACTIVATION || atoi(vstr[0]) != 1) continue; // we only care about valid activations
+        int height = atoi(vstr[1]);
+        if (height > blockHeight) continue;
         uint256 txid = uint256S(it->key().ToString());
-        loadOrder.push_back(std::make_pair(atoi(vstr[1]), txid));
+        loadOrder.emplace_back(std::make_pair(height, 0), txid);
     }
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
-    ProcessActivations(loadOrder, blockHeight, [&](CMPTransaction& mp_obj) {
+    ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
         if (OMNICORE_MESSAGE_TYPE_ACTIVATION != mp_obj.getType()) {
             PrintToLog("ERROR: While loading activation transaction %s: levelDB type mismatch, not an activation.\n", mp_obj.getHash().GetHex());
             return;
@@ -658,12 +609,11 @@ void CMPTxList::LoadActivations(int blockHeight)
 
 bool CMPTxList::LoadFreezeState(int blockHeight)
 {
-    assert(pdb);
-
-    std::vector<std::pair<int64_t, uint256>> loadOrder;
     int txnsLoaded = 0;
     leveldb::Iterator* it = NewIterator();
     PrintToLog("Loading freeze state from levelDB\n");
+
+    std::vector<activation> loadOrder;
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
         std::string itData = it->value().ToString();
@@ -674,17 +624,18 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
         if (txtype != MSC_TYPE_FREEZE_PROPERTY_TOKENS && txtype != MSC_TYPE_UNFREEZE_PROPERTY_TOKENS &&
                 txtype != MSC_TYPE_ENABLE_FREEZING && txtype != MSC_TYPE_DISABLE_FREEZING) continue;
         if (atoi(vstr[0]) != 1) continue; // invalid, ignore
+        int height = atoi(vstr[1]);
+        if (height > blockHeight) continue;
         uint256 txid = uint256S(it->key().ToString());
         int txPosition = pDbTransaction->FetchTransactionPosition(txid);
-        int64_t sortKey = (int64_t(atoi(vstr[1])) << 32) | txPosition;
-        loadOrder.push_back(std::make_pair(sortKey, txid));
+        loadOrder.emplace_back(std::make_pair(height, txPosition), txid);
     }
 
     delete it;
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
-    ProcessActivations(loadOrder, blockHeight, [&](CMPTransaction& mp_obj) {
+    ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
         if (MSC_TYPE_FREEZE_PROPERTY_TOKENS != mp_obj.getType() && MSC_TYPE_UNFREEZE_PROPERTY_TOKENS != mp_obj.getType() &&
                 MSC_TYPE_ENABLE_FREEZING != mp_obj.getType() && MSC_TYPE_DISABLE_FREEZING != mp_obj.getType()) {
             PrintToLog("ERROR: While loading freeze transaction %s: levelDB type mismatch, not a freeze transaction.\n", mp_obj.getHash().GetHex());
@@ -707,8 +658,6 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
 
 bool CMPTxList::CheckForFreezeTxs(int blockHeight)
 {
-    assert(pdb);
-
     leveldb::Iterator* it = NewIterator();
 
     for (it->SeekToFirst(); it->Valid(); it->Next()) {
@@ -779,7 +728,7 @@ bool CMPTxList::isMPinBlockRange(int starting_block, int ending_block, bool bDel
             if ((starting_block <= block) && (block <= ending_block)) {
                 ++n_found;
                 PrintToLog("%s() DELETING: %s=%s\n", __func__, skey.ToString(), svalue.ToString());
-                if (bDeleteFound) pdb->Delete(writeoptions, skey);
+                if (bDeleteFound) Delete(std::string_view{skey.data(), skey.size()});
             }
         }
     }

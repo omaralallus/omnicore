@@ -226,7 +226,7 @@ int TXHistoryDialog::PopulateHistoryMap()
         CTransactionRef wtx;
         uint256 blockHash;
         if (!GetTransaction(txHash, wtx, Params().GetConsensus(), blockHash)) continue;
-        if (blockHash.IsNull() || nullptr == GetBlockIndex(blockHash)) {
+        if (blockHash.IsNull()) {
             // this transaction is unconfirmed, should be one of our pending transactions
             LOCK(cs_pending);
             PendingMap::iterator pending_it = my_pending.find(txHash);
@@ -250,7 +250,8 @@ int TXHistoryDialog::PopulateHistoryMap()
         }
 
         // parse the transaction and setup the new history object
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
+        // Port GetTransaction to return height and time
+        CBlockIndex* pBlockIndex = nullptr;
         if (nullptr == pBlockIndex) continue;
         int blockHeight = pBlockIndex->nHeight;
         CMPTransaction mp_obj;

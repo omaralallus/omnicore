@@ -160,8 +160,9 @@ public:
                 CTransactionRef wtx;
                 uint256 blockHash;
                 if (GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
-                    if (!blockHash.IsNull() || nullptr == GetBlockIndex(blockHash)) {
-                        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
+                    if (!blockHash.IsNull()) {
+                        // Port GetTransaction to return height and time
+                        CBlockIndex* pBlockIndex = nullptr;
                         if (nullptr != pBlockIndex) {
                             int blockHeight = pBlockIndex->nHeight;
                             CMPTransaction mp_obj;

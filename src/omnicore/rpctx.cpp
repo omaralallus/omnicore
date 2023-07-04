@@ -438,13 +438,10 @@ static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
 
     if (issuer) {
         CMPSPInfo::Entry sp;
-        {
-            LOCK(cs_tally);
-            if (!pDbSpInfo->getSP(propertyId, sp)) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
-            }
-            fromAddress = sp.issuer;
+        if (!pDbSpInfo->getSP(propertyId, sp)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
         }
+        fromAddress = sp.issuer;
     }
 
     // create a payload for the transaction

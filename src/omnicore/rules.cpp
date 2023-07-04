@@ -852,7 +852,7 @@ bool VerifyTransactionExistence(int block)
             continue;
         }
 
-        if (!mastercore::pDbTransactionList->exists(checkpoint.txHash)) {
+        if (!mastercore::pDbTransactionList->getValidMPTX(checkpoint.txHash)) {
             PrintToLog("%s: ERROR: failed to find historical transaction %s in block %d\n",
                     __func__, checkpoint.txHash.GetHex(), checkpoint.blockHeight);
             return false;

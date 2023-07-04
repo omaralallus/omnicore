@@ -144,11 +144,11 @@ public:
 
 private:
     // implied version of OMN and TOMN so they don't hit the leveldb
-    Entry implied_omni;
-    Entry implied_tomni;
+    const Entry implied_omni;
+    const Entry implied_tomni;
 
-    uint32_t next_spid;
-    uint32_t next_test_spid;
+    std::atomic<uint32_t> next_spid;
+    std::atomic<uint32_t> next_test_spid;
 
 public:
     CMPSPInfo(const fs::path& path, bool fWipe);

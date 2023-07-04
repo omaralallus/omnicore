@@ -13,8 +13,10 @@ namespace interfaces {
 class Wallet;
 } // namespace interfaces
 
-int populateRPCTransactionObject(const uint256& txid, UniValue& txobj, std::string filterAddress = "", bool extendedDetails = false, std::string extendedDetailsFilter = "", interfaces::Wallet* iWallet = nullptr);
-int populateRPCTransactionObject(const CTransaction& tx, const uint256& blockHash, UniValue& txobj, std::string filterAddress = "", bool extendedDetails = false, std::string extendedDetailsFilter = "", int blockHeight = 0, interfaces::Wallet* iWallet = nullptr);
+class PrevTxsEntry;
+
+int populateRPCTransactionObject(const uint256& txid, UniValue& txobj, const std::string& filterAddress = {}, bool extendedDetails = false, const std::string& extendedDetailsFilter = {}, interfaces::Wallet* iWallet = nullptr);
+int populateRPCTransactionObject(const CTransaction& tx, std::vector<PrevTxsEntry> inputs, UniValue& txobj, const std::string& filterAddress = {}, bool extendedDetails = false, const std::string& extendedDetailsFilter = {}, int blockHeight = 0, interfaces::Wallet* iWallet = nullptr);
 
 void populateRPCTypeInfo(CMPTransaction& mp_obj, UniValue& txobj, uint32_t txType, bool extendedDetails, std::string extendedDetailsFilter, int confirmations, interfaces::Wallet* iWallet = nullptr);
 

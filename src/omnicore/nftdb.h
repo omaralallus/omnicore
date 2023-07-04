@@ -9,7 +9,7 @@
 #include <fs.h>
 #include <stdint.h>
 
-enum class NonFungibleStorage : unsigned char
+enum NonFungibleStorage : uint8_t
 {
     None       = 0,
     RangeIndex = 'R',

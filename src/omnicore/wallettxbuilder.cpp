@@ -256,8 +256,6 @@ static void LockUnrelatedCoins(
         return;
     }
 
-    // NOTE: require: LOCK2(cs_main, pwallet->cs_wallet);
-
     // lock any other output
     std::vector<COutput> vCoins;
     iWallet->availableCoins(vCoins, nullptr, 0);
@@ -283,8 +281,6 @@ static void UnlockCoins(
         interfaces::Wallet* iWallet,
         const std::vector<COutPoint>& vToUnlock)
 {
-    // NOTE: require: LOCK2(cs_main, pwallet->cs_wallet);
-
     for (const COutPoint& output : vToUnlock) {
         iWallet->unlockCoin(output);
     }
@@ -425,13 +421,13 @@ int CreateFundedTransaction(
     int nHashType = SIGHASH_ALL;
 
     {
-        uint256 hashBlock;
+        int blockHeight;
         CTransactionRef txPrev;
         bool fCoinbase = false;
         for (size_t i = 0; i < tx.vin.size(); i++) {
             auto& txin = tx.vin[i];
             const auto& outpoint = txin.prevout;
-            if (!GetTransaction(outpoint.hash, txPrev, Params().GetConsensus(), hashBlock) || outpoint.n >= txPrev->vout.size()) {
+            if (!GetTransaction(outpoint.hash, txPrev, Params().GetConsensus(), blockHeight) || outpoint.n >= txPrev->vout.size()) {
                 PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
                 continue;
             }

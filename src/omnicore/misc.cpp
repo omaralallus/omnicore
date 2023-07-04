@@ -199,32 +199,32 @@ UniValue getaddressdeltas(const JSONRPCRequest& request)
     UniValue result(UniValue::VOBJ);
 
     if (includeChainInfo && start > 0 && end > 0) {
-        LOCK(cs_main);
 
-        if (start > ::ChainActive().Height() || end > ::ChainActive().Height()) {
+        auto height = GetHeight();
+        if (start > height || end > height) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Start or end is outside chain range");
         }
 
-        CBlockIndex* startIndex = ::ChainActive()[start];
-        CBlockIndex* endIndex = ::ChainActive()[end];
+        auto* startIndex = GetActiveChain()[start];
+        auto* endIndex = GetActiveChain()[end];
 
-        UniValue startInfo(UniValue::VOBJ);
-        UniValue endInfo(UniValue::VOBJ);
+        if (startIndex && endIndex) {
+            UniValue startInfo(UniValue::VOBJ);
+            UniValue endInfo(UniValue::VOBJ);
 
-        startInfo.pushKV("hash", startIndex->GetBlockHash().GetHex());
-        startInfo.pushKV("height", start);
+            startInfo.pushKV("hash", startIndex->GetBlockHash().GetHex());
+            startInfo.pushKV("height", start);
 
-        endInfo.pushKV("hash", endIndex->GetBlockHash().GetHex());
-        endInfo.pushKV("height", end);
+            endInfo.pushKV("hash", endIndex->GetBlockHash().GetHex());
+            endInfo.pushKV("height", end);
 
-        result.pushKV("deltas", deltas);
-        result.pushKV("start", startInfo);
-        result.pushKV("end", endInfo);
-
-        return result;
-    } else {
-        return deltas;
+            result.pushKV("deltas", deltas);
+            result.pushKV("start", startInfo);
+            result.pushKV("end", endInfo);
+            return result;
+        }
     }
+    return deltas;
 }
 
 UniValue getaddressbalance(const JSONRPCRequest& request)
@@ -381,9 +381,9 @@ UniValue getaddressutxos(const JSONRPCRequest& request)
         UniValue result(UniValue::VOBJ);
         result.pushKV("utxos", utxos);
 
-        LOCK(cs_main);
-        result.pushKV("hash", ::ChainActive().Tip()->GetBlockHash().GetHex());
-        result.pushKV("height", (int)::ChainActive().Height());
+        auto blockIndex = GetActiveChain().Tip();
+        result.pushKV("hash", blockIndex->GetBlockHash().GetHex());
+        result.pushKV("height", blockIndex->nHeight);
         return result;
     } else {
         return utxos;

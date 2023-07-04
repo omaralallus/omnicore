@@ -21,7 +21,12 @@ leveldb::Status CDBBase::Open(const fs::path& path, bool fWipe)
     TryCreateDirectories(path);
     if (msc_debug_persistence) PrintToLog("Opening LevelDB in %s\n", path.string());
 
-    return leveldb::DB::Open(options, path.string(), &pdb);
+    leveldb::DB* db;
+    auto status = leveldb::DB::Open(options, path.string(), &db);
+    if (status.ok()) {
+        pdb.reset(db);
+    }
+    return status;
 }
 
 /**
@@ -39,14 +44,14 @@ void CDBBase::Clear()
         ++n;
     }
 
-    leveldb::Status status = pdb->Write(writeoptions, &batch);
     nRead = 0;
     nWritten = 0;
+    bool status = WriteBatch(batch);
 
     int64_t nTime = GetTimeMicros() - nTimeStart;
     if (msc_debug_persistence)
         PrintToLog("Removed %d entries: %s [%.3f ms/entry, %.3f ms total]\n",
-            n, status.ToString(), (n > 0 ? (0.001 * nTime / n) : 0), 0.001 * nTime);
+            n, status ? "OK" : "NOK", (n > 0 ? (0.001 * nTime / n) : 0), 0.001 * nTime);
 }
 
 /**
@@ -54,10 +59,7 @@ void CDBBase::Clear()
  */
 void CDBBase::Close()
 {
-    if (pdb) {
-        delete pdb;
-        pdb = nullptr;
-    }
+    pdb.reset();
 }
 
 

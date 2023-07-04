@@ -143,9 +143,8 @@ static const bool DEFAULT_REST_ENABLE = false;
 static const char* DEFAULT_ASMAP_FILENAME="ip_asn.map";
 
 // Omni Core initialization and shutdown handlers
-extern int mastercore_init();
+extern int mastercore_init(node::NodeContext&);
 extern int mastercore_shutdown();
-extern std::optional<std::reference_wrapper<node::NodeContext>> g_context;
 
 /**
  * The PID file facilities.
@@ -332,7 +331,6 @@ void Shutdown(NodeContext& node)
     node.fee_estimator.reset();
     node.chainman.reset();
     node.scheduler.reset();
-    g_context.reset();
 
     try {
         if (!fs::remove(GetPidFile(*node.args))) {
@@ -909,44 +907,6 @@ bool AppInitParameterInteraction(const ArgsManager& args, bool use_syscall_sandb
         nLocalServices = ServiceFlags(nLocalServices | NODE_COMPACT_FILTERS);
     }
 
-    if (!gArgs.GetBoolArg("-txindex", DEFAULT_TXINDEX)) {
-        const fs::path configPathInfo = GetConfigFile(gArgs.GetArg("-conf", BITCOIN_CONF_FILENAME).c_str());
-        // ask the user if they would like us to modify their config file for them
-        auto msg = _("Disabled transaction index detected.\n\n"
-                    "Omni Core requires an enabled transaction index. To enable "
-                    "transaction indexing, please use the \"-txindex\" option as "
-                    "command line argument or add \"txindex=1\" to your client "
-                    "configuration file within your data directory.\n\n"
-                    "Configuration file: "); // allow translation of main text body while still allowing differing config file string
-        msg += _((configPathInfo.string() + "\n\n").c_str());
-        msg += _("Would you like Omni Core to attempt to update your configuration file accordingly?");
-        bool fRet = uiInterface.ThreadSafeMessageBox(msg, "", CClientUIInterface::MSG_INFORMATION | CClientUIInterface::BTN_OK | CClientUIInterface::MODAL | CClientUIInterface::BTN_ABORT);
-        if (fRet) {
-            // add txindex=1 to config file in GetConfigFile()
-            FILE *fp = fopen(configPathInfo.string().c_str(), "at");
-            if (!fp) {
-                auto failMsg = _("Unable to update configuration file at:\n");
-                failMsg += _((configPathInfo.string() + "\n\n").c_str());
-                failMsg += _("The file may be write protected or you may not have the required permissions to edit it.\n");
-                failMsg += _("Please add txindex=1 to your configuration file manually.\n\nOmni Core will now shutdown.");
-                return InitError(failMsg);
-            }
-            fprintf(fp, "\ntxindex=1\n");
-            fflush(fp);
-            fclose(fp);
-            auto strUpdated = _("Your configuration file has been updated.\n\n"
-                                "Omni Core will now shutdown - please restart the client for your new configuration to take effect.");
-            uiInterface.ThreadSafeMessageBox(strUpdated, "", CClientUIInterface::MSG_INFORMATION | CClientUIInterface::BTN_OK | CClientUIInterface::MODAL);
-            return false;
-        } else {
-            return InitError(_("Please add txindex=1 to your configuration file manually.\n\nOmni Core will now shutdown."));
-        }
-    }
-
-    if (args.GetIntArg("-prune", 0) || args.GetBoolArg("-reindex-chainstate", false)) {
-        gArgs.SoftSetBoolArg("-txindex", false);
-    }
-
     if (args.GetIntArg("-prune", 0)) {
         if (args.GetBoolArg("-txindex", DEFAULT_TXINDEX))
             return InitError(_("Prune mode is incompatible with -txindex."));
@@ -1466,9 +1426,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 #endif
 
-    // restore txindex
-    gArgs.SoftSetBoolArg("-txindex", true);
-
     // ********************************************************* Step 7: load block chain
 
     fReindex = args.GetBoolArg("-reindex", false);
@@ -1619,8 +1576,6 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
 
-    g_context = std::ref(node);
-
     // ********************************************************* Step 9: load wallet
     for (const auto& client : node.chain_clients) {
         if (!client->load()) {
@@ -1628,7 +1583,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         }
     }
 
-    mastercore_init();
+    mastercore_init(node);
 
     // ********************************************************* Step 10: data directory maintenance
 

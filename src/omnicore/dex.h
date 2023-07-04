@@ -25,17 +25,6 @@ inline std::string STR_ACCEPT_ADDR_PROP_ADDR_COMBO(const std::string& seller, co
 {
     return strprintf("%s-%d+%s", seller, propertyId, buyer);
 }
-/** Lookup key to find DEx payments. */
-inline std::string STR_PAYMENT_SUBKEY_TXID_PAYMENT_COMBO(const std::string& txidStr, unsigned int paymentNumber)
-{
-    return strprintf("%s-%d", txidStr, paymentNumber);
-}
-/** Lookup key to find MetaDEx sub-records. TODO: not here! */
-inline std::string STR_REF_SUBKEY_TXID_REF_COMBO(const std::string& txidStr, unsigned int refNumber)
-{
-    return strprintf("%s%d", txidStr, refNumber);
-}
-
 /** A single outstanding offer, from one seller of one property.
  *
  * There many be more than one accepted offers.

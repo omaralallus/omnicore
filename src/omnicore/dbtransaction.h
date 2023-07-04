@@ -4,6 +4,7 @@
 #include <omnicore/dbbase.h>
 
 #include <fs.h>
+#include <primitives/transaction.h>
 #include <uint256.h>
 
 #include <stdint.h>
@@ -19,8 +20,11 @@ public:
     COmniTransactionDB(const fs::path& path, bool fWipe);
     virtual ~COmniTransactionDB();
 
-    /** Stores position in block and validation result for a transaction. */
-    void RecordTransaction(const uint256& txid, uint32_t posInBlock, int processingResult);
+    /** Stores block heiehg, position in block, block time and validation result for a transaction. */
+    void RecordTransaction(const CTransaction& tx, int block, uint32_t posInBlock, int processingResult);
+
+    /** Deletes transactions in case of rollback. */
+    void DeleteTransactions(const std::set<uint256>& txs);
 
     /** Returns the position of a transaction in a block. */
     uint32_t FetchTransactionPosition(const uint256& txid);
@@ -28,9 +32,8 @@ public:
     /** Returns the reason why a transaction is invalid. */
     std::string FetchInvalidReason(const uint256& txid);
 
-private:
-    /** Retrieves the serialized transaction details from the DB. */
-    std::vector<std::string> FetchTransactionDetails(const uint256& txid);
+    /** Returns transaction, block and blockTime. */
+    bool GetTx(const uint256& txid, CTransactionRef& tx, int& block);
 };
 
 namespace mastercore

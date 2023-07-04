@@ -15,11 +15,10 @@
 #include <leveldb/db.h>
 #include <leveldb/write_batch.h>
 
-#include <boost/lexical_cast.hpp>
-
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 
@@ -113,33 +112,41 @@ std::string CMPSPInfo::Entry::getDelegate(int block) const
     return it != historicalDelegates.begin() ? (--it)->second : delegate;
 }
 
+static CMPSPInfo::Entry CreateOmniToken()
+{
+    CMPSPInfo::Entry omni;
+    // special cases for constant SPs OMN and TOMN
+    omni.issuer = EncodeDestination(ExodusAddress());
+    omni.updateIssuer(0, 0, omni.issuer);
+    omni.prop_type = MSC_PROPERTY_TYPE_DIVISIBLE;
+    omni.num_tokens = 700000;
+    omni.category = "N/A";
+    omni.subcategory = "N/A";
+    omni.name = "Omni tokens";
+    omni.url = "http://www.omnilayer.org";
+    omni.data = "Omni tokens serve as the binding between Bitcoin, smart properties and contracts created on the Omni Layer.";
+    return omni;
+}
 
-CMPSPInfo::CMPSPInfo(const fs::path& path, bool fWipe)
+static CMPSPInfo::Entry CreateTestOmniToken()
+{
+    CMPSPInfo::Entry tomni;
+    tomni.issuer = EncodeDestination(ExodusAddress());
+    tomni.updateIssuer(0, 0, tomni.issuer);
+    tomni.prop_type = MSC_PROPERTY_TYPE_DIVISIBLE;
+    tomni.num_tokens = 700000;
+    tomni.category = "N/A";
+    tomni.subcategory = "N/A";
+    tomni.name = "Test Omni tokens";
+    tomni.url = "http://www.omnilayer.org";
+    tomni.data = "Test Omni tokens serve as the binding between Bitcoin, smart properties and contracts created on the Omni Layer.";
+    return tomni;
+}
+
+CMPSPInfo::CMPSPInfo(const fs::path& path, bool fWipe) : implied_omni(CreateOmniToken()), implied_tomni(CreateTestOmniToken())
 {
     leveldb::Status status = Open(path, fWipe);
     PrintToConsole("Loading smart property database: %s\n", status.ToString());
-
-    // special cases for constant SPs OMN and TOMN
-    implied_omni.issuer = EncodeDestination(ExodusAddress());
-    implied_omni.updateIssuer(0, 0, implied_omni.issuer);
-    implied_omni.prop_type = MSC_PROPERTY_TYPE_DIVISIBLE;
-    implied_omni.num_tokens = 700000;
-    implied_omni.category = "N/A";
-    implied_omni.subcategory = "N/A";
-    implied_omni.name = "Omni tokens";
-    implied_omni.url = "http://www.omnilayer.org";
-    implied_omni.data = "Omni tokens serve as the binding between Bitcoin, smart properties and contracts created on the Omni Layer.";
-
-    implied_tomni.issuer = EncodeDestination(ExodusAddress());
-    implied_tomni.updateIssuer(0, 0, implied_tomni.issuer);
-    implied_tomni.prop_type = MSC_PROPERTY_TYPE_DIVISIBLE;
-    implied_tomni.num_tokens = 700000;
-    implied_tomni.category = "N/A";
-    implied_tomni.subcategory = "N/A";
-    implied_tomni.name = "Test Omni tokens";
-    implied_tomni.url = "http://www.omnilayer.org";
-    implied_tomni.data = "Test Omni tokens serve as the binding between Bitcoin, smart properties and contracts created on the Omni Layer.";
-
     init();
 }
 
@@ -180,49 +187,49 @@ uint32_t CMPSPInfo::peekNextSPID(uint8_t ecosystem) const
     return nextId;
 }
 
-struct CUpdateProperty {
+struct CUpdatePropertyKey {
     static constexpr uint8_t prefix = 's';
-    uint32_t& propertyId;
+    uint32_t propertyId;
 
-    SERIALIZE_METHODS(CUpdateProperty, obj) {
+    SERIALIZE_METHODS(CUpdatePropertyKey, obj) {
         READWRITE(obj.propertyId);
     }
 };
 
-struct CDelegateProperty {
+struct CDelegatePropertyKey {
     static constexpr uint8_t prefix = 'd';
-    const uint32_t& propertyId;
+    uint32_t propertyId;
 
-    SERIALIZE_METHODS(CDelegateProperty, obj) {
+    SERIALIZE_METHODS(CDelegatePropertyKey, obj) {
         READWRITE(obj.propertyId);
     }
 };
 
-struct CUniqueProperty {
+struct CUniquePropertyKey {
     static constexpr uint8_t prefix = 'u';
-    const uint32_t& propertyId;
+    uint32_t propertyId;
 
-    SERIALIZE_METHODS(CUniqueProperty, obj) {
+    SERIALIZE_METHODS(CUniquePropertyKey, obj) {
         READWRITE(obj.propertyId);
     }
 };
 
-struct CHistoricalProperty {
+struct CHistoricalPropertyKey {
     static constexpr uint8_t prefix = 'b';
     const uint256& blockHash;
     const uint32_t& propertyId;
 
-    SERIALIZE_METHODS(CHistoricalProperty, obj) {
+    SERIALIZE_METHODS(CHistoricalPropertyKey, obj) {
         READWRITE(obj.blockHash);
         READWRITE(obj.propertyId);
     }
 };
 
-struct CLookupTx {
+struct CLookupTxKey {
     static constexpr uint8_t prefix = 't';
     const uint256& txid;
 
-    SERIALIZE_METHODS(CLookupTx, obj) {
+    SERIALIZE_METHODS(CLookupTxKey, obj) {
         READWRITE(obj.txid);
     }
 };
@@ -245,7 +252,7 @@ bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
     }
 
     // DB key for property entry
-    auto sKey = KeyToString(CUpdateProperty{propertyId});
+    auto sKey = KeyToString(CUpdatePropertyKey{propertyId});
 
     // DB value for property entry
     auto sValue = ValueToString(info);
@@ -256,14 +263,14 @@ bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
     // if a value exists move it to the old key
     if (Read(sKey, strSpPrevValue)) {
         // DB key for historical property entry
-        auto slPrevKey = KeyToString(CHistoricalProperty{info.update_block, propertyId});
+        auto slPrevKey = KeyToString(CHistoricalPropertyKey{info.update_block, propertyId});
         batch.Put(slPrevKey, strSpPrevValue);
     }
     batch.Put(sKey, sValue);
 
     // Update delegate info if set
     if (!info.historicalDelegates.empty()) {
-        batch.Put(KeyToString(CDelegateProperty{propertyId}), ValueToString(CDelegateValue{info.delegate, info.historicalDelegates}));
+        batch.Put(KeyToString(CDelegatePropertyKey{propertyId}), ValueToString(CDelegateValue{info.delegate, info.historicalDelegates}));
     }
 
     if (!WriteBatch(batch)) {
@@ -291,13 +298,13 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
     }
 
     // DB key for property entry
-    auto sKey = KeyToString(CUpdateProperty{propertyId});
+    auto sKey = KeyToString(CUpdatePropertyKey{propertyId});
 
     // DB value for property entry
     auto sValue = ValueToString(info);
 
     // DB key for identifier lookup entry
-    auto lKey = KeyToString(CLookupTx{info.txid});
+    auto lKey = KeyToString(CLookupTxKey{info.txid});
 
     // DB value for identifier
     auto lValue = ValueToString(propertyId);
@@ -313,7 +320,7 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
     }
 
     // Create and check unique field
-    auto uKey = KeyToString(CUniqueProperty{propertyId});
+    auto uKey = KeyToString(CUniquePropertyKey{propertyId});
     if (info.unique) {
         // sanity checking
         if (Read(uKey, existingEntry) && existingEntry != strprintf("%d", info.unique)) {
@@ -350,16 +357,16 @@ bool CMPSPInfo::getSP(uint32_t propertyId, Entry& info) const
     }
 
     // DB value for property entry
-    if (!Read(CUpdateProperty{propertyId}, info)) {
+    if (!Read(CUpdatePropertyKey{propertyId}, info)) {
         PrintToLog("%s(): ERROR for SP %d: not found\n", __func__, propertyId);
         return false;
     }
 
     // Check for unique entry
-    info.unique = Read(CUniqueProperty{propertyId}, info.unique) && info.unique;
+    info.unique = Read(CUniquePropertyKey{propertyId}, info.unique) && info.unique;
 
     // Check for delegate entry
-    if (!Read(CDelegateProperty{propertyId}, CDelegateValue{info.delegate, info.historicalDelegates})) {
+    if (!Read(CDelegatePropertyKey{propertyId}, CDelegateValue{info.delegate, info.historicalDelegates})) {
         info.delegate.clear();
         info.historicalDelegates.clear();
     }
@@ -375,7 +382,7 @@ bool CMPSPInfo::hasSP(uint32_t propertyId) const
     }
 
     // DB key for property entry
-    auto sKey = KeyToString(CUpdateProperty{propertyId});
+    auto sKey = KeyToString(CUpdatePropertyKey{propertyId});
 
     // DB value for property entry
     std::string strSpValue;
@@ -386,16 +393,14 @@ uint32_t CMPSPInfo::findSPByTX(const uint256& txid) const
 {
     uint32_t propertyId = 0;
     // DB key for identifier lookup entry
-    return Read(CLookupTx{txid}, propertyId) ? propertyId : 0;
+    return Read(CLookupTxKey{txid}, propertyId) ? propertyId : 0;
 }
 
 int64_t CMPSPInfo::popBlock(const uint256& block_hash)
 {
     int64_t remainingSPs = 0;
     leveldb::WriteBatch commitBatch;
-    CDBaseIterator it{NewIterator(), CUniqueProperty{0}};
-
-    for (; it.Valid(); ++it) {
+    for (CDBaseIterator it{NewIterator(), CUniquePropertyKey{0}}; it; ++it) {
         // deserialize the persisted value
         Entry info;
         if (!it.Value(info)) {
@@ -407,10 +412,10 @@ int64_t CMPSPInfo::popBlock(const uint256& block_hash)
             if (info.update_block == info.creation_block) {
                 // this is the block that created this SP, so delete the SP and the tx index ent
                 commitBatch.Delete(it.Key());
-                commitBatch.Delete(KeyToString(CLookupTx{info.txid}));
+                commitBatch.Delete(KeyToString(CLookupTxKey{info.txid}));
             } else {
-                auto propertyId = it.Key<uint32_t>();
-                auto hKey = KeyToString(CHistoricalProperty{info.update_block, propertyId});
+                auto propertyId = it.Key<CUniquePropertyKey>().propertyId;
+                auto hKey = KeyToString(CHistoricalPropertyKey{info.update_block, propertyId});
                 std::string strSpPrevValue;
                 if (Read(hKey, strSpPrevValue)) {
                     // copy the prev state to the current state and delete the old state
@@ -430,14 +435,16 @@ int64_t CMPSPInfo::popBlock(const uint256& block_hash)
     return remainingSPs;
 }
 
+static constexpr std::string_view wprefix = "B";
+
 void CMPSPInfo::setWatermark(const uint256& watermark)
 {
-    Write("B", watermark);
+    Write(wprefix, watermark);
 }
 
 bool CMPSPInfo::getWatermark(uint256& watermark) const
 {
-    return Read("B", watermark);
+    return Read(wprefix, watermark);
 }
 
 void CMPSPInfo::printAll() const
@@ -453,9 +460,8 @@ void CMPSPInfo::printAll() const
         }
     }
 
-    CDBaseIterator it{NewIterator(), CUniqueProperty{0}};
-    for (; it.Valid(); ++it) {
-        auto propertyId = it.Key<uint32_t>();
+    for (CDBaseIterator it{NewIterator(), CUniquePropertyKey{0}}; it; ++it) {
+        auto propertyId = it.Key<CUniquePropertyKey>().propertyId;
         PrintToConsole("%10s => ", propertyId);
         // deserialize the persisted data
         Entry info;

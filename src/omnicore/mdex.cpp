@@ -405,11 +405,6 @@ int64_t CMPMetaDEx::getAmountToFill() const
     return nAmountNeededToFill;
 }
 
-int64_t CMPMetaDEx::getBlockTime() const
-{
-    return WITH_LOCK(cs_main, return ::ChainActive()[block]->GetBlockTime());
-}
-
 void CMPMetaDEx::setAmountRemaining(int64_t amount, const std::string& label)
 {
     amount_remaining = amount;

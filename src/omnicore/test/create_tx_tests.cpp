@@ -1,4 +1,5 @@
 #include <omnicore/createtx.h>
+#include <omnicore/omnicore.h>
 
 #include <base58.h>
 #include <coins.h>
@@ -19,7 +20,6 @@
 #include <vector>
 
 // Is reset after the last test
-extern CFeeRate minRelayTxFee;
 static CFeeRate minRelayTxFeeOriginal = CFeeRate(DEFAULT_MIN_RELAY_TX_FEE);
 
 BOOST_FIXTURE_TEST_SUITE(omnicore_create_tx_tests, BasicTestingSetup)
@@ -137,12 +137,11 @@ BOOST_AUTO_TEST_CASE(txbuilder_add_change)
         0,
         78825000LL,
         CScript(scriptB.begin(), scriptB.end())));
-    
+
     CTxDestination addrA = DecodeDestination("174TgzbFFWiKg1VWt8Z55EVP7rJ54jQSar");
     CTxDestination addrB = DecodeDestination("12gxzZL9g6tWsX6ut8srcgcUTQ4c9wWuGS");
 
-    CCoinsView viewDummy;
-    CCoinsViewCache viewTemp(&viewDummy);
+    CCoinsViewCacheOnly viewTemp;
     InputsToView(prevTxs, viewTemp);
 
     CMutableTransaction tx = TxBuilder()
@@ -183,8 +182,7 @@ BOOST_AUTO_TEST_CASE(txbuilder_add_change_position)
     CMutableTransaction txBasis;
     BOOST_CHECK(DecodeHexTx(txBasis, rawTxBasis));
 
-    CCoinsView viewDummy;
-    CCoinsViewCache viewTemp(&viewDummy);
+    CCoinsViewCacheOnly viewTemp;
     InputsToView(prevTxs, viewTemp);
     BOOST_CHECK(viewTemp.HaveInputs(CTransaction(txBasis)));
 
@@ -243,8 +241,7 @@ BOOST_AUTO_TEST_CASE(omnitxbuilder_op_return)
         99989454LL,
         CScript(scriptB.begin(), scriptB.end())));
 
-    CCoinsView viewDummy;
-    CCoinsViewCache viewTemp(&viewDummy);
+    CCoinsViewCacheOnly viewTemp;
     InputsToView(prevTxs, viewTemp);
 
     CMutableTransaction tx = OmniTxBuilder()

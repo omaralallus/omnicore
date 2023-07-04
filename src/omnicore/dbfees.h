@@ -63,10 +63,8 @@ public:
 
     /** Roll back history in event of reorg */
     void RollBackHistory(int block);
-    /** Count Fee History DB records */
-    int CountRecords();
     /** Record a fee distribution */
-    void RecordFeeDistribution(const uint32_t &propertyId, int block, int64_t total, std::set<feeHistoryItem> feeRecipients);
+    void RecordFeeDistribution(const uint32_t &propertyId, int block, int64_t total, const std::set<feeHistoryItem>& feeRecipients);
     /** Retrieve the recipients for a fee distribution */
     std::set<feeHistoryItem> GetFeeDistribution(int id);
     /** Retrieve fee distributions for a property */

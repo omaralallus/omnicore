@@ -24,9 +24,6 @@
 #include <leveldb/slice.h>
 #include <leveldb/status.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
 #include <stddef.h>
 #include <stdint.h>
 
@@ -36,12 +33,12 @@
 #include <utility>
 #include <vector>
 
-using mastercore::atoi;
 using mastercore::AddAlert;
 using mastercore::CheckAlertAuthorization;
 using mastercore::CheckExpiredAlerts;
 using mastercore::CheckLiveActivations;
 using mastercore::DeleteAlerts;
+using mastercore::GetActiveChain;
 using mastercore::isNonMainNet;
 using mastercore::pDbTransaction;
 
@@ -56,154 +53,247 @@ CMPTxList::~CMPTxList()
     if (msc_debug_persistence) PrintToLog("CMPTxList closed\n");
 }
 
+struct CBlockTxKey {
+    static constexpr uint8_t prefix = 'b';
+    uint32_t block = ~0u;
+    uint256 txid;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const
+    {
+        ser_writedata32be(s, ~block);
+        ::Serialize(s, txid);
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s)
+    {
+        block = ~ser_readdata32be(s);
+        ::Unserialize(s, txid);
+    }
+};
+
+struct CMPTxList::CTxKey {
+    static constexpr uint8_t prefix = 't';
+    uint256 txid;
+    int block = 0;
+    uint8_t valid = 0;
+    uint32_t type = 0;
+
+    SERIALIZE_METHODS(CTxKey, obj) {
+        READWRITE(obj.txid);
+        READWRITE(obj.block);
+        READWRITE(obj.valid);
+        READWRITE(VARINT(obj.type));
+    }
+
+    bool operator==(const CTxKey& other) const {
+        return txid == other.txid
+            && block == other.block
+            && valid == other.valid
+            && type == other.type;
+    }
+
+    bool operator!=(const CTxKey& other) const {
+        return !(*this == other);
+    }
+};
+
 void CMPTxList::recordTX(const uint256 &txid, bool fValid, int nBlock, unsigned int type, uint64_t nValue)
 {
-    const std::string key = txid.ToString();
-    const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, nValue);
-
     // overwrite detection, we should never be overwriting a tx, as that means we have redone something a second time
     // reorgs delete all txs from levelDB above reorg_chain_height
-    std::string old_value;
-    if (getTX(txid, old_value) && old_value != value) {
+    int64_t old_value;
+    CTxKey old_key, key{txid, nBlock, fValid, type};
+    if (getTX(txid, old_key, old_value) && (old_key != key || old_value != nValue)) {
         PrintToLog("LEVELDB TX OVERWRITE DETECTION - %s\n", txid.ToString());
     }
 
     PrintToLog("%s(%s, valid=%s, block= %d, type= %d, value= %lu)\n",
             __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, type, nValue);
 
-    Write(key, value);
+    Write(CBlockTxKey{uint32_t(nBlock), txid}, "");
+    Write(key, nValue);
     ++nWritten;
 }
 
-void CMPTxList::recordPaymentTX(const uint256& txid, bool fValid, int nBlock, unsigned int vout, unsigned int propertyId, uint64_t nValue, std::string buyer, std::string seller)
-{
-    // Prep - setup vars
-    unsigned int type = 99999999;
-    uint64_t numberOfPayments = 1;
-    unsigned int paymentNumber = 1;
-    uint64_t existingNumberOfPayments = 0;
+struct CPaymentTxKey {
+    static constexpr uint8_t prefix = 'p';
+    uint256 txid;
+    size_t payments = ~0u;
+    int block = 0;
+    uint8_t valid = 0;
 
-    // Step 1 - Check TXList to see if this payment TXID exists
-    bool paymentEntryExists = exists(txid);
+    template<typename Stream>
+    void Serialize(Stream& s) const
+    {
+        ::Serialize(s, txid);
+        ser_writedata32be(s, ~payments);
+        ser_writedata32(s, block);
+        ser_writedata8(s, valid);
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s)
+    {
+        ::Unserialize(s, txid);
+        payments = ~ser_readdata32be(s);
+        block = ser_readdata32(s);
+        valid = ser_readdata8(s);
+    }
+};
 
-    // Step 2a - If doesn't exist leave number of payments & paymentNumber set to 1
-    // Step 2b - If does exist add +1 to existing number of payments and set this paymentNumber as new numberOfPayments
-    if (paymentEntryExists) {
-        //retrieve old numberOfPayments
-        std::vector<std::string> vstr;
-        std::string strValue;
-        if (Read(txid.ToString(), strValue)) {
-            // parse the string returned
-            boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
+struct CPaymentTxValue {
+    uint32_t vout;
+    std::string buyer;
+    std::string seller;
+    uint32_t propertyId;
+    uint64_t amount;
+    uint256 cancelTxId;
 
-            // obtain the existing number of payments
-            if (4 <= vstr.size()) {
-                existingNumberOfPayments = atoi(vstr[3]);
-                paymentNumber = existingNumberOfPayments + 1;
-                numberOfPayments = existingNumberOfPayments + 1;
+    SERIALIZE_METHODS(CPaymentTxValue, obj) {
+        READWRITE(VARINT(obj.vout));
+        READWRITE(obj.buyer);
+        READWRITE(obj.seller);
+        READWRITE(VARINT(obj.propertyId));
+        READWRITE(obj.amount);
+        if constexpr (ser_action.ForRead()) {
+            if (!s.empty()) {
+                READWRITE(obj.cancelTxId);
+            }
+        } else {
+            if (!obj.cancelTxId.IsNull()) {
+                READWRITE(obj.cancelTxId);
             }
         }
     }
+};
 
-    // Step 3 - Create new/update master record for payment tx in TXList
-    const std::string key = txid.ToString();
-    const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, numberOfPayments);
-    PrintToLog("DEXPAYDEBUG : Writing master record %s(%s, valid=%s, block= %d, type= %d, number of payments= %lu)\n", __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, type, numberOfPayments);
-    Write(key, value);
-
-    // Step 4 - Write sub-record with payment details
-    const std::string txidStr = txid.ToString();
-    const std::string subKey = STR_PAYMENT_SUBKEY_TXID_PAYMENT_COMBO(txidStr, paymentNumber);
-    const std::string subValue = strprintf("%d:%s:%s:%d:%lu", vout, buyer, seller, propertyId, nValue);
-    leveldb::Status subStatus;
-    PrintToLog("DEXPAYDEBUG : Writing sub-record %s with value %s\n", subKey, subValue);
-    Write(subKey, subValue);
-}
-
-void CMPTxList::recordMetaDExCancelTX(const uint256& txidMaster, const uint256& txidSub, bool fValid, int nBlock, unsigned int propertyId, uint64_t nValue)
+void CMPTxList::recordPaymentTX(const uint256& txid, bool fValid, int nBlock, unsigned int vout, unsigned int propertyId, uint64_t nValue, const std::string& buyer, const std::string& seller)
 {
     // Prep - setup vars
-    unsigned int type = 99992104;
-    unsigned int refNumber = 1;
-    uint64_t existingAffectedTXCount = 0;
-    std::string txidMasterStr = txidMaster.ToString() + "-C";
+    uint32_t numberOfPayments = 1;
 
     // Step 1 - Check TXList to see if this cancel TXID exists
     // Step 2a - If doesn't exist leave number of affected txs & ref set to 1
     // Step 2b - If does exist add +1 to existing ref and set this ref as new number of affected
-    std::vector<std::string> vstr;
-    std::string strValue;
-    if (Read(txidMasterStr, strValue)) {
-        // parse the string returned
-        boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
+    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
+    if (it.Valid()) {
+        numberOfPayments = it.Key<CPaymentTxKey>().payments + 1;
+    }
 
-        // obtain the existing affected tx count
-        if (4 <= vstr.size()) {
-            existingAffectedTXCount = atoi(vstr[3]);
-            refNumber = existingAffectedTXCount + 1;
-        }
+    // Step 3 - Create new/update master record for payment tx in TXList
+    Write(CBlockTxKey{uint32_t(nBlock), txid}, "");
+    PrintToLog("DEXPAYDEBUG : Writing master record %s(%s, valid=%s, block= %d, number of payments= %d)\n", __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, numberOfPayments);
+
+    // Step 4 - Write sub-record with payment details
+    CPaymentTxKey key{txid, numberOfPayments, nBlock, fValid};
+    CPaymentTxValue value{vout, buyer, seller, propertyId, nValue};
+    Write(key, value);
+    PrintToLog("DEXPAYDEBUG : Writing sub-record %s-%d with value %d:%s:%s:%d:%d\n", txid.ToString(), numberOfPayments, vout, buyer, seller, propertyId, nValue);
+}
+
+struct CDexCancelTxKey {
+    static constexpr uint8_t prefix = 'c';
+    uint256 txid;
+    uint32_t affected = ~0u;
+    int block = 0;
+    uint8_t valid = 0;
+
+    template<typename Stream>
+    void Serialize(Stream& s) const
+    {
+        ::Serialize(s, txid);
+        ser_writedata32be(s, ~affected);
+        ser_writedata32(s, block);
+        ser_writedata8(s, valid);
+    }
+    template<typename Stream>
+    void Unserialize(Stream& s)
+    {
+        ::Unserialize(s, txid);
+        affected = ~ser_readdata32be(s);
+        block = ser_readdata32(s);
+        valid = ser_readdata8(s);
+    }
+};
+
+struct CDexCancelTxValue {
+    uint32_t propertyId;
+    uint64_t amount;
+
+    SERIALIZE_METHODS(CDexCancelTxValue, obj) {
+        READWRITE(VARINT(obj.propertyId));
+        READWRITE(obj.amount);
+    }
+};
+
+void CMPTxList::recordMetaDExCancelTX(const uint256& txid, const uint256& txidSub, bool fValid, int nBlock, unsigned int propertyId, uint64_t nValue)
+{
+    // Prep - setup vars
+    uint32_t numerOfAffected = 1;
+
+    // Step 1 - Check TXList to see if this cancel TXID exists
+    // Step 2a - If doesn't exist leave number of affected txs & ref set to 1
+    // Step 2b - If does exist add +1 to existing ref and set this ref as new number of affected
+    CDBaseIterator it{NewIterator(), PartialKey<CDexCancelTxKey>(txid)};
+    if (it.Valid()) {
+        numerOfAffected = it.Key<CDexCancelTxKey>().affected + 1;
     }
 
     // Step 3 - Create new/update master record for cancel tx in TXList
-    const std::string& key = txidMasterStr;
-    const std::string value = strprintf("%u:%d:%u:%lu", fValid ? 1 : 0, nBlock, type, refNumber);
-    PrintToLog("METADEXCANCELDEBUG : Writing master record %s(%s, valid=%s, block= %d, type= %d, number of affected transactions= %d)\n", __func__, txidMaster.ToString(), fValid ? "YES" : "NO", nBlock, type, refNumber);
-    Write(key, value);
+    Write(CBlockTxKey{uint32_t(nBlock), txid}, "");
+    PrintToLog("METADEXCANCELDEBUG : Writing master record %s(%s, valid=%s, block= %d, number of affected transactions= %d)\n", __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, numerOfAffected);
 
+    CDBaseIterator pit{NewIterator(), PartialKey<CPaymentTxKey>(txidSub)};
+    if (pit.Valid()) {
+        auto value = pit.Value<CPaymentTxValue>();
+        value.cancelTxId = txid;
+        Write(pit.Key<CPaymentTxKey>(), value);
+    } else {
+        PrintToLog("METADEXCANCELDEBUG %s: Logic error: %s not found\n", __func__, txidSub.ToString());
+    }
     // Step 4 - Write sub-record with cancel details
-    const std::string txidStr = txidMaster.ToString() + "-C";
-    const std::string subKey = STR_REF_SUBKEY_TXID_REF_COMBO(txidStr, refNumber);
-    const std::string subValue = strprintf("%s:%d:%lu", txidSub.ToString(), propertyId, nValue);
-    PrintToLog("METADEXCANCELDEBUG : Writing sub-record %s with value %s\n", subKey, subValue);
-    bool status = Write(subKey, subValue);
-    if (msc_debug_txdb) PrintToLog("%s(): store: %s=%s, status: %s\n", __func__, subKey, subValue, status ? "OK" : "NOK");
+    CDexCancelTxValue value{propertyId, nValue};
+    Write(CDexCancelTxKey{txid, numerOfAffected, nBlock, fValid}, value);
+    PrintToLog("METADEXCANCELDEBUG : Writing sub-record %d-%d with value %s:%d:%d\n", txid.ToString(), numerOfAffected, txidSub.ToString(), propertyId, nValue);
 }
 
+struct CSendAllTxKey {
+    static constexpr uint8_t prefix = 's';
+    uint256 txid;
+    uint32_t num = 0;
+
+    SERIALIZE_METHODS(CSendAllTxKey, obj) {
+        READWRITE(obj.txid);
+        READWRITE(VARINT(obj.num));
+    }
+};
+
+struct CSendAllTxValue {
+    uint32_t propertyId;
+    int64_t amount;
+
+    SERIALIZE_METHODS(CSendAllTxValue, obj) {
+        READWRITE(VARINT(obj.propertyId));
+        READWRITE(obj.amount);
+    }
+};
 
 /**
  * Records a "send all" sub record.
  */
-void CMPTxList::recordSendAllSubRecord(const uint256& txid, int subRecordNumber, uint32_t propertyId, int64_t nValue)
+void CMPTxList::recordSendAllSubRecord(const uint256& txid, int nBlock, int subRecordNumber, uint32_t propertyId, int64_t nValue)
 {
-    std::string strKey = strprintf("%s-%d", txid.ToString(), subRecordNumber);
-    std::string strValue = strprintf("%d:%d", propertyId, nValue);
-
-    bool status = Write(strKey, strValue);
+    CSendAllTxKey key{txid, uint32_t(subRecordNumber)};
+    bool status = Write(key, CSendAllTxValue{propertyId, nValue});
+    Write(CBlockTxKey{uint32_t(nBlock), txid}, "");
     ++nWritten;
-    if (msc_debug_txdb) PrintToLog("%s(): store: %s=%s, status: %s\n", __func__, strKey, strValue, status ? "OK" : "NOK");
-}
-
-
-std::string CMPTxList::getKeyValue(const std::string& key)
-{
-    std::string strValue;
-    return Read(key, strValue) ? strValue : "";
+    if (msc_debug_txdb) PrintToLog("%s(): store: %s:%d=%d:%d, status: %s\n", __func__, txid.ToString(), subRecordNumber, propertyId, nValue, status ? "OK" : "NOK");
 }
 
 uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
 {
-    std::vector<std::string> vstr;
-    std::string txidStr = txid.ToString();
-    leveldb::Slice skey, svalue;
-    uint256 cancelTxid;
-    leveldb::Iterator* it = NewIterator();
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        skey = it->key();
-        svalue = it->value();
-        std::string svalueStr = svalue.ToString();
-        boost::split(vstr, svalueStr, boost::is_any_of(":"), boost::token_compress_on);
-        // obtain the existing affected tx count
-        if (3 <= vstr.size()) {
-            if (vstr[0] == txidStr) {
-                delete it;
-                cancelTxid.SetHex(skey.ToString());
-                return cancelTxid;
-            }
-        }
-    }
-
-    delete it;
-    return uint256();
+    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
+    return it.Valid() ? it.Value<CPaymentTxValue>().cancelTxId : uint256();
 }
 
 /**
@@ -211,52 +301,43 @@ uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
  */
 int CMPTxList::getNumberOfSubRecords(const uint256& txid)
 {
-    int numberOfSubRecords = 0;
-
-    std::string strValue;
-    if (Read(txid.ToString(), strValue)) {
-        std::vector<std::string> vstr;
-        boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
-        if (4 <= vstr.size()) {
-            numberOfSubRecords = boost::lexical_cast<int>(vstr[3]);
-        }
-    }
-
-    return numberOfSubRecords;
+    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
+    if (it.Valid()) return it.Value<CPaymentTxKey>().payments;
+    it.Seek(PartialKey<CSendAllTxKey>(txid));
+    return it.Valid() ? it.Key<CSendAllTxKey>().num : 0;
 }
 
 int CMPTxList::getNumberOfMetaDExCancels(const uint256& txid)
 {
-    int numberOfCancels = 0;
-    std::vector<std::string> vstr;
-    std::string strValue;
-    if (Read(txid.ToString() + "-C", strValue)) {
-        // parse the string returned
-        boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
-        // obtain the number of cancels
-        if (4 <= vstr.size()) {
-            numberOfCancels = atoi(vstr[3]);
-        }
-    }
-    return numberOfCancels;
+    CDBaseIterator it{NewIterator(), PartialKey<CDexCancelTxKey>(txid)};
+    return it.Valid() ? it.Value<uint32_t>() : 0;
 }
 
 bool CMPTxList::getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t* propertyId, uint64_t* nValue)
 {
-    std::vector<std::string> vstr;
-    std::string strValue;
-    if (Read(txid.ToString() + "-" + std::to_string(purchaseNumber), strValue)) {
-        // parse the string returned
-        boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
-        // obtain the requisite details
-        if (5 == vstr.size()) {
-            *vout = atoi(vstr[0]);
-            *buyer = vstr[1];
-            *seller = vstr[2];
-            *propertyId = boost::lexical_cast<uint64_t>(vstr[3]);
-            *nValue = boost::lexical_cast<boost::uint64_t>(vstr[4]);
-            return true;
-        }
+    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid, uint32_t(purchaseNumber))};
+    if (it.Valid()) {
+        auto value = it.Value<CPaymentTxValue>();
+        *vout = value.vout;
+        *buyer = value.buyer;
+        *seller = value.seller;
+        *propertyId = value.propertyId;
+        *nValue = value.amount;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Retrieves details about a "metadex cancel" record.
+ */
+bool CMPTxList::getMetaDExCancelDetails(const uint256& txid, int subSend, uint32_t& propertyId, int64_t& amount)
+{
+    CDexCancelTxValue value;
+    if (Read(CDexCancelTxKey{txid, uint32_t(subSend)}, value)) {
+        propertyId = value.propertyId;
+        amount = value.amount;
+        return true;
     }
     return false;
 }
@@ -266,16 +347,11 @@ bool CMPTxList::getPurchaseDetails(const uint256& txid, int purchaseNumber, std:
  */
 bool CMPTxList::getSendAllDetails(const uint256& txid, int subSend, uint32_t& propertyId, int64_t& amount)
 {
-    std::string strKey = strprintf("%s-%d", txid.ToString(), subSend);
-    std::string strValue;
-    if (Read(strKey, strValue)) {
-        std::vector<std::string> vstr;
-        boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
-        if (2 == vstr.size()) {
-            propertyId = boost::lexical_cast<uint32_t>(vstr[0]);
-            amount = boost::lexical_cast<int64_t>(vstr[1]);
-            return true;
-        }
+    CSendAllTxValue value;
+    if (Read(CSendAllTxKey{txid, uint32_t(subSend)}, value)) {
+        propertyId = value.propertyId;
+        amount = value.amount;
+        return true;
     }
     return false;
 }
@@ -283,67 +359,37 @@ bool CMPTxList::getSendAllDetails(const uint256& txid, int subSend, uint32_t& pr
 int CMPTxList::getMPTransactionCountTotal()
 {
     int count = 0;
-    leveldb::Slice skey, svalue;
-    leveldb::Iterator* it = NewIterator();
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        skey = it->key();
-        if (skey.ToString().length() == 64) {
-            ++count;
-        } //extra entries for cancels and purchases are more than 64 chars long
+    for (CDBaseIterator it{NewIterator()}; it; ++it) {
+        switch(it.Key()[0]) {
+            case CTxKey::prefix:
+            case CPaymentTxKey::prefix:
+            case CDexCancelTxKey::prefix:
+            case CSendAllTxKey::prefix:
+                ++count;
+            break;
+        }
     }
-    delete it;
     return count;
 }
 
 int CMPTxList::getMPTransactionCountBlock(int block)
 {
     int count = 0;
-    leveldb::Slice skey, svalue;
-    leveldb::Iterator* it = NewIterator();
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        skey = it->key();
-        svalue = it->value();
-        if (skey.ToString().length() == 64) {
-            std::string strValue = svalue.ToString();
-            std::vector<std::string> vstr;
-            boost::split(vstr, strValue, boost::is_any_of(":"), boost::token_compress_on);
-            if (4 == vstr.size()) {
-                if (atoi(vstr[1]) == block) {
-                    ++count;
-                }
-            }
-        }
-    }
-    delete it;
+    CDBaseIterator it{NewIterator(), PartialKey<CBlockTxKey>(uint32_t(block))};
+    for (; it; ++it) ++count;
     return count;
 }
 
 /** Returns a list of all Omni transactions in the given block range. */
 int CMPTxList::GetOmniTxsInBlockRange(int blockFirst, int blockLast, std::set<uint256>& retTxs)
 {
-    int count = 0;
-    leveldb::Iterator* it = NewIterator();
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        const leveldb::Slice& sKey = it->key();
-        const leveldb::Slice& sValue = it->value();
-
-        if (sKey.ToString().length() == 64) {
-            const std::string& strValue = sValue.ToString();
-            std::vector<std::string> vStr;
-            boost::split(vStr, strValue, boost::is_any_of(":"), boost::token_compress_on);
-            if (4 == vStr.size()) {
-                int blockCurrent = atoi(vStr[1]);
-                if (blockCurrent >= blockFirst && blockCurrent <= blockLast) {
-                    retTxs.insert(uint256S(sKey.ToString()));
-                    ++count;
-                }
-            }
-        }
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockLast)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (key.block < blockFirst) break;
+        retTxs.insert(key.txid);
     }
-
-    delete it;
-    return count;
+    return retTxs.size();
 }
 
 /*
@@ -353,17 +399,10 @@ int CMPTxList::GetOmniTxsInBlockRange(int blockFirst, int blockLast, std::set<ui
  */
 int CMPTxList::getDBVersion()
 {
-    std::string strValue;
-    int verDB = 0;
-
-    bool status = Read("dbversion", strValue);
-    if (status) {
-        verDB = boost::lexical_cast<uint64_t>(strValue);
-    }
-
-    if (msc_debug_txdb) PrintToLog("%s(): dbversion %s status %s, line %d, file: %s\n", __func__, strValue, status ? "OK" : "NOK", __LINE__, __FILE__);
-
-    return verDB;
+    uint8_t version;
+    bool status = Read("D", version);
+    if (msc_debug_txdb) PrintToLog("%s(): dbversion %d status %s\n", __func__, version, status ? "OK" : "NOK");
+    return status ? version : 0;
 }
 
 /*
@@ -373,46 +412,36 @@ int CMPTxList::getDBVersion()
  */
 int CMPTxList::setDBVersion()
 {
-    std::string verStr = boost::lexical_cast<std::string>(DB_VERSION);
-    bool status = Write("dbversion", verStr);
-
-    if (msc_debug_txdb) PrintToLog("%s(): dbversion %s status %s, line %d, file: %s\n", __func__, verStr, status ? "OK" : "NOK", __LINE__, __FILE__);
-
+    bool status = Write("D", uint8_t(DB_VERSION));
+    if (msc_debug_txdb) PrintToLog("%s(): dbversion %d status %s\n", __func__, DB_VERSION, status ? "OK" : "NOK");
     return getDBVersion();
 }
 
+struct CNonFugibleKey {
+    static constexpr uint8_t prefix = 'n';
+    uint256 txid;
+
+    SERIALIZE_METHODS(CNonFugibleKey, obj) {
+        READWRITE(obj.txid);
+    }
+};
+
 std::pair<int64_t,int64_t> CMPTxList::GetNonFungibleGrant(const uint256& txid)
 {
-    std::string strKey = strprintf("%s-UG", txid.ToString());
-    std::string strValue;
-    if (Read(strKey, strValue)) {
-        std::vector<std::string> vstr;
-        boost::split(vstr, strValue, boost::is_any_of("-"), boost::token_compress_on);
-        if (2 == vstr.size()) {
-            return std::make_pair(boost::lexical_cast<int64_t>(vstr[0]), boost::lexical_cast<int64_t>(vstr[1]));
-        }
-    }
-    return std::make_pair(0,0);
+    std::pair<int64_t, int64_t> value;
+    return Read(CNonFugibleKey{txid}, value) ? value : std::pair<int64_t, int64_t>{0, 0};
 }
 
 void CMPTxList::RecordNonFungibleGrant(const uint256& txid, int64_t start, int64_t end)
 {
-    const std::string key = txid.ToString() + "-UG";
-    const std::string value = strprintf("%d-%d", start, end);
-
-    bool status = Write(key, value);
-    PrintToLog("%s(): Writing Non-Fungible Grant range %s:%d-%d (%s), line %d, file: %s\n", __FUNCTION__, key, start, end, status ? "OK" : "NOK", __LINE__, __FILE__);
+    bool status = Write(CNonFugibleKey{txid}, std::make_pair(start, end));
+    PrintToLog("%s(): Writing Non-Fungible Grant range %s:%d-%d (%s)\n", __FUNCTION__, txid.ToString(), start, end, status ? "OK" : "NOK");
 }
 
-bool CMPTxList::exists(const uint256 &txid)
+bool CMPTxList::getTX(const uint256 &txid, CTxKey& key, int64_t& value)
 {
-    std::string strValue;
-    return Read(txid.ToString(), strValue);
-}
-
-bool CMPTxList::getTX(const uint256 &txid, std::string& value)
-{
-    bool status = Read(txid.ToString(), value);
+    CDBaseIterator it{NewIterator(), PartialKey<CTxKey>(txid)};
+    bool status = it.Valid() && (key = it.Key<CTxKey>(), true) && it.Value(value);
     ++nRead;
     return status;
 }
@@ -426,62 +455,30 @@ bool CMPTxList::getTX(const uint256 &txid, std::string& value)
 //
 bool CMPTxList::getValidMPTX(const uint256& txid, int* block, unsigned int* type, uint64_t* nAmended)
 {
-    std::string result;
-    int validity = 0;
-
     if (msc_debug_txdb) PrintToLog("%s()\n", __func__);
 
-    if (!getTX(txid, result)) return false;
+    CTxKey key;
+    int64_t value;
+    if (!getTX(txid, key, value)) return false;
 
     // parse the string returned, find the validity flag/bit & other parameters
-    std::vector<std::string> vstr;
-    boost::split(vstr, result, boost::is_any_of(":"), boost::token_compress_on);
-
-    if (msc_debug_txdb) PrintToLog("%s() size=%lu : %s\n", __func__, vstr.size(), result);
-
-    if (1 <= vstr.size()) validity = atoi(vstr[0]);
-
-    if (block) {
-        if (2 <= vstr.size()) *block = atoi(vstr[1]);
-        else *block = 0;
-    }
-
-    if (type) {
-        if (3 <= vstr.size()) *type = atoi(vstr[2]);
-        else *type = 0;
-    }
-
-    if (nAmended) {
-        if (4 <= vstr.size()) *nAmended = boost::lexical_cast<boost::uint64_t>(vstr[3]);
-        else *nAmended = 0;
-    }
-
+    bool validity = key.valid > 0;
+    block && (*block = key.block);
+    type && (*type = key.type);
+    nAmended && (*nAmended = value);
     if (msc_debug_txdb) printStats();
-
-    if ((int) 0 == validity) return false;
-
-    return true;
+    return validity;
 }
 
 std::set<int> CMPTxList::GetSeedBlocks(int startHeight, int endHeight)
 {
     std::set<int> setSeedBlocks;
-
-    leveldb::Iterator* it = NewIterator();
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string itData = it->value().ToString();
-        std::vector<std::string> vstr;
-        boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
-        if (4 != vstr.size()) continue; // unexpected number of tokens
-        int block = atoi(vstr[1]);
-        if (block >= startHeight && block <= endHeight) {
-            setSeedBlocks.insert(block);
-        }
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(endHeight)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (key.block < startHeight) break;
+        setSeedBlocks.insert(key.block);
     }
-
-    delete it;
-
     return setSeedBlocks;
 }
 
@@ -491,11 +488,11 @@ static void ProcessActivations(const std::vector<activation>& activations, std::
 {
     CCoinsViewCacheOnly view;
     for (const auto& [hidx, hash] : activations) {
-        uint256 blockHash;
+        int blockHeight;
         CTransactionRef wtx;
         CMPTransaction mp_obj;
 
-        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
+        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHeight)) {
             PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
             continue;
         }
@@ -513,21 +510,15 @@ static void ProcessActivations(const std::vector<activation>& activations, std::
 
 void CMPTxList::LoadAlerts(int blockHeight)
 {
-    leveldb::Slice skey, svalue;
-    leveldb::Iterator* it = NewIterator();
-
     std::vector<activation> loadOrder;
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string itData = it->value().ToString();
-        std::vector<std::string> vstr;
-        boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
-        if (4 != vstr.size()) continue; // unexpected number of tokens
-        if (atoi(vstr[2]) != OMNICORE_MESSAGE_TYPE_ALERT || atoi(vstr[0]) != 1) continue; // not a valid alert
-        int height = atoi(vstr[1]);
-        if (height > blockHeight) continue;
-        uint256 txid = uint256S(it->key().ToString());
-        loadOrder.emplace_back(std::make_pair(height, 0), txid);
+    CDBaseIterator tx_it{NewIterator()};
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
+        auto txkey = tx_it.Key<CTxKey>();
+        if (txkey.type != OMNICORE_MESSAGE_TYPE_ALERT || !txkey.valid) continue; // not a valid alert
+        loadOrder.emplace_back(std::make_pair(key.block, 0), key.txid);
     }
 
     std::sort(loadOrder.begin(), loadOrder.end());
@@ -548,39 +539,24 @@ void CMPTxList::LoadAlerts(int blockHeight)
         }
     });
 
-    delete it;
-    int64_t blockTime = 0;
-    {
-        LOCK(cs_main);
-        CBlockIndex* pBlockIndex = ::ChainActive()[blockHeight - 1];
-        if (pBlockIndex != nullptr) {
-            blockTime = pBlockIndex->GetBlockTime();
-        }
-    }
-    if (blockTime > 0) {
-        CheckExpiredAlerts(blockHeight, blockTime);
+    if (auto pBlockIndex = GetActiveChain()[blockHeight - 1]) {
+        CheckExpiredAlerts(blockHeight, pBlockIndex->GetBlockTime());
     }
 }
 
 void CMPTxList::LoadActivations(int blockHeight)
 {
-    leveldb::Slice skey, svalue;
-    leveldb::Iterator* it = NewIterator();
-
     PrintToLog("Loading feature activations from levelDB\n");
 
     std::vector<activation> loadOrder;
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string itData = it->value().ToString();
-        std::vector<std::string> vstr;
-        boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
-        if (4 != vstr.size()) continue; // unexpected number of tokens
-        if (atoi(vstr[2]) != OMNICORE_MESSAGE_TYPE_ACTIVATION || atoi(vstr[0]) != 1) continue; // we only care about valid activations
-        int height = atoi(vstr[1]);
-        if (height > blockHeight) continue;
-        uint256 txid = uint256S(it->key().ToString());
-        loadOrder.emplace_back(std::make_pair(height, 0), txid);
+    CDBaseIterator tx_it{NewIterator()};
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
+        auto txkey = tx_it.Key<CTxKey>();
+        if (txkey.type != OMNICORE_MESSAGE_TYPE_ACTIVATION || !txkey.valid) continue; // not a valid alert
+        loadOrder.emplace_back(std::make_pair(key.block, 0), key.txid);
     }
 
     std::sort(loadOrder.begin(), loadOrder.end());
@@ -597,7 +573,6 @@ void CMPTxList::LoadActivations(int blockHeight)
         }
     });
 
-    delete it;
     CheckLiveActivations(blockHeight);
 
     // This alert never expires as long as custom activations are used
@@ -609,32 +584,25 @@ void CMPTxList::LoadActivations(int blockHeight)
 
 bool CMPTxList::LoadFreezeState(int blockHeight)
 {
-    int txnsLoaded = 0;
-    leveldb::Iterator* it = NewIterator();
     PrintToLog("Loading freeze state from levelDB\n");
 
     std::vector<activation> loadOrder;
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string itData = it->value().ToString();
-        std::vector<std::string> vstr;
-        boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
-        if (4 != vstr.size()) continue;
-        uint16_t txtype = atoi(vstr[2]);
-        if (txtype != MSC_TYPE_FREEZE_PROPERTY_TOKENS && txtype != MSC_TYPE_UNFREEZE_PROPERTY_TOKENS &&
-                txtype != MSC_TYPE_ENABLE_FREEZING && txtype != MSC_TYPE_DISABLE_FREEZING) continue;
-        if (atoi(vstr[0]) != 1) continue; // invalid, ignore
-        int height = atoi(vstr[1]);
-        if (height > blockHeight) continue;
-        uint256 txid = uint256S(it->key().ToString());
-        int txPosition = pDbTransaction->FetchTransactionPosition(txid);
-        loadOrder.emplace_back(std::make_pair(height, txPosition), txid);
+    CDBaseIterator tx_it{NewIterator()};
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
+        auto txkey = tx_it.Key<CTxKey>();
+        if (!txkey.valid) continue;
+        if (txkey.type != MSC_TYPE_FREEZE_PROPERTY_TOKENS && txkey.type != MSC_TYPE_UNFREEZE_PROPERTY_TOKENS
+        && txkey.type != MSC_TYPE_ENABLE_FREEZING && txkey.type != MSC_TYPE_DISABLE_FREEZING) continue;
+        int txPosition = pDbTransaction->FetchTransactionPosition(key.txid);
+        loadOrder.emplace_back(std::make_pair(key.block, txPosition), key.txid);
     }
-
-    delete it;
 
     std::sort(loadOrder.begin(), loadOrder.end());
 
+    int txnsLoaded = 0;
     ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
         if (MSC_TYPE_FREEZE_PROPERTY_TOKENS != mp_obj.getType() && MSC_TYPE_UNFREEZE_PROPERTY_TOKENS != mp_obj.getType() &&
                 MSC_TYPE_ENABLE_FREEZING != mp_obj.getType() && MSC_TYPE_DISABLE_FREEZING != mp_obj.getType()) {
@@ -652,30 +620,21 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
     if (blockHeight > 497000 && !isNonMainNet()) {
         assert(txnsLoaded >= 2); // sanity check against a failure to properly load the freeze state
     }
-
     return true;
 }
 
 bool CMPTxList::CheckForFreezeTxs(int blockHeight)
 {
-    leveldb::Iterator* it = NewIterator();
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        std::string itData = it->value().ToString();
-        std::vector<std::string> vstr;
-        boost::split(vstr, itData, boost::is_any_of(":"), boost::token_compress_on);
-        if (4 != vstr.size()) continue;
-        int block = atoi(vstr[1]);
-        if (block < blockHeight) continue;
-        uint16_t txtype = atoi(vstr[2]);
+    CDBaseIterator tx_it{NewIterator()};
+    CDBaseIterator it{NewIterator(), PartialKey<CBlockTxKey>(uint32_t(blockHeight))};
+    for (; it; ++it) {
+        if (tx_it.Seek(PartialKey<CTxKey>(it.Key<CBlockTxKey>().txid)); !tx_it) continue;
+        auto txtype = tx_it.Key<CTxKey>().type;
         if (txtype == MSC_TYPE_FREEZE_PROPERTY_TOKENS || txtype == MSC_TYPE_UNFREEZE_PROPERTY_TOKENS ||
-                txtype == MSC_TYPE_ENABLE_FREEZING || txtype == MSC_TYPE_DISABLE_FREEZING) {
-            delete it;
+            txtype == MSC_TYPE_ENABLE_FREEZING || txtype == MSC_TYPE_DISABLE_FREEZING) {
             return true;
         }
     }
-
-    delete it;
     return false;
 }
 
@@ -687,17 +646,49 @@ void CMPTxList::printStats()
 void CMPTxList::printAll()
 {
     int count = 0;
-    leveldb::Slice skey, svalue;
-    leveldb::Iterator* it = NewIterator();
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        skey = it->key();
-        svalue = it->value();
-        ++count;
-        PrintToConsole("entry #%8d= %s:%s\n", count, skey.ToString(), svalue.ToString());
+    std::string skey, svalue;
+    for (CDBaseIterator it{NewIterator()}; it; ++it) {
+        switch(it.Key()[0]) {
+            case CTxKey::prefix: {
+                auto key = it.Key<CTxKey>();
+                skey = key.txid.ToString();
+                auto value = it.Value<int64_t>();
+                svalue = strprintf("%d:%d:%d:%d", key.block, key.valid, key.type, value);
+            } break;
+            case CPaymentTxKey::prefix: {
+                auto key = it.Key<CPaymentTxKey>();
+                skey = strprintf("%s-%d", key.txid.ToString(), key.payments);
+                auto value = it.Value<CPaymentTxValue>();
+                svalue = strprintf("%d:%d:%d:%s:%s:%d:%d", key.block, key.valid, value.vout, value.buyer, value.seller, value.propertyId, value.amount);
+            } break;
+            case CDexCancelTxKey::prefix: {
+                auto key = it.Key<CDexCancelTxKey>();
+                skey = strprintf("%s-%d", key.txid.ToString(), key.affected);
+                auto value = it.Value<CDexCancelTxValue>();
+                svalue = strprintf("%d:%d:%d:%d", key.block, key.valid, value.propertyId, value.amount);
+            } break;
+            case CSendAllTxKey::prefix: {
+                auto key = it.Key<CSendAllTxKey>();
+                skey = strprintf("%s-%d", key.txid.ToString(), key.num);
+                auto value = it.Value<CSendAllTxValue>();
+                svalue = strprintf("%d:%d", value.propertyId, value.amount);
+            } break;
+            default:
+                continue;
+        }
+        PrintToConsole("entry #%8d= %s:%s\n", ++count, skey, svalue);
     }
+}
 
-    delete it;
+template<typename T>
+bool DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const CBlockTxKey& key)
+{
+    bool found = false;
+    for (it.Seek(PartialKey<T>(key.txid)); it; ++it) {
+        found = true;
+        batch.Delete(it.Key());
+    }
+    return found;
 }
 
 // figure out if there was at least 1 Master Protocol transaction within the block range, or a block if starting equals ending
@@ -705,37 +696,35 @@ void CMPTxList::printAll()
 // pass in bDeleteFound = true to erase each entry found within the block range
 bool CMPTxList::isMPinBlockRange(int starting_block, int ending_block, bool bDeleteFound)
 {
-    leveldb::Slice skey, svalue;
-    std::vector<std::string> vstr;
-    int block;
     unsigned int n_found = 0;
-
-    leveldb::Iterator* it = NewIterator();
-
-    for (it->SeekToFirst(); it->Valid(); it->Next()) {
-        skey = it->key();
-        svalue = it->value();
-
-        std::string strvalue = it->value().ToString();
-
-        // parse the string returned, find the validity flag/bit & other parameters
-        boost::split(vstr, strvalue, boost::is_any_of(":"), boost::token_compress_on);
-
-        // only care about the block number/height here
-        if (2 <= vstr.size()) {
-            block = atoi(vstr[1]);
-
-            if ((starting_block <= block) && (block <= ending_block)) {
-                ++n_found;
-                PrintToLog("%s() DELETING: %s=%s\n", __func__, skey.ToString(), svalue.ToString());
-                if (bDeleteFound) Delete(std::string_view{skey.data(), skey.size()});
+    leveldb::WriteBatch batch;
+    CDBaseIterator tx_it{NewIterator()};
+    std::set<uint256> paymentTxs, cancelTxs;
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(ending_block)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (key.block < starting_block) break;
+        if (bDeleteFound) {
+            DeleteToBatch<CTxKey>(batch, tx_it, key) ||
+            DeleteToBatch<CSendAllTxKey>(batch, tx_it, key) ||
+            (DeleteToBatch<CPaymentTxKey>(batch, tx_it, key) && paymentTxs.insert(key.txid).second) ||
+            (DeleteToBatch<CDexCancelTxKey>(batch, tx_it, key) && cancelTxs.insert(key.txid).second);
+            PrintToLog("%s() DELETING: %d=%s\n", __func__, key.block, key.txid.ToString());
+        }
+        ++n_found;
+    }
+    if (bDeleteFound && n_found) {
+        for (it.Seek(CPaymentTxKey{}); it && !cancelTxs.empty(); ++it) {
+            auto value = it.Value<CPaymentTxValue>();
+            // if both cancel and payment txs are deleted don't put back payment one
+            if (cancelTxs.erase(value.cancelTxId)
+            && !paymentTxs.count(it.Key<CPaymentTxKey>().txid)) {
+                value.cancelTxId.SetNull();
+                batch.Put(it.Key(), ValueToString(value));
             }
         }
+        WriteBatch(batch);
     }
-
     PrintToLog("%s(%d, %d); n_found= %d\n", __func__, starting_block, ending_block, n_found);
-
-    delete it;
-
     return (n_found);
 }

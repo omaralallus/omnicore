@@ -15,10 +15,41 @@
 #include <memory>
 #include <stddef.h>
 #include <string_view>
+#include <type_traits>
 #include <variant>
 
+class CStringWriter
+{
+    const int nType;
+    const int nVersion;
+    std::string& data;
+    uint32_t limit;
+
+public:
+    CStringWriter(int nType_, int nVersion_, std::string& s, uint32_t limit = UINT32_MAX) : nType(nType_), nVersion(nVersion_), data(s), limit(limit) {}
+
+    template<typename T>
+    CStringWriter& operator<<(const T& obj)
+    {
+        ::Serialize(*this, obj);
+        return *this;
+    }
+
+    void write(Span<const std::byte> src)
+    {
+        if (limit) {
+            data.append((const char*)src.data(), src.size());
+            --limit;
+        }
+    }
+
+    int GetVersion() const { return nVersion; }
+    int GetType() const { return nType; }
+    size_t size() const { return data.size(); }
+};
+
 template<typename T>
-bool StringToValue(std::string&& s, T& value)
+bool StringToValue(const std::string_view& s, T& value)
 {
     try {
         CDataStream ssValue(s.data(), s.data() + s.size(), SER_DISK, CLIENT_VERSION);
@@ -29,19 +60,13 @@ bool StringToValue(std::string&& s, T& value)
     return true;
 }
 
-inline bool StringToValue(std::string&& s, std::string& value)
-{
-    value = std::move(s);
-    return true;
-}
-
 template<typename T>
 std::string ValueToString(const T& value)
 {
-    std::vector<uint8_t> v;
-    CVectorWriter writer(SER_DISK, CLIENT_VERSION, v, 0);
+    std::string s;
+    CStringWriter writer(SER_DISK, CLIENT_VERSION, s);
     writer << value;
-    return {v.begin(), v.end()};
+    return s;
 }
 
 inline std::string ValueToString(const std::string& value)
@@ -52,11 +77,11 @@ inline std::string ValueToString(const std::string& value)
 template<typename T>
 std::string KeyToString(const T& key)
 {
-    std::vector<uint8_t> v;
+    std::string s;
     static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
-    CVectorWriter writer(SER_DISK, CLIENT_VERSION, v, 0);
+    CStringWriter writer(SER_DISK, CLIENT_VERSION, s);
     writer << T::prefix << key;
-    return {v.begin(), v.end()};
+    return s;
 }
 
 inline std::string_view KeyToString(const std::string& key)
@@ -76,7 +101,7 @@ std::string_view KeyToString(const char (&key)[N])
 }
 
 template<typename T>
-bool StringToKey(const std::string& s, T& key)
+bool StringToKey(const std::string_view& s, T& key)
 {
     auto prefix = T::prefix;
     static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
@@ -110,7 +135,7 @@ class CDBBase
     leveldb::WriteOptions syncoptions;
 
     //! The database itself
-    leveldb::DB* pdb = nullptr;
+    std::unique_ptr<leveldb::DB> pdb;
 
 protected:
     //! Number of entries read
@@ -144,10 +169,10 @@ protected:
      *
      * @return A new LevelDB iterator
      */
-    leveldb::Iterator* NewIterator() const
+    std::unique_ptr<leveldb::Iterator> NewIterator() const
     {
         assert(pdb);
-        return pdb->NewIterator(iteroptions);
+        return std::unique_ptr<leveldb::Iterator>{pdb->NewIterator(iteroptions)};
     }
 
     template<typename K, typename V>
@@ -159,9 +184,13 @@ protected:
     template<typename K, typename V>
     bool Read(const K& key, V&& value) const
     {
-        std::string strValue;
-        return Read(KeyToString(key), strValue)
-            && StringToValue(std::move(strValue), value);
+        if constexpr (std::is_same_v<std::string, std::decay_t<V>>) {
+            return Read(KeyToString(key), value);
+        } else {
+            std::string strValue;
+            return Read(KeyToString(key), strValue)
+                && StringToValue(strValue, value);
+        }
     }
 
     template<typename K>
@@ -191,7 +220,7 @@ protected:
     bool WriteBatch(leveldb::WriteBatch& batch)
     {
         assert(pdb);
-        return pdb->Write(writeoptions, &batch).ok();
+        return pdb->Write(syncoptions, &batch).ok();
     }
 
     /**
@@ -218,30 +247,74 @@ public:
     void Clear();
 };
 
+class CPartialKey {
+    std::string data;
+public:
+    CPartialKey() = default;
+    explicit CPartialKey(uint8_t prefix) : data(1, prefix) {}
+    explicit CPartialKey(std::string s) : data(std::move(s)) {}
+
+    operator leveldb::Slice() const {
+        return data;
+    }
+};
+
+template<typename T, typename... Args>
+CPartialKey PartialKey(Args&&... args)
+{
+    std::string s;
+    CStringWriter writer(SER_DISK, CLIENT_VERSION, s, sizeof...(Args) + 1);
+    writer << T::prefix << T{std::forward<Args>(args)...};
+    return CPartialKey{std::move(s)};
+}
+
 class CDBaseIterator
 {
 private:
-    const uint8_t prefix = 0;
-    const bool use_prefix = false;
+    CPartialKey partialKey;
     std::unique_ptr<leveldb::Iterator> it;
 
 public:
-    explicit CDBaseIterator(leveldb::Iterator* i, const std::string& first = {}) : it(i)
+    explicit CDBaseIterator(std::unique_ptr<leveldb::Iterator> i, const std::string_view& first = {}) : it(std::move(i))
     {
         assert(it);
-        first.empty() ? it->SeekToFirst() : it->Seek(first);
+        first.empty() ? it->SeekToFirst() : Seek(first);
     }
 
     template<typename T>
-    explicit CDBaseIterator(leveldb::Iterator* i, const T& key) : prefix(T::prefix), use_prefix(true), it(i)
+    explicit CDBaseIterator(std::unique_ptr<leveldb::Iterator> i, const T& key) : partialKey{T::prefix}, it(std::move(i))
     {
         assert(it);
-        static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
-        CDataStream ssKey(SER_DISK, CLIENT_VERSION, prefix, key);
-        it->Seek({(const char*)ssKey.data(), ssKey.size()});
+        Seek(key);
+    }
+
+    explicit CDBaseIterator(std::unique_ptr<leveldb::Iterator> i, CPartialKey key) : partialKey(std::move(key)), it(std::move(i))
+    {
+        assert(it);
+        it->Seek(partialKey);
     }
 
     CDBaseIterator(CDBaseIterator&&) = default;
+    CDBaseIterator& operator=(CDBaseIterator&&) = default;
+
+    void Seek(const std::string_view& key)
+    {
+        partialKey = CPartialKey{};
+        it->Seek({key.data(), key.size()});
+    }
+
+    void Seek(CPartialKey key)
+    {
+        partialKey = std::move(key);
+        it->Seek(partialKey);
+    }
+
+    template<typename T>
+    void Seek(const T& key)
+    {
+        partialKey = CPartialKey{T::prefix};
+        it->Seek(KeyToString(key));
+    }
 
     CDBaseIterator& operator++()
     {
@@ -264,7 +337,7 @@ public:
 
     bool Valid() const
     {
-        return it->Valid() && (!use_prefix || it->key()[0] == prefix);
+        return it->Valid() && it->key().starts_with(partialKey);
     }
 
     leveldb::Slice Key() const
@@ -278,15 +351,8 @@ public:
     {
         assert(Valid());
         T key;
-        try {
-            uint8_t prefix;
-            auto slKey = it->key();
-            CDataStream ssKey(slKey.data(), slKey.data() + slKey.size(), SER_DISK, CLIENT_VERSION);
-            ssKey >> prefix >> key;
-        } catch (const std::exception&) {
-            return {};
-        }
-        return key;
+        auto slKey = it->key();
+        return StringToKey({slKey.data(), slKey.size()}, key) ? key : T{};
     }
 
     leveldb::Slice Value() const
@@ -299,14 +365,15 @@ public:
     bool Value(T&& value) const
     {
         assert(Valid());
-        try {
-            auto slValue = it->value();
-            CDataStream ssValue(slValue.data(), slValue.data() + slValue.size(), SER_DISK, CLIENT_VERSION);
-            ssValue >> value;
-        } catch (const std::exception&) {
-            return false;
-        }
-        return true;
+        auto slValue = it->value();
+        return StringToValue({slValue.data(), slValue.size()}, value);
+    }
+
+    template<typename T>
+    T Value() const
+    {
+        T value;
+        return Value(value) ? value : T{};
     }
 };
 

@@ -14,6 +14,7 @@
 #include <node/context.h>
 #include <key_io.h>
 #include <validation.h>
+#include <policy/fees_args.h>
 #include <policy/policy.h>
 #include <pubkey.h>
 #include <script/standard.h>
@@ -86,10 +87,8 @@ bool CheckFee(interfaces::Wallet& iWallet, const std::string& fromAddress, size_
 
     // calculate the estimated fee per KB based on the currently set confirm target
     FeeCalculation feeCalc;
-    assert(g_context);
-    auto& feeEstimator = g_context->get().fee_estimator;
-    assert(feeEstimator);
-    CFeeRate feeRate = feeEstimator->estimateSmartFee(iWallet.getConfirmTarget(), &feeCalc, true /* FeeEstimateMode::CONSERVATIVE */);
+    static const CBlockPolicyEstimator feeEstimator(FeeestPath(gArgs));
+    CFeeRate feeRate = feeEstimator.estimateSmartFee(iWallet.getConfirmTarget(), &feeCalc, true /* FeeEstimateMode::CONSERVATIVE */);
 
     // if there is not enough data (and zero is estimated) then base minimum on a fairly high/safe 50,000 satoshi fee per KB
     if (feeRate == CFeeRate(0)) {
@@ -352,10 +351,10 @@ int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddre
 } // namespace mastercore
 
 #ifdef ENABLE_WALLET
+interfaces::WalletLoader *g_wallet_loader = nullptr;
 static wallet::WalletContext* GetWalletContext()
 {
-    assert(g_context);
-    if (auto walletLoader = g_context->get().wallet_loader) {
+    if (auto walletLoader = g_wallet_loader) {
         return walletLoader->context();
     }
     return nullptr;

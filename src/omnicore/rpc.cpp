@@ -30,6 +30,7 @@
 #include <omnicore/sp.h>
 #include <omnicore/sto.h>
 #include <omnicore/tally.h>
+#include <omnicore/dbtransaction.h>
 #include <omnicore/tx.h>
 #include <omnicore/nftdb.h>
 #include <omnicore/utilsbitcoin.h>
@@ -138,7 +139,9 @@ void MetaDexObjectToJSON(const CMPMetaDEx& obj, UniValue& metadex_obj)
     metadex_obj.pushKV("amounttofill", FormatMP(obj.getDesProperty(), obj.getAmountToFill()));
     metadex_obj.pushKV("action", (int) obj.getAction());
     metadex_obj.pushKV("block", obj.getBlock());
-    metadex_obj.pushKV("blocktime", obj.getBlockTime());
+    if (auto blockIndex = GetActiveChain()[obj.getBlock()]) {
+        metadex_obj.pushKV("blocktime", blockIndex->GetBlockTime());
+    }
 }
 
 void MetaDexObjectsToJSON(std::vector<CMPMetaDEx>& vMetaDexObjs, UniValue& response)
@@ -502,37 +505,35 @@ static UniValue omni_getfeedistributions(const JSONRPCRequest& request)
     UniValue response(UniValue::VARR);
 
     std::set<int> sDistributions = pDbFeeHistory->GetDistributionsForProperty(prop);
-    if (!sDistributions.empty()) {
-        for (std::set<int>::iterator it = sDistributions.begin(); it != sDistributions.end(); it++) {
-            int id = *it;
-            int block = 0;
-            uint32_t propertyId = 0;
-            int64_t total = 0;
-            UniValue responseObj(UniValue::VOBJ);
-            bool found = pDbFeeHistory->GetDistributionData(id, &propertyId, &block, &total);
-            if (!found) {
-                PrintToLog("Fee History Error - Distribution data not found for distribution ID %d but it was included in GetDistributionsForProperty(prop %d)\n", id, prop);
-                continue;
-            }
-            responseObj.pushKV("distributionid", id);
-            responseObj.pushKV("propertyid", (uint64_t)propertyId);
-            responseObj.pushKV("block", block);
-            responseObj.pushKV("amount", FormatMP(propertyId, total));
-            UniValue recipients(UniValue::VARR);
-            std::set<std::pair<std::string,int64_t> > sRecipients = pDbFeeHistory->GetFeeDistribution(id);
-            if (!sRecipients.empty()) {
-                for (std::set<std::pair<std::string,int64_t> >::iterator it = sRecipients.begin(); it != sRecipients.end(); it++) {
-                    std::string address = (*it).first;
-                    int64_t amount = (*it).second;
-                    UniValue recipient(UniValue::VOBJ);
-                    recipient.pushKV("address", TryEncodeOmniAddress(address));
-                    recipient.pushKV("amount", FormatMP(propertyId, amount));
-                    recipients.push_back(recipient);
-                }
-            }
-            responseObj.pushKV("recipients", recipients);
-            response.push_back(responseObj);
+    for (std::set<int>::iterator it = sDistributions.begin(); it != sDistributions.end(); it++) {
+        int id = *it;
+        int block = 0;
+        uint32_t propertyId = 0;
+        int64_t total = 0;
+        UniValue responseObj(UniValue::VOBJ);
+        bool found = pDbFeeHistory->GetDistributionData(id, &propertyId, &block, &total);
+        if (!found) {
+            PrintToLog("Fee History Error - Distribution data not found for distribution ID %d but it was included in GetDistributionsForProperty(prop %d)\n", id, prop);
+            continue;
         }
+        responseObj.pushKV("distributionid", id);
+        responseObj.pushKV("propertyid", (uint64_t)propertyId);
+        responseObj.pushKV("block", block);
+        responseObj.pushKV("amount", FormatMP(propertyId, total));
+        UniValue recipients(UniValue::VARR);
+        std::set<std::pair<std::string,int64_t> > sRecipients = pDbFeeHistory->GetFeeDistribution(id);
+        for (std::set<std::pair<std::string,int64_t> >::iterator it = sRecipients.begin(); it != sRecipients.end(); it++) {
+            std::string address = (*it).first;
+            int64_t amount = (*it).second;
+            UniValue recipient(UniValue::VOBJ);
+            recipient.pushKV("address", TryEncodeOmniAddress(address));
+            recipient.pushKV("amount", FormatMP(propertyId, amount));
+            recipients.push_back(recipient);
+        }
+        if (!recipients.empty()) {
+            responseObj.pushKV("recipients", recipients);
+        }
+        response.push_back(responseObj);
     }
     return response;
 }
@@ -754,13 +755,9 @@ static UniValue omni_getseedblocks(const JSONRPCRequest& request)
     RequireHeightInChain(endHeight);
 
     UniValue response(UniValue::VARR);
-
-    {
-        LOCK(cs_tally);
-        std::set<int> setSeedBlocks = pDbTransactionList->GetSeedBlocks(startHeight, endHeight);
-        for (std::set<int>::const_iterator it = setSeedBlocks.begin(); it != setSeedBlocks.end(); ++it) {
-            response.push_back(*it);
-        }
+    std::set<int> setSeedBlocks = pDbTransactionList->GetSeedBlocks(startHeight, endHeight);
+    for (std::set<int>::const_iterator it = setSeedBlocks.begin(); it != setSeedBlocks.end(); ++it) {
+        response.push_back(*it);
     }
 
     return response;
@@ -789,35 +786,15 @@ static UniValue omni_getpayload(const JSONRPCRequest& request)
 
     uint256 txid = ParseHashV(request.params[0], "txid");
 
-    bool f_txindex_ready = false;
-    if (g_txindex) {
-        f_txindex_ready = g_txindex->BlockUntilSyncedToCurrentChain();
-    }
-
     CTransactionRef tx;
-    uint256 blockHash;
-    if (!GetTransaction(txid, tx, Params().GetConsensus(), blockHash)) {
-        if (!f_txindex_ready) {
-            PopulateFailure(MP_TXINDEX_STILL_SYNCING);
-        } else {
-            PopulateFailure(MP_TX_NOT_FOUND);
-        }
-    }
-
-    int blockTime = 0;
-    int blockHeight = GetHeight();
-    if (!blockHash.IsNull()) {
-        // Port GetTransaction to return height and time
-        CBlockIndex* pBlockIndex = nullptr;
-        if (nullptr != pBlockIndex) {
-            blockTime = pBlockIndex->nTime;
-            blockHeight = pBlockIndex->nHeight;
-        }
+    int blockHeight;
+    if (!GetTransaction(txid, tx, Params().GetConsensus(), blockHeight)) {
+        PopulateFailure(MP_TX_NOT_FOUND);
     }
 
     CMPTransaction mp_obj;
     CCoinsViewCacheOnly view;
-    int parseRC = ParseTransaction(view, *tx, blockHeight, 0, mp_obj, blockTime);
+    int parseRC = ParseTransaction(view, *tx, blockHeight, 0, mp_obj, 0);
     if (parseRC < 0) PopulateFailure(MP_TX_IS_NOT_OMNI_PROTOCOL);
 
     UniValue payloadObj(UniValue::VOBJ);
@@ -843,8 +820,6 @@ static UniValue omni_setautocommit(const JSONRPCRequest& request)
            + HelpExampleRpc("omni_setautocommit", "false")
        }
     }.Check(request);
-
-    LOCK(cs_tally);
 
     autoCommit = request.params[0].get_bool();
     return autoCommit;
@@ -895,7 +870,6 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 1:
         {
-            LOCK(cs_tally);
             // display the whole CMPTxList (leveldb)
             pDbTransactionList->printAll();
             pDbTransactionList->printStats();
@@ -903,7 +877,6 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 2:
         {
-            LOCK(cs_tally);
             // display smart properties
             pDbSpInfo->printAll();
             break;
@@ -934,7 +907,6 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 5:
         {
-            LOCK(cs_tally);
             PrintToConsole("isMPinBlockRange(%d,%d)=%s\n", extra2, extra3, pDbTransactionList->isMPinBlockRange(extra2, extra3, false) ? "YES" : "NO");
             break;
         }
@@ -946,7 +918,6 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 7:
         {
-            LOCK(cs_tally);
             // display the whole CMPTradeList (leveldb)
             pDbTradeList->printAll();
             pDbTradeList->printStats();
@@ -954,7 +925,6 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 8:
         {
-            LOCK(cs_tally);
             // display the STO receive list
             pDbStoList->printAll();
             pDbStoList->printStats();
@@ -995,7 +965,6 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 14:
         {
-            LOCK(cs_tally);
             pDbFeeCache->printAll();
             pDbFeeCache->printStats();
 
@@ -1095,7 +1064,6 @@ static UniValue omni_getallbalancesforid(const JSONRPCRequest& request)
     bool isDivisible = isPropertyDivisible(propertyId); // we want to check this BEFORE the loop
 
     LOCK(cs_tally);
-
     for (std::unordered_map<std::string, CMPTally>::iterator it = mp_tally_map.begin(); it != mp_tally_map.end(); ++it) {
         uint32_t id = 0;
         bool includeAddress = false;
@@ -1153,7 +1121,6 @@ static UniValue omni_getallbalancesforaddress(const JSONRPCRequest& request)
     UniValue response(UniValue::VARR);
 
     LOCK(cs_tally);
-
     CMPTally* addressTally = getTally(address);
 
     if (nullptr == addressTally) { // addressTally object does not exist
@@ -1445,11 +1412,8 @@ static UniValue omni_getproperty(const JSONRPCRequest& request)
     RequireExistingProperty(propertyId);
 
     CMPSPInfo::Entry sp;
-    {
-        LOCK(cs_tally);
-        if (!pDbSpInfo->getSP(propertyId, sp)) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
-        }
+    if (!pDbSpInfo->getSP(propertyId, sp)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
     }
     int64_t nTotalTokens = getTotalTokens(propertyId);
     std::string strTotalTokens = FormatMP(propertyId, nTotalTokens);
@@ -1499,8 +1463,6 @@ static UniValue omni_listproperties(const JSONRPCRequest& request)
     }.Check(request);
 
     UniValue response(UniValue::VARR);
-
-    LOCK(cs_tally);
 
     uint32_t nextSPID = pDbSpInfo->peekNextSPID(1);
     for (uint32_t propertyId = 1; propertyId < nextSPID; propertyId++) {
@@ -1583,28 +1545,16 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
     RequireCrowdsale(propertyId);
 
     CMPSPInfo::Entry sp;
-    {
-        LOCK(cs_tally);
-        if (!pDbSpInfo->getSP(propertyId, sp)) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
-        }
+    if (!pDbSpInfo->getSP(propertyId, sp)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
     }
 
     const uint256& creationHash = sp.txid;
 
-    bool f_txindex_ready = false;
-    if (g_txindex) {
-        f_txindex_ready = g_txindex->BlockUntilSyncedToCurrentChain();
-    }
-
     CTransactionRef tx;
-    uint256 hashBlock;
-    if (!GetTransaction(creationHash, tx, Params().GetConsensus(), hashBlock)) {
-        if (!f_txindex_ready) {
-            PopulateFailure(MP_TXINDEX_STILL_SYNCING);
-        } else {
-            PopulateFailure(MP_TX_NOT_FOUND);
-        }
+    int blockHeight;
+    if (!GetTransaction(creationHash, tx, Params().GetConsensus(), blockHeight)) {
+        PopulateFailure(MP_TX_NOT_FOUND);
     }
 
     UniValue response(UniValue::VOBJ);
@@ -1615,7 +1565,6 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
         bool crowdFound = false;
 
         LOCK(cs_tally);
-
         for (CrowdMap::const_iterator it = my_crowds.begin(); it != my_crowds.end(); ++it) {
             const CMPCrowd& crowd = it->second;
             if (propertyId == crowd.getPropertyId()) {
@@ -1633,10 +1582,9 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
     int64_t tokensIssued = getTotalTokens(propertyId);
     const std::string& txidClosed = sp.txid_close.GetHex();
 
-    int64_t startTime = -1;
-    // Port GetTransaction to return height and time
-    if (!hashBlock.IsNull()) {
-        startTime = 0;
+    int64_t startTime = 0;
+    if (auto blockIndex = GetActiveChain()[blockHeight]) {
+        startTime = blockIndex->GetBlockTime();
     }
 
     // note the database is already deserialized here and there is minimal performance penalty to iterate recipients to calculate amountRaised
@@ -1720,8 +1668,7 @@ static UniValue omni_getactivecrowdsales(const JSONRPCRequest& request)
 
     UniValue response(UniValue::VARR);
 
-    LOCK2(cs_main, cs_tally);
-
+    LOCK(cs_tally);
     for (CrowdMap::const_iterator it = my_crowds.begin(); it != my_crowds.end(); ++it) {
         const CMPCrowd& crowd = it->second;
         uint32_t propertyId = crowd.getPropertyId();
@@ -1733,25 +1680,15 @@ static UniValue omni_getactivecrowdsales(const JSONRPCRequest& request)
 
         const uint256& creationHash = sp.txid;
 
-        bool f_txindex_ready = false;
-        if (g_txindex) {
-            f_txindex_ready = g_txindex->BlockUntilSyncedToCurrentChain();
-        }
-
         CTransactionRef tx;
-        uint256 hashBlock;
-        if (!GetTransaction(creationHash, tx, Params().GetConsensus(), hashBlock)) {
-            if (!f_txindex_ready) {
-                PopulateFailure(MP_TXINDEX_STILL_SYNCING);
-            } else {
-                PopulateFailure(MP_TX_NOT_FOUND);
-            }
+        int blockHeight;
+        if (!GetTransaction(creationHash, tx, Params().GetConsensus(), blockHeight)) {
+            PopulateFailure(MP_TX_NOT_FOUND);
         }
 
-        int64_t startTime = -1;
-        // Port GetTransaction to return height and time
-        if (!hashBlock.IsNull()) {
-            startTime = 0;
+        int64_t startTime = 0;
+        if (auto blockIndex = GetActiveChain()[blockHeight]) {
+            startTime = blockIndex->GetBlockTime();
         }
 
         UniValue responseObj(UniValue::VOBJ);
@@ -1812,11 +1749,8 @@ static UniValue omni_getgrants(const JSONRPCRequest& request)
     RequireManagedProperty(propertyId);
 
     CMPSPInfo::Entry sp;
-    {
-        LOCK(cs_tally);
-        if (false == pDbSpInfo->getSP(propertyId, sp)) {
-            throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
-        }
+    if (false == pDbSpInfo->getSP(propertyId, sp)) {
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
     }
     UniValue response(UniValue::VOBJ);
     const uint256& creationHash = sp.txid;
@@ -2000,10 +1934,7 @@ static UniValue omni_gettradehistoryforaddress(const JSONRPCRequest& request)
 
     // Obtain a sorted vector of txids for the address trade history
     std::vector<uint256> vecTransactions;
-    {
-        LOCK(cs_tally);
-        pDbTradeList->getTradesForAddress(address, vecTransactions, propertyId);
-    }
+    pDbTradeList->getTradesForAddress(address, vecTransactions, propertyId);
 
 #ifdef ENABLE_WALLET
     if (wallet && !vecTransactions.empty()) {
@@ -2072,7 +2003,6 @@ static UniValue omni_gettradehistoryforpair(const JSONRPCRequest& request)
 
     // request pair trade history from trade db
     UniValue response(UniValue::VARR);
-    LOCK(cs_tally);
     pDbTradeList->getTradesForPair(propertyIdSideA, propertyIdSideB, response, count);
     return response;
 }
@@ -2129,7 +2059,6 @@ static UniValue omni_getactivedexsells(const JSONRPCRequest& request)
     int curBlock = GetHeight();
 
     LOCK(cs_tally);
-
     for (OfferMap::iterator it = my_offers.begin(); it != my_offers.end(); ++it) {
         const CMPOffer& selloffer = it->second;
         std::vector<std::string> vstr;
@@ -2233,10 +2162,8 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
     // next let's obtain the block for this height
     CBlock block;
     {
-        LOCK(cs_main);
-        CBlockIndex* pBlockIndex = ::ChainActive()[blockHeight];
-
-        if (!node::ReadBlockFromDisk(block, pBlockIndex, Params().GetConsensus())) {
+        auto* pBlockIndex = GetActiveChain()[blockHeight];
+        if (!pBlockIndex || !node::ReadBlockFromDisk(block, pBlockIndex, Params().GetConsensus())) {
             throw JSONRPCError(RPC_INTERNAL_ERROR, "Failed to read block from disk");
         }
     }
@@ -2245,11 +2172,8 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
 
     // now we want to loop through each of the transactions in the block and run against CMPTxList::exists
     // those that return positive add to our response array
-
-    LOCK(cs_tally);
-
     for(const auto& tx : block.vtx) {
-        if (pDbTransactionList->exists(tx->GetHash())) {
+        if (pDbTransactionList->getValidMPTX(tx->GetHash())) {
             // later we can add a verbose flag to decode here, but for now callers can send returned txids into gettransaction_MP
             // add the txid into the response as it's an MP transaction
             response.push_back(tx->GetHash().GetHex());
@@ -2284,11 +2208,7 @@ static UniValue omni_listblockstransactions(const JSONRPCRequest& request)
 
     std::set<uint256> txs;
     UniValue response(UniValue::VARR);
-
-    LOCK(cs_tally);
-    {
-        pDbTransactionList->GetOmniTxsInBlockRange(blockFirst, blockLast, txs);
-    }
+    pDbTransactionList->GetOmniTxsInBlockRange(blockFirst, blockLast, txs);
 
     for(const uint256& tx : txs) {
         response.push_back(tx.GetHex());
@@ -2537,8 +2457,6 @@ static UniValue omni_getinfo(const JSONRPCRequest& request)
     int block = GetHeight();
     int64_t blockTime = GetLatestBlockTime();
 
-    LOCK(cs_tally);
-
     int blockMPTransactions = pDbTransactionList->getMPTransactionCountBlock(block);
     int totalMPTransactions = pDbTransactionList->getMPTransactionCountTotal();
     int totalMPTrades = pDbTradeList->getMPTradeCountTotal();
@@ -2552,6 +2470,7 @@ static UniValue omni_getinfo(const JSONRPCRequest& request)
     infoResponse.pushKV("totaltransactions", totalMPTransactions);
 
     // handle alerts
+    LOCK(cs_tally);
     UniValue alerts(UniValue::VARR);
     std::vector<AlertData> omniAlerts = GetOmniCoreAlerts();
     for (std::vector<AlertData>::iterator it = omniAlerts.begin(); it != omniAlerts.end(); it++) {
@@ -2801,17 +2720,12 @@ static UniValue omni_getcurrentconsensushash(const JSONRPCRequest& request)
        }
     }.Check(request);
 
-    LOCK(cs_main); // TODO - will this ensure we don't take in a new block in the couple of ms it takes to calculate the consensus hash?
-
-    int block = GetHeight();
-
-    CBlockIndex* pblockindex = ::ChainActive()[block];
+    auto* pblockindex = GetActiveChain().Tip();
     uint256 blockHash = pblockindex->GetBlockHash();
-
     uint256 consensusHash = GetConsensusHash();
 
     UniValue response(UniValue::VOBJ);
-    response.pushKV("block", block);
+    response.pushKV("block", pblockindex->nHeight);
     response.pushKV("blockhash", blockHash.GetHex());
     response.pushKV("consensushash", consensusHash.GetHex());
 
@@ -2840,22 +2754,18 @@ static UniValue omni_getmetadexhash(const JSONRPCRequest& request)
        }
     }.Check(request);
 
-    LOCK(cs_main);
-
     uint32_t propertyId = 0;
     if (request.params.size() > 0) {
         propertyId = ParsePropertyId(request.params[0]);
         RequireExistingProperty(propertyId);
     }
 
-    int block = GetHeight();
-    CBlockIndex* pblockindex = ::ChainActive()[block];
+    auto* pblockindex = GetActiveChain().Tip();
     uint256 blockHash = pblockindex->GetBlockHash();
-
     uint256 metadexHash = GetMetaDExHash(propertyId);
 
     UniValue response(UniValue::VOBJ);
-    response.pushKV("block", block);
+    response.pushKV("block", pblockindex->nHeight);
     response.pushKV("blockhash", blockHash.GetHex());
     response.pushKV("propertyid", (uint64_t)propertyId);
     response.pushKV("metadexhash", metadexHash.GetHex());
@@ -2885,19 +2795,15 @@ static UniValue omni_getbalanceshash(const JSONRPCRequest& request)
         }
     }.Check(request);
 
-    LOCK(cs_main);
-
     uint32_t propertyId = ParsePropertyId(request.params[0]);
     RequireExistingProperty(propertyId);
 
-    int block = GetHeight();
-    CBlockIndex* pblockindex = ::ChainActive()[block];
+    auto* pblockindex = GetActiveChain().Tip();
     uint256 blockHash = pblockindex->GetBlockHash();
-
     uint256 balancesHash = GetBalancesHash(propertyId);
 
     UniValue response(UniValue::VOBJ);
-    response.pushKV("block", block);
+    response.pushKV("block", pblockindex->nHeight);
     response.pushKV("blockhash", blockHash.GetHex());
     response.pushKV("propertyid", (uint64_t)propertyId);
     response.pushKV("balanceshash", balancesHash.GetHex());

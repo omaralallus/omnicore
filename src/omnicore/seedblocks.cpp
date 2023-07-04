@@ -5,9 +5,6 @@
 #include <chainparams.h>
 #include <util/time.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
 #include <stdint.h>
 #include <set>
 #include <string>

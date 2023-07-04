@@ -9,6 +9,7 @@
 
 #include <omnicore/convert.h>
 #include <omnicore/dbstolist.h>
+#include <omnicore/dbtransaction.h>
 #include <omnicore/dbtxlist.h>
 #include <omnicore/log.h>
 #include <omnicore/omnicore.h>
@@ -38,17 +39,6 @@
 
 namespace mastercore
 {
-/**
- * Gets the byte offset of a transaction from the transaction index.
- */
-static unsigned int GetTransactionByteOffset(const uint256& txid)
-{
-    if (g_txindex) {
-        return g_txindex->ReadTxPos(txid);
-    }
-
-    return 0;
-}
 
 /**
  * Returns an ordered list of Omni transactions including STO receipts that are relevant to the wallet.
@@ -66,16 +56,16 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
     std::multimap<int64_t, const interfaces::WalletTx*> txOrdered;
     const auto& transactions = iWallet.getWalletTxs();
     for (const auto& transaction : transactions)
-        txOrdered.insert(std::make_pair(transaction.order_position, &transaction));
+        txOrdered.emplace(transaction.order_position, &transaction);
 
     // Iterate backwards through wallet transactions until we have count items to return:
     for (std::multimap<int64_t, const interfaces::WalletTx*>::reverse_iterator it = txOrdered.rbegin(); it != txOrdered.rend(); ++it) {
         const interfaces::WalletTx* pwtx = it->second;
         const uint256& txHash = pwtx->tx->GetHash();
-        if (!pDbTransactionList->exists(txHash)) continue;
         int blockHeight = 0;
+        if (!pDbTransactionList->getValidMPTX(txHash, &blockHeight)) continue;
         if (blockHeight < startBlock || blockHeight > endBlock) continue;
-        int blockPosition = GetTransactionByteOffset(txHash);
+        int blockPosition = pDbTransaction->FetchTransactionPosition(txHash);
         std::string sortKey = strprintf("%06d%010d", blockHeight, blockPosition);
         mapResponse.emplace(sortKey, txHash);
         seenHashes.insert(txHash);
@@ -83,46 +73,12 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
     }
 
     // Insert STO receipts - receiving an STO has no inbound transaction to the wallet, so we will insert these manually into the response
-    std::string mySTOReceipts;
-    {
-        LOCK(cs_tally);
-        mySTOReceipts = pDbStoList->getMySTOReceipts("", iWallet);
-    }
-    std::vector<std::string> vecReceipts;
-    if (!mySTOReceipts.empty()) {
-        boost::split(vecReceipts, mySTOReceipts, boost::is_any_of(","), boost::token_compress_on);
-    }
-    for (size_t i = 0; i < vecReceipts.size(); i++) {
-        std::vector<std::string> svstr;
-        boost::split(svstr, vecReceipts[i], boost::is_any_of(":"), boost::token_compress_on);
-        if (svstr.size() != 4) {
-            PrintToLog("STODB Error - number of tokens is not as expected (%s)\n", vecReceipts[i]);
-            continue;
-        }
-        int blockHeight = atoi(svstr[1]);
-        if (blockHeight < startBlock || blockHeight > endBlock) continue;
-        uint256 txHash = uint256S(svstr[0]);
+    auto mySTOReceipts = pDbStoList->getMySTOReceipts({}, startBlock, endBlock, iWallet);
+    for (const auto& [blockHeight, txHash] : mySTOReceipts) {
         if (seenHashes.find(txHash) != seenHashes.end()) continue; // an STO may already be in the wallet if we sent it
-        int blockPosition = GetTransactionByteOffset(txHash);
+        int blockPosition = pDbTransaction->FetchTransactionPosition(txHash);
         std::string sortKey = strprintf("%06d%010d", blockHeight, blockPosition);
-        mapResponse.insert(std::make_pair(sortKey, txHash));
-    }
-
-    // Insert pending transactions (sets block as 999999 and position as wallet position)
-    // TODO: resolve potential deadlock caused by cs_wallet, cs_pending
-    // LOCK(cs_pending);
-    for (PendingMap::const_iterator it = my_pending.begin(); it != my_pending.end(); ++it) {
-        const uint256& txHash = it->first;
-        int blockHeight = 999999;
-        if (blockHeight < startBlock || blockHeight > endBlock) continue;
-        int blockPosition = 0;
-        {
-            for (const auto& transaction : transactions)
-                if (transaction.tx->GetHash() == txHash)
-                    blockPosition = transaction.order_position;
-        }
-        std::string sortKey = strprintf("%06d%010d", blockHeight, blockPosition);
-        mapResponse.insert(std::make_pair(sortKey, txHash));
+        mapResponse.emplace(sortKey, txHash);
     }
 #endif
     return mapResponse;

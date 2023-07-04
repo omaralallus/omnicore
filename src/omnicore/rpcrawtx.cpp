@@ -79,15 +79,11 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
        }
     }.Check(request);
 
+    std::vector<PrevTxsEntry> prevTxsParsed;
     CTransaction tx = ParseTransaction(request.params[0]);
 
-    // use a dummy coins view to store the user provided transaction inputs
-    CCoinsView viewDummyTemp;
-    CCoinsViewCache viewTemp(&viewDummyTemp);
-
     if (request.params.size() > 1) {
-        std::vector<PrevTxsEntry> prevTxsParsed = ParsePrevTxs(request.params[1]);
-        InputsToView(prevTxsParsed, viewTemp);
+        prevTxsParsed = ParsePrevTxs(request.params[1]);
     }
 
     int blockHeight = 0;
@@ -96,7 +92,7 @@ static UniValue omni_decodetransaction(const JSONRPCRequest& request)
     }
 
     UniValue txObj(UniValue::VOBJ);
-    int populateResult = populateRPCTransactionObject(tx, uint256(), txObj, "", false, "", blockHeight, pWallet.get());
+    int populateResult = populateRPCTransactionObject(tx, std::move(prevTxsParsed), txObj, "", false, "", blockHeight, pWallet.get());
 
     if (populateResult != 0) PopulateFailure(populateResult);
 
@@ -283,8 +279,7 @@ static UniValue omni_createrawtx_change(const JSONRPCRequest& request)
     uint32_t nOut = request.params.size() > 4 ? request.params[4].getInt<int64_t>() : 0;
 
     // use a dummy coins view to store the user provided transaction inputs
-    CCoinsView viewDummy;
-    CCoinsViewCache viewTemp(&viewDummy);
+    CCoinsViewCacheOnly viewTemp;
     InputsToView(prevTxsParsed, viewTemp);
 
     // extend the transaction

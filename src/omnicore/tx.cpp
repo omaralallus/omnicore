@@ -28,17 +28,11 @@
 #include <sync.h>
 #include <util/time.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
-#include <stdio.h>
-#include <string.h>
-
 #include <algorithm>
 #include <limits>
+#include <tuple>
 #include <utility>
 #include <vector>
-#include <tuple>
 
 using namespace mastercore;
 
@@ -1130,17 +1124,9 @@ int CMPTransaction::interpretPacket()
         return (PKT_ERROR -2);
     }
 
-    // Use ::ChainActive()[block] here to avoid locking cs_main after cs_tally below
-    CBlockIndex* pindex;
-    uint256 blockHash;
-    {
-        LOCK(cs_main);
-        pindex = ::ChainActive()[block];
-        blockHash = ::ChainActive()[block]->GetBlockHash();
-    }
-
     LOCK(cs_tally);
-
+    auto pindex = GetActiveChain()[block];
+    auto blockHash = pindex->GetBlockHash();
     if (isAddressFrozen(sender, property)) {
         PrintToLog("%s(): REJECTED: address %s is frozen for property %d\n", __func__, sender, property);
         return (PKT_ERROR -3);
@@ -1559,7 +1545,7 @@ int CMPTransaction::logicMath_SendAll()
             ++numberOfPropertiesSent;
             assert(update_tally_map(sender, propertyId, -moneyAvailable, BALANCE));
             assert(update_tally_map(receiver, propertyId, moneyAvailable, BALANCE));
-            pDbTransactionList->recordSendAllSubRecord(txid, numberOfPropertiesSent, propertyId, moneyAvailable);
+            pDbTransactionList->recordSendAllSubRecord(txid, block, numberOfPropertiesSent, propertyId, moneyAvailable);
         }
     }
 
@@ -2092,7 +2078,7 @@ int CMPTransaction::logicMath_MetaDExCancelEcosystem()
 }
 
 /** Tx 50 */
-int CMPTransaction::logicMath_CreatePropertyFixed(CBlockIndex* pindex)
+int CMPTransaction::logicMath_CreatePropertyFixed(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2157,7 +2143,7 @@ int CMPTransaction::logicMath_CreatePropertyFixed(CBlockIndex* pindex)
 }
 
 /** Tx 51 */
-int CMPTransaction::logicMath_CreatePropertyVariable(CBlockIndex* pindex)
+int CMPTransaction::logicMath_CreatePropertyVariable(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2254,7 +2240,7 @@ int CMPTransaction::logicMath_CreatePropertyVariable(CBlockIndex* pindex)
 }
 
 /** Tx 53 */
-int CMPTransaction::logicMath_CloseCrowdsale(CBlockIndex* pindex)
+int CMPTransaction::logicMath_CloseCrowdsale(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2320,7 +2306,7 @@ int CMPTransaction::logicMath_CloseCrowdsale(CBlockIndex* pindex)
 }
 
 /** Tx 54 */
-int CMPTransaction::logicMath_CreatePropertyManaged(CBlockIndex* pindex)
+int CMPTransaction::logicMath_CreatePropertyManaged(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2393,7 +2379,7 @@ int CMPTransaction::logicMath_CreatePropertyManaged(CBlockIndex* pindex)
 }
 
 /** Tx 55 */
-int CMPTransaction::logicMath_GrantTokens(CBlockIndex* pindex, uint256& blockHash)
+int CMPTransaction::logicMath_GrantTokens(const CBlockIndex* pindex, uint256& blockHash)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2495,7 +2481,7 @@ int CMPTransaction::logicMath_GrantTokens(CBlockIndex* pindex, uint256& blockHas
 }
 
 /** Tx 56 */
-int CMPTransaction::logicMath_RevokeTokens(CBlockIndex* pindex)
+int CMPTransaction::logicMath_RevokeTokens(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2564,7 +2550,7 @@ int CMPTransaction::logicMath_RevokeTokens(CBlockIndex* pindex)
 }
 
 /** Tx 70 */
-int CMPTransaction::logicMath_ChangeIssuer(CBlockIndex* pindex)
+int CMPTransaction::logicMath_ChangeIssuer(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2628,7 +2614,7 @@ int CMPTransaction::logicMath_ChangeIssuer(CBlockIndex* pindex)
 }
 
 /** Tx 71 */
-int CMPTransaction::logicMath_EnableFreezing(CBlockIndex* pindex)
+int CMPTransaction::logicMath_EnableFreezing(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2682,7 +2668,7 @@ int CMPTransaction::logicMath_EnableFreezing(CBlockIndex* pindex)
 }
 
 /** Tx 72 */
-int CMPTransaction::logicMath_DisableFreezing(CBlockIndex* pindex)
+int CMPTransaction::logicMath_DisableFreezing(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2728,7 +2714,7 @@ int CMPTransaction::logicMath_DisableFreezing(CBlockIndex* pindex)
 }
 
 /** Tx 185 */
-int CMPTransaction::logicMath_FreezeTokens(CBlockIndex* pindex)
+int CMPTransaction::logicMath_FreezeTokens(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2792,7 +2778,7 @@ int CMPTransaction::logicMath_FreezeTokens(CBlockIndex* pindex)
 }
 
 /** Tx 186 */
-int CMPTransaction::logicMath_UnfreezeTokens(CBlockIndex* pindex)
+int CMPTransaction::logicMath_UnfreezeTokens(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2856,7 +2842,7 @@ int CMPTransaction::logicMath_UnfreezeTokens(CBlockIndex* pindex)
 }
 
 /** Tx 73 */
-int CMPTransaction::logicMath_AddDelegate(CBlockIndex* pindex)
+int CMPTransaction::logicMath_AddDelegate(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2910,7 +2896,7 @@ int CMPTransaction::logicMath_AddDelegate(CBlockIndex* pindex)
 }
 
 /** Tx 74 */
-int CMPTransaction::logicMath_RemoveDelegate(CBlockIndex* pindex)
+int CMPTransaction::logicMath_RemoveDelegate(const CBlockIndex* pindex)
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);

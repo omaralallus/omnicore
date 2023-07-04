@@ -378,6 +378,9 @@ inline std::string error_str(int ec) {
       case PKT_ERROR_NFT -33:
           ec_str = "Sender %s does not own the range being sent";
           break;
+      case MP_TX_IS_NOT_OMNI_PROTOCOL:
+          ec_str = "No Omni layer transaction";
+          break;
 
       default:
           ec_str = "Unknown error";

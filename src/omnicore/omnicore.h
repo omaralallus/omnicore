@@ -39,7 +39,7 @@ int const DONT_STORE_MAINNET_STATE_UNTIL = 770000;
 #define TEST_ECO_PROPERTY_1 (0x80000003UL)
 
 // increment this value to force a refresh of the state (similar to --startclean)
-#define DB_VERSION 8
+#define DB_VERSION 9
 
 // could probably also use: int64_t maxInt64 = std::numeric_limits<int64_t>::max();
 // maximum numeric values from the spec:
@@ -168,15 +168,16 @@ extern CFeeRate minRelayTxFee;
 
 extern bool fOmniSafeAddresses;
 
-extern std::optional<std::reference_wrapper<node::NodeContext>> g_context;
-
 int64_t GetTokenBalance(const std::string& address, uint32_t propertyId, TallyType ttype);
 int64_t GetAvailableTokenBalance(const std::string& address, uint32_t propertyId);
 int64_t GetReservedTokenBalance(const std::string& address, uint32_t propertyId);
 int64_t GetFrozenTokenBalance(const std::string& address, uint32_t propertyId);
 
 /** Global handler to initialize Omni Core. */
-int mastercore_init();
+namespace node {
+    class NodeContext;
+};
+int mastercore_init(node::NodeContext& node);
 
 /** Global handler to shut down Omni Core. */
 int mastercore_shutdown();
@@ -190,22 +191,83 @@ void NotifyTotalTokensChanged(uint32_t propertyId, int block);
 /** Used to inform the node is in initial block download. */
 bool IsInitialBlockDownload();
 
-class CChain;
-/** @returns the most-work chain. */
-CChain& ChainActive();
-
 namespace Consensus {
 struct Params;
 }
 
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
-bool GetTransaction(const uint256& hash, CTransactionRef& tx, const Consensus::Params& params, uint256& hashBlock);
+bool GetTransaction(const uint256& hash, CTransactionRef& tx, const Consensus::Params& params, int& blockHeight);
 
 class CCoinsViewCacheOnly : public CCoinsViewCache
 {
     static CCoinsView noBase;
 public:
     CCoinsViewCacheOnly() : CCoinsViewCache(&noBase) {}
+};
+
+class CChainIndex
+{
+private:
+    std::vector<const CBlockIndex*> vChain;
+
+public:
+    CChainIndex() = default;
+    CChainIndex(const CChain&) = delete;
+
+    /** Returns the index entry for the genesis block of this chain, or nullptr if none. */
+    const CBlockIndex* Genesis() const
+    {
+        LOCK(cs_tally);
+        return !vChain.empty() ? vChain.front() : nullptr;
+    }
+
+    /** Returns the index entry for the tip of this chain, or nullptr if none. */
+    const CBlockIndex* Tip() const
+    {
+        LOCK(cs_tally);
+        return !vChain.empty() ? vChain.back() : nullptr;
+    }
+
+    /** Returns the index entry at a particular height in this chain, or nullptr if no such height exists. */
+    const CBlockIndex* operator[](int nHeight) const
+    {
+        LOCK(cs_tally);
+        if (nHeight < 0 || nHeight > Height())
+            return nullptr;
+        return vChain[nHeight];
+    }
+
+    /** Efficiently check whether a block is present in this chain. */
+    bool Contains(const CBlockIndex* pindex) const
+    {
+        LOCK(cs_tally);
+        return (*this)[pindex->nHeight] == pindex;
+    }
+
+    /** Find the successor of a block in this chain, or nullptr if the given index is not found or is the tip. */
+    const CBlockIndex* Next(const CBlockIndex* pindex) const
+    {
+        LOCK(cs_tally);
+        return Contains(pindex) ? (*this)[pindex->nHeight + 1] : nullptr;
+    }
+
+    /** Return the maximal height in the chain. Is equal to chain.Tip() ? chain.Tip()->nHeight : -1. */
+    int Height() const
+    {
+        LOCK(cs_tally);
+        return int(vChain.size()) - 1;
+    }
+
+    /** Set/initialize a chain with a given tip. */
+    void SetTip(const CBlockIndex* pindex)
+    {
+        LOCK(cs_tally);
+        vChain.resize(pindex->nHeight + 1);
+        while (pindex && !Contains(pindex)) {
+            vChain[pindex->nHeight] = pindex;
+            pindex = pindex->pprev;
+        }
+    }
 };
 
 namespace mastercore

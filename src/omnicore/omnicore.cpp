@@ -21,6 +21,7 @@
 #include <omnicore/dbtransaction.h>
 #include <omnicore/dbtxlist.h>
 #include <omnicore/dex.h>
+#include <omnicore/errors.h>
 #include <omnicore/log.h>
 #include <omnicore/mdex.h>
 #include <omnicore/mempool.h>
@@ -67,9 +68,6 @@
 #include <wallet/ismine.h>
 #include <wallet/wallet.h>
 #endif
-
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
 
 #include <assert.h>
 #include <stdint.h>
@@ -367,24 +365,19 @@ void mastercore::enableFreezing(uint32_t propertyId, int liveBlock)
 void mastercore::disableFreezing(uint32_t propertyId)
 {
     int liveBlock = 0;
-    for (std::set<std::pair<uint32_t,int> >::iterator it = setFreezingEnabledProperties.begin(); it != setFreezingEnabledProperties.end(); it++) {
-        if (propertyId == (*it).first) {
-            liveBlock = (*it).second;
-        }
+    auto it = setFreezingEnabledProperties.lower_bound(std::make_pair(propertyId, 0));
+    if (it != setFreezingEnabledProperties.end() && it->first == propertyId) {
+        liveBlock = it->second;
+        setFreezingEnabledProperties.erase(it);
     }
     assert(liveBlock > 0);
-
-    setFreezingEnabledProperties.erase(std::make_pair(propertyId, liveBlock));
     PrintToLog("Freezing for property %d has been disabled.\n", propertyId);
 
     // When disabling freezing for a property, all frozen addresses for that property will be unfrozen!
-    for (std::set<std::pair<std::string,uint32_t> >::iterator it = setFrozenAddresses.begin(); it != setFrozenAddresses.end(); ) {
+    for (auto it = setFrozenAddresses.begin(); it != setFrozenAddresses.end(); ) {
         if ((*it).second == propertyId) {
             PrintToLog("Address %s has been unfrozen for property %d.\n", (*it).first, propertyId);
             it = setFrozenAddresses.erase(it);
-            if (it != setFrozenAddresses.end()) {
-                assert(!isAddressFrozen((*it).first, (*it).second));
-            }
         } else {
             it++;
         }
@@ -395,14 +388,7 @@ void mastercore::disableFreezing(uint32_t propertyId)
 
 bool mastercore::isFreezingEnabled(uint32_t propertyId, int block)
 {
-    for (std::set<std::pair<uint32_t,int> >::iterator it = setFreezingEnabledProperties.begin(); it != setFreezingEnabledProperties.end(); it++) {
-        uint32_t itemPropertyId = (*it).first;
-        int itemBlock = (*it).second;
-        if (propertyId == itemPropertyId && block >= itemBlock) {
-            return true;
-        }
-    }
-    return false;
+    return setFreezingEnabledProperties.count(std::make_pair(propertyId, block));
 }
 
 void mastercore::freezeAddress(const std::string& address, uint32_t propertyId)
@@ -421,10 +407,7 @@ void mastercore::unfreezeAddress(const std::string& address, uint32_t propertyId
 
 bool mastercore::isAddressFrozen(const std::string& address, uint32_t propertyId)
 {
-    if (setFrozenAddresses.find(std::make_pair(address, propertyId)) != setFrozenAddresses.end()) {
-        return true;
-    }
-    return false;
+    return setFrozenAddresses.count(std::make_pair(address, propertyId));
 }
 
 std::string mastercore::getTokenLabel(uint32_t propertyId)
@@ -845,11 +828,12 @@ static bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
         }
 
         CTransactionRef txPrev;
-        uint256 hashBlock;
+        int blockHeight;
         Coin newcoin;
-        if (GetTransaction(txIn.prevout.hash, txPrev, Params().GetConsensus(), hashBlock)) {
+        if (GetTransaction(txIn.prevout.hash, txPrev, Params().GetConsensus(), blockHeight)) {
             newcoin.out.scriptPubKey = txPrev->vout[nOut].scriptPubKey;
             newcoin.out.nValue = txPrev->vout[nOut].nValue;
+            newcoin.nHeight = blockHeight;
         } else {
             return false;
         }
@@ -1476,14 +1460,8 @@ static int msc_initial_scan(int nFirstBlock)
     if (nFirstBlock < 0 || nLastBlock < nFirstBlock) return -1;
     PrintToConsole("Scanning for transactions in block %d to block %d..\n", nFirstBlock, nLastBlock);
 
-    const CBlockIndex* pFirstBlock;
-    const CBlockIndex* pLastBlock;
-    {
-        LOCK(cs_main);
-        // used to print the progress to the console and notifies the UI
-        pFirstBlock = ::ChainActive()[nFirstBlock];
-        pLastBlock = ::ChainActive()[nLastBlock];
-    }
+    const CBlockIndex* pFirstBlock = GetActiveChain()[nFirstBlock];
+    const CBlockIndex* pLastBlock = GetActiveChain()[nLastBlock];
 
     ProgressReporter progressReporter(pFirstBlock, pLastBlock);
 
@@ -1498,11 +1476,7 @@ static int msc_initial_scan(int nFirstBlock)
             break;
         }
 
-        CBlockIndex* pblockindex;
-        {
-            LOCK(cs_main);
-            pblockindex = ::ChainActive()[nBlock];
-        }
+        const CBlockIndex* pblockindex = GetActiveChain()[nBlock];
 
         if (nullptr == pblockindex) break;
         std::string strBlockHash = pblockindex->GetBlockHash().GetHex();
@@ -1577,6 +1551,7 @@ void clear_all_state()
     exodus_prev = 0;
 }
 
+std::set<uint256> txsToDelete;
 std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexToDelete;
 std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>> spentIndexToUdpdate;
 std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> addressUnspentIndexToUpdate;
@@ -1597,6 +1572,8 @@ void RewindDBsAndState(int nHeight, int nBlockPrev = 0, bool fInitialParse = fal
         pDbFeeCache->RollBackCache(nHeight);
         pDbFeeHistory->RollBackHistory(nHeight);
         pDbNFT->RollBackAboveBlock(nHeight);
+        pDbTransaction->DeleteTransactions(txsToDelete);
+        txsToDelete.clear();
         if (fAddressIndex) {
             pDbAddress->UpdateSpentIndex(spentIndexToUdpdate);
             spentIndexToUdpdate.clear();
@@ -1639,6 +1616,7 @@ void RewindDBsAndState(int nHeight, int nBlockPrev = 0, bool fInitialParse = fal
 }
 
 class COmniValidationInterface : public CValidationInterface {
+    static CChainIndex chain;
     static std::atomic_bool initialBlockDownload;
     static std::atomic_uint32_t lastBlockTime;
     static std::atomic_int lastBlockHeight;
@@ -1654,6 +1632,7 @@ public:
      */
     void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *, bool fInitialDownload) override
     {
+        chain.SetTip(pindexNew);
         lastBlockTime = pindexNew->nTime;
         lastBlockHeight = pindexNew->nHeight;
         initialBlockDownload = fInitialDownload;
@@ -1762,9 +1741,8 @@ public:
             unsigned int prevLogicalTS = 0;
 
             // retrieve logical timestamp of the previous block
-            if (pindex->pprev)
-                if (!pDbAddress->ReadTimestampBlockIndex(pindex->pprev->GetBlockHash(), prevLogicalTS))
-                    PrintToLog("%s: Failed to read previous block's logical timestamp\n", __func__);
+            if (pindex->pprev && !pDbAddress->ReadTimestampBlockIndex(pindex->pprev->GetBlockHash(), prevLogicalTS))
+                PrintToLog("%s: Failed to read previous block's logical timestamp\n", __func__);
 
             if (logicalTS <= prevLogicalTS) {
                 logicalTS = prevLogicalTS + 1;
@@ -1774,8 +1752,8 @@ public:
             if (!pDbAddress->WriteTimestampIndex(CTimestampIndexKey{logicalTS, pindex->GetBlockHash()}))
                 PrintToLog("%s: Failed to write timestamp index\n", __func__);
 
-                if (!pDbAddress->WriteTimestampBlockIndex(pindex->GetBlockHash(), logicalTS))
-                    PrintToLog("%s: Failed to write blockhash index\n", __func__);
+            if (!pDbAddress->WriteTimestampBlockIndex(pindex->GetBlockHash(), logicalTS))
+                PrintToLog("%s: Failed to write blockhash index\n", __func__);
         }
 
         for (auto& tx : block->vtx)
@@ -1815,6 +1793,7 @@ public:
     static bool IsInitialBlockDownload() { return LoadRelaxed(initialBlockDownload); }
     static uint32_t LastBlockTime() { return LoadRelaxed(lastBlockTime); }
     static int LastBlockHeight() { return LoadRelaxed(lastBlockHeight); }
+    static CChainIndex& ActiveChain() { return chain; }
 };
 
 bool IsInitialBlockDownload()
@@ -1831,6 +1810,11 @@ int GetHeight()
     return COmniValidationInterface::LastBlockHeight();
 }
 
+const CChainIndex& GetActiveChain()
+{
+    return COmniValidationInterface::ActiveChain();
+}
+
 /**
  * @return The timestamp of the latest block.
  */
@@ -1844,6 +1828,7 @@ uint32_t GetLatestBlockTime()
 
 }
 
+CChainIndex COmniValidationInterface::chain;
 std::atomic_int COmniValidationInterface::lastBlockHeight = 0;
 std::atomic_uint32_t COmniValidationInterface::lastBlockTime = 0;
 std::atomic_bool COmniValidationInterface::initialBlockDownload = false;
@@ -1853,7 +1838,7 @@ std::atomic_bool COmniValidationInterface::initialBlockDownload = false;
  *
  * @return An exit code, indicating success or failure
  */
-int mastercore_init()
+int mastercore_init(node::NodeContext& node)
 {
     bool wrongDBVersion, startClean = false;
 
@@ -2010,6 +1995,8 @@ int mastercore_init()
         nWaterline = nWaterlineBlock;
     }
 
+    COmniValidationInterface::ActiveChain().SetTip(node.chainman->ActiveChainstate().m_chain.Tip());
+
     // initial scan
     msc_initial_scan(nWaterline);
 
@@ -2027,6 +2014,11 @@ int mastercore_init()
 
     PrintToConsole("Omni Core initialization completed\n");
 
+#ifdef ENABLE_WALLET
+    extern interfaces::WalletLoader *g_wallet_loader;
+    g_wallet_loader = node.wallet_loader;
+#endif
+
     CheckWalletUpdate();
 
     return 0;
@@ -2042,10 +2034,8 @@ int mastercore_init()
  */
 int mastercore_shutdown()
 {
-    LOCK2(cs_main, cs_tally);
-
     if (lastProcessedBlock > 0) {
-        if (auto blockIndex = ChainActive()[lastProcessedBlock]) {
+        if (auto blockIndex = GetActiveChain()[lastProcessedBlock]) {
             PersistInMemoryState(blockIndex);
         }
         lastProcessedBlock = 0;
@@ -2151,11 +2141,15 @@ bool mastercore_handler_tx(CCoinsViewCache& view, const CTransaction& tx, int nB
             if (interp_ret != PKT_ERROR - 2) {
                 bool bValid = (0 <= interp_ret);
                 pDbTransactionList->recordTX(tx.GetHash(), bValid, nBlock, mp_obj.getType(), mp_obj.getNewAmount());
-                pDbTransaction->RecordTransaction(tx.GetHash(), idx, interp_ret);
+                pop_ret = interp_ret;
             }
             fFoundTx |= (interp_ret == 0);
         }
+    } else {
+        pop_ret = MPRPCErrorCode::MP_TX_IS_NOT_OMNI_PROTOCOL;
     }
+
+    pDbTransaction->RecordTransaction(tx, nBlock, idx, pop_ret);
 
     if (fFoundTx && msc_debug_consensus_hash_every_transaction) {
         uint256 consensusHash = GetConsensusHash();
@@ -2312,6 +2306,10 @@ void mastercore_handler_disc_begin(const std::shared_ptr<const CBlock>& pblock, 
     reorgRecoveryMode = 1;
     reorgRecoveryMaxHeight = (pBlockIndex->nHeight > reorgRecoveryMaxHeight) ? pBlockIndex->nHeight : reorgRecoveryMaxHeight;
 
+    for (auto& tx : pblock->vtx) {
+        txsToDelete.insert(tx->GetHash());
+    }
+
     if (!fAddressIndex) {
         return;
     }
@@ -2401,25 +2399,15 @@ const std::vector<unsigned char> GetOmMarker()
     return pch;
 }
 
-std::optional<std::reference_wrapper<node::NodeContext>> g_context;
-
-// GetBlockTime, Height, GetBlockHash, Contains
-/** @returns the most-work chain. */
-CChain& ChainActive()
-{
-    LOCK(cs_main);
-    assert(g_context && g_context->get().chainman);
-    return g_context->get().chainman->ActiveChain();
-}
-
 /**
  * Return transaction in txOut, and if it was found inside a block, its hash is placed in hashBlock.
  * If blockIndex is provided, the transaction is fetched from the corresponding block.
  */
-bool GetTransaction(const uint256& hash, CTransactionRef& txOut, const Consensus::Params& consensusParams, uint256& hashBlock)
+bool GetTransaction(const uint256& hash, CTransactionRef& txOut, const Consensus::Params& consensusParams, int& blockHeight)
 {
+    blockHeight = 0;
     txOut = mastercore::GetMempoolTransaction(hash);
-    return txOut || (g_txindex && g_txindex->FindTx(hash, hashBlock, txOut));
+    return txOut || pDbTransaction->GetTx(hash, txOut, blockHeight);
 }
 
 CCoinsView CCoinsViewCacheOnly::noBase;

@@ -51,16 +51,14 @@ bool COmniAddressDB::ReadAddressIndex(const uint256& addressHash, unsigned int t
 {
     if (start < 0) start = 0;
     const auto checkAddress = !addressHash.IsNull();
-
     CDBaseIterator it{NewIterator(), CAddressIndexKey{type, addressHash, start}};
     for (; it; ++it) {
         auto key = it.Key<CAddressIndexKey>();
-        if (key.type != type || (checkAddress && key.hashBytes != addressHash)) {
-            break;
-        }
-        CAmount value;
-        if (it.Value(value)) {
-            addressIndex.emplace_back(key, value);
+        if (key.type != type) break;
+        if (end > 0 && key.blockHeight > end) break;
+        if (checkAddress && key.hashBytes != addressHash) break;
+        if (key.blockHeight >= start) {
+            addressIndex.emplace_back(key, it.Value<CAmount>());
         }
     }
     return true;
@@ -87,13 +85,9 @@ bool COmniAddressDB::ReadAddressUnspentIndex(const uint256& addressHash, unsigne
     CDBaseIterator it{NewIterator(), CAddressUnspentKey{type, addressHash}};
     for (; it; ++it) {
         auto key = it.Key<CAddressUnspentKey>();
-        if (key.type != type || (checkAddress && key.hashBytes != addressHash)) {
-            break;
-        }
-        CAddressUnspentValue value;
-        if (it.Value(value)) {
-            unspentOutputs.emplace_back(key, value);
-        }
+        if (key.type != type) break;
+        if (checkAddress && key.hashBytes != addressHash) break;
+        unspentOutputs.emplace_back(key, it.Value<CAddressUnspentValue>());
     }
     return true;
 }

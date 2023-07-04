@@ -172,3 +172,7 @@ dist/
 /guix-build-*
 
 /ci/scratch/
+
+# clangd language server
+compile_commands.json
+./cache/clangd/*

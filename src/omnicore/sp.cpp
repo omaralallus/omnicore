@@ -13,9 +13,6 @@
 #include <uint256.h>
 #include <util/time.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
 #include <stdint.h>
 
 #include <map>

@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <cstdint>
 #include <qt/txhistorydialog.h>
 #include <qt/forms/ui_txhistorydialog.h>
 
@@ -224,9 +225,9 @@ int TXHistoryDialog::PopulateHistoryMap()
         }
 
         CTransactionRef wtx;
-        uint256 blockHash;
-        if (!GetTransaction(txHash, wtx, Params().GetConsensus(), blockHash)) continue;
-        if (blockHash.IsNull()) {
+        int blockHeight;
+        if (!GetTransaction(txHash, wtx, Params().GetConsensus(), blockHeight)) continue;
+        if (blockHeight == 0) {
             // this transaction is unconfirmed, should be one of our pending transactions
             LOCK(cs_pending);
             PendingMap::iterator pending_it = my_pending.find(txHash);
@@ -249,11 +250,6 @@ int TXHistoryDialog::PopulateHistoryMap()
             continue;
         }
 
-        // parse the transaction and setup the new history object
-        // Port GetTransaction to return height and time
-        CBlockIndex* pBlockIndex = nullptr;
-        if (nullptr == pBlockIndex) continue;
-        int blockHeight = pBlockIndex->nHeight;
         CMPTransaction mp_obj;
         int parseRC = ParseTransaction(view, *wtx, blockHeight, 0, mp_obj);
         HistoryTXObject htxo;
@@ -405,7 +401,7 @@ void TXHistoryDialog::UpdateHistory()
                 QTableWidgetItem *dateCell = new QTableWidgetItem;
                 if (htxo.blockHeight>0) {
                     LOCK(cs_main);
-                    CBlockIndex* pBlkIdx = ::ChainActive()[htxo.blockHeight];
+                    auto* pBlkIdx = GetActiveChain()[htxo.blockHeight];
                     if (nullptr != pBlkIdx) txTime.setTime_t(pBlkIdx->GetBlockTime());
                     dateCell->setData(Qt::DisplayRole, txTime);
                 } else {

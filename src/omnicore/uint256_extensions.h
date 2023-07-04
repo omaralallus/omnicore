@@ -8,8 +8,10 @@
 #define BITCOIN_OMNICORE_UINT256_EXTENSIONS_H
 
 #include <arith_uint256.h>
+#include <uint256.h>
 
 #include <assert.h>
+#include <cstdint>
 #include <stdint.h>
 #include <limits>
 
@@ -19,6 +21,15 @@ namespace uint256_const {
 static const arith_uint256 one(static_cast<uint64_t>(1));
 //! The highest number in range of int64_t as uint256
 static const arith_uint256 max_int64(static_cast<uint64_t>(std::numeric_limits<int64_t>::max()));
+}
+
+inline uint256 Uint256(Span<const uint8_t> src)
+{
+    uint256 dest;
+    if (dest.size() >= src.size()) {
+        std::copy(src.begin(), src.end(), dest.begin());
+    }
+    return dest;
 }
 
 /**

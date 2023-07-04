@@ -64,9 +64,8 @@ using node::NodeContext;
 using node::RegenerateCommitments;
 using node::VerifyLoadedChainstate;
 
-extern int mastercore_init();
+extern int mastercore_init(node::NodeContext&);
 extern int mastercore_shutdown();
-extern std::optional<std::reference_wrapper<node::NodeContext>> g_context;
 
 const std::function<std::string(const char*)> G_TRANSLATION_FUN = nullptr;
 UrlDecodeFn* const URL_DECODE = nullptr;
@@ -156,7 +155,6 @@ BasicTestingSetup::BasicTestingSetup(const std::string& chainName, const std::ve
         noui_connect();
         noui_connected = true;
     }
-    g_context = std::ref(m_node);
 }
 
 BasicTestingSetup::~BasicTestingSetup()
@@ -224,7 +222,6 @@ ChainTestingSetup::~ChainTestingSetup()
     m_node.mempool.reset();
     m_node.scheduler.reset();
     m_node.chainman.reset();
-    g_context.reset();
 }
 
 TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const char*>& extra_args)
@@ -249,13 +246,13 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     std::tie(status, error) = VerifyLoadedChainstate(*Assert(m_node.chainman), options);
     assert(status == node::ChainstateLoadStatus::SUCCESS);
 
-    // initialize Omni after chainstate
-    mastercore_init();
-
     BlockValidationState state;
     if (!m_node.chainman->ActiveChainstate().ActivateBestChain(state)) {
         throw std::runtime_error(strprintf("ActivateBestChain failed. (%s)", state.ToString()));
     }
+
+    // initialize Omni after chainstate
+    mastercore_init(m_node);
 
     m_node.netgroupman = std::make_unique<NetGroupManager>(/*asmap=*/std::vector<bool>());
     m_node.addrman = std::make_unique<AddrMan>(*m_node.netgroupman,

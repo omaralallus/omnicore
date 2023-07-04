@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <cstdint>
 #include <qt/overviewpage.h>
 #include <qt/forms/ui_overviewpage.h>
 
@@ -126,7 +127,6 @@ public:
         // check pending
         {
             LOCK(cs_pending);
-
             PendingMap::iterator it = my_pending.find(hash);
             if (it != my_pending.end()) {
                 omniOverride = true;
@@ -153,76 +153,65 @@ public:
             omniAmountStr = txEntry.amount;
             omniOverride = true;
             amount = 0;
-        } else { // cache miss, check database
-            if (pDbTransactionList->exists(hash)) {
-                omniOverride = true;
-                amount = 0;
-                CTransactionRef wtx;
-                uint256 blockHash;
-                if (GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) {
-                    if (!blockHash.IsNull()) {
-                        // Port GetTransaction to return height and time
-                        CBlockIndex* pBlockIndex = nullptr;
-                        if (nullptr != pBlockIndex) {
-                            int blockHeight = pBlockIndex->nHeight;
-                            CMPTransaction mp_obj;
-                            CCoinsViewCacheOnly view;
-                            int parseRC = ParseTransaction(view, *wtx, blockHeight, 0, mp_obj);
-                            if (0 < parseRC) { //positive RC means DEx payment
-                                valid = true;
-                                std::string tmpBuyer, tmpSeller;
-                                uint64_t total = 0, tmpVout = 0, tmpNValue = 0, tmpPropertyId = 0;
-                                pDbTransactionList->getPurchaseDetails(hash,1,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
-                                bool bIsBuy = IsMyAddress(tmpBuyer, &walletModel->wallet());
-                                int numberOfPurchases = pDbTransactionList->getNumberOfSubRecords(hash);
-                                if (0<numberOfPurchases) { // calculate total bought/sold
-                                    for(int purchaseNumber = 1; purchaseNumber <= numberOfPurchases; purchaseNumber++) {
-                                        pDbTransactionList->getPurchaseDetails(hash,purchaseNumber,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
-                                        total += tmpNValue;
-                                    }
-                                    if (!bIsBuy) {
-                                        address = QString::fromStdString(tmpSeller);
-                                    } else {
-                                        address = QString::fromStdString(tmpBuyer);
-                                        omniOutbound = false;
-                                    }
-                                    omniAmountStr = QString::fromStdString(FormatDivisibleMP(total));
-                                }
-                            } else if (0 == parseRC) {
-                                if (mp_obj.interpret_Transaction()) {
-                                    valid = pDbTransactionList->getValidMPTX(hash);
-                                    uint32_t omniPropertyId = mp_obj.getProperty();
-                                    int64_t omniAmount = mp_obj.getAmount();
-                                    omniAmountStr = QString::fromStdString(FormatShortMP(omniPropertyId, omniAmount) + ' ' + getTokenLabel(omniPropertyId));
-                                    if (!mp_obj.getReceiver().empty()) {
-                                        if (IsMyAddress(mp_obj.getReceiver(), &walletModel->wallet())) {
-                                            omniOutbound = false;
-                                            if (IsMyAddress(mp_obj.getSender(), &walletModel->wallet())) omniSendToSelf = true;
-                                        }
-                                        address = QString::fromStdString(mp_obj.getReceiver());
-                                    } else {
-                                        address = QString::fromStdString(mp_obj.getSender());
-                                    }
-                                }
-                            }
-
-                            // override amount for cancels
-                            if (mp_obj.getType() == MSC_TYPE_METADEX_CANCEL_PRICE || mp_obj.getType() == MSC_TYPE_METADEX_CANCEL_PAIR ||
-                                mp_obj.getType() == MSC_TYPE_METADEX_CANCEL_ECOSYSTEM || mp_obj.getType() == MSC_TYPE_SEND_ALL) {
-                                omniAmountStr = QString::fromStdString("N/A");
-                            }
-
-                            // insert into cache
-                            OverviewCacheEntry newEntry;
-                            newEntry.valid = valid;
-                            newEntry.sendToSelf = omniSendToSelf;
-                            newEntry.outbound = omniOutbound;
-                            newEntry.address = address;
-                            newEntry.amount = omniAmountStr;
-                            recentCache.insert(std::make_pair(hash, newEntry));
+        } else if (pDbTransactionList->getValidMPTX(hash)) {
+            omniOverride = true;
+            amount = 0;
+            CTransactionRef wtx;
+            int blockHeight;
+            if (GetTransaction(hash, wtx, Params().GetConsensus(), blockHeight)) {
+                CMPTransaction mp_obj;
+                CCoinsViewCacheOnly view;
+                int parseRC = ParseTransaction(view, *wtx, blockHeight, 0, mp_obj);
+                if (0 < parseRC) { //positive RC means DEx payment
+                    valid = true;
+                    std::string tmpBuyer, tmpSeller;
+                    uint64_t total = 0, tmpVout = 0, tmpNValue = 0, tmpPropertyId = 0;
+                    pDbTransactionList->getPurchaseDetails(hash,1,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
+                    bool bIsBuy = IsMyAddress(tmpBuyer, &walletModel->wallet());
+                    int numberOfPurchases = pDbTransactionList->getNumberOfSubRecords(hash);
+                    if (0<numberOfPurchases) { // calculate total bought/sold
+                        for(int purchaseNumber = 1; purchaseNumber <= numberOfPurchases; purchaseNumber++) {
+                            pDbTransactionList->getPurchaseDetails(hash,purchaseNumber,&tmpBuyer,&tmpSeller,&tmpVout,&tmpPropertyId,&tmpNValue);
+                            total += tmpNValue;
                         }
+                        if (!bIsBuy) {
+                            address = QString::fromStdString(tmpSeller);
+                        } else {
+                            address = QString::fromStdString(tmpBuyer);
+                            omniOutbound = false;
+                        }
+                        omniAmountStr = QString::fromStdString(FormatDivisibleMP(total));
+                    }
+                } else if (0 == parseRC && mp_obj.interpret_Transaction()) {
+                    valid = pDbTransactionList->getValidMPTX(hash);
+                    uint32_t omniPropertyId = mp_obj.getProperty();
+                    int64_t omniAmount = mp_obj.getAmount();
+                    omniAmountStr = QString::fromStdString(FormatShortMP(omniPropertyId, omniAmount) + ' ' + getTokenLabel(omniPropertyId));
+                    if (!mp_obj.getReceiver().empty()) {
+                        if (IsMyAddress(mp_obj.getReceiver(), &walletModel->wallet())) {
+                            omniOutbound = false;
+                            if (IsMyAddress(mp_obj.getSender(), &walletModel->wallet())) omniSendToSelf = true;
+                        }
+                        address = QString::fromStdString(mp_obj.getReceiver());
+                    } else {
+                        address = QString::fromStdString(mp_obj.getSender());
                     }
                 }
+
+                // override amount for cancels
+                if (mp_obj.getType() == MSC_TYPE_METADEX_CANCEL_PRICE || mp_obj.getType() == MSC_TYPE_METADEX_CANCEL_PAIR ||
+                    mp_obj.getType() == MSC_TYPE_METADEX_CANCEL_ECOSYSTEM || mp_obj.getType() == MSC_TYPE_SEND_ALL) {
+                    omniAmountStr = QString::fromStdString("N/A");
+                }
+
+                // insert into cache
+                OverviewCacheEntry newEntry;
+                newEntry.valid = valid;
+                newEntry.sendToSelf = omniSendToSelf;
+                newEntry.outbound = omniOutbound;
+                newEntry.address = address;
+                newEntry.amount = omniAmountStr;
+                recentCache.insert(std::make_pair(hash, newEntry));
             }
         }
 
@@ -240,8 +229,7 @@ public:
         icon.paint(painter, decorationRect);
 
         QColor foreground = option.palette.color(QPalette::Text);
-        if(value.canConvert<QBrush>())
-        {
+        if(value.canConvert<QBrush>()) {
             QBrush brush = qvariant_cast<QBrush>(value);
             foreground = brush.color();
         }
@@ -261,16 +249,11 @@ public:
 
         painter->drawText(addressRect, Qt::AlignLeft | Qt::AlignVCenter, address, &boundingRect);
 
-        if(amount < 0)
-        {
+        if(amount < 0) {
             foreground = COLOR_NEGATIVE;
-        }
-        else if(!confirmed)
-        {
+        } else if (!confirmed) {
             foreground = COLOR_UNCONFIRMED;
-        }
-        else
-        {
+        } else {
             foreground = option.palette.color(QPalette::Text);
         }
         painter->setPen(foreground);
@@ -280,8 +263,7 @@ public:
         } else {
             amountText = omniAmountStr;
         }
-        if(!confirmed)
-        {
+        if (!confirmed) {
             amountText = QString("[") + amountText + QString("]");
         }
 

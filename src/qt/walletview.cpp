@@ -70,7 +70,8 @@ WalletView::WalletView(WalletModel* wallet_model, const PlatformStyle* _platform
     hbox_buttons->addWidget(exportButton);
     vbox->addLayout(hbox_buttons);
     bitcoinTXTab->setLayout(vbox);
-    mpTXTab = new TXHistoryDialog;
+    mpTXTab = new TXHistoryDialog(platformStyle);
+    mpTXTab->setWalletModel(walletModel);
     transactionsPage = new QWidget(this);
     QVBoxLayout *txvbox = new QVBoxLayout();
     txTabHolder = new QTabWidget();
@@ -80,6 +81,7 @@ WalletView::WalletView(WalletModel* wallet_model, const PlatformStyle* _platform
     transactionsPage->setLayout(txvbox);
 
     balancesPage = new BalancesDialog();
+    balancesPage->setWalletModel(walletModel);
     receiveCoinsPage = new ReceiveCoinsDialog(platformStyle);
     receiveCoinsPage->setModel(walletModel);
 
@@ -102,29 +104,30 @@ WalletView::WalletView(WalletModel* wallet_model, const PlatformStyle* _platform
     svbox->addWidget(sendTabHolder);
     sendCoinsPage->setLayout(svbox);
 
-    /**
-     * exchange page is disabled in this version
-     *
     exchangePage = new QWidget(this);
     QVBoxLayout *exvbox = new QVBoxLayout();
     metaDExTab = new MetaDExDialog();
+    metaDExTab->setWalletModel(walletModel);
     cancelTab = new MetaDExCancelDialog();
+    cancelTab->setWalletModel(walletModel);
     QTabWidget *exTabHolder = new QTabWidget();
-    tradeHistoryTab = new TradeHistoryDialog;
+    tradeHistoryTab = new TradeHistoryDialog(platformStyle);
+    tradeHistoryTab->setWalletModel(walletModel);
     // exTabHolder->addTab(new QWidget(),tr("Trade Bitcoin/Mastercoin")); not yet implemented
     exTabHolder->addTab(metaDExTab,tr("Trade Omni Layer Properties"));
     exTabHolder->addTab(tradeHistoryTab,tr("Trade History"));
     exTabHolder->addTab(cancelTab,tr("Cancel Orders"));
     exvbox->addWidget(exTabHolder);
     exchangePage->setLayout(exvbox);
-    **/
 
     // toolbox page
     toolboxPage = new QWidget(this);
     QVBoxLayout *tvbox = new QVBoxLayout();
     addressLookupTab = new LookupAddressDialog();
+    addressLookupTab->setWalletModel(walletModel);
     spLookupTab = new LookupSPDialog();
     txLookupTab = new LookupTXDialog();
+    txLookupTab->setWalletModel(walletModel);
     QTabWidget *tTabHolder = new QTabWidget();
     tTabHolder->addTab(addressLookupTab,tr("Lookup Address"));
     tTabHolder->addTab(spLookupTab,tr("Lookup Property"));
@@ -137,7 +140,7 @@ WalletView::WalletView(WalletModel* wallet_model, const PlatformStyle* _platform
     addWidget(transactionsPage);
     addWidget(receiveCoinsPage);
     addWidget(sendCoinsPage);
-    // addWidget(exchangePage);
+    addWidget(exchangePage);
     addWidget(toolboxPage);
 
     connect(overviewPage, &OverviewPage::transactionClicked, this, &WalletView::transactionClicked);
@@ -185,9 +188,14 @@ void WalletView::setClientModel(ClientModel *_clientModel)
     this->clientModel = _clientModel;
 
     overviewPage->setClientModel(_clientModel);
+    balancesPage->setClientModel(_clientModel);
     sendCoinsTab->setClientModel(_clientModel);
-    sendMPTab->setClientModel(_clientModel);
     walletModel->setClientModel(_clientModel);
+    metaDExTab->setClientModel(_clientModel);
+    sendMPTab->setClientModel(_clientModel);
+    cancelTab->setClientModel(_clientModel);
+    mpTXTab->setClientModel(_clientModel);
+    tradeHistoryTab->setClientModel(_clientModel);
 }
 
 void WalletView::processNewTransaction(const QModelIndex& parent, int start, int /*end*/)
@@ -287,8 +295,13 @@ void WalletView::gotoVerifyMessageTab(QString addr)
 
 bool WalletView::handlePaymentRequest(const SendCoinsRecipient& recipient)
 {
-    sendTabHolder->setCurrentIndex(1);
-    return sendCoinsTab->handlePaymentRequest(recipient);
+    if (recipient.unit == BitcoinUnits::BTC) {
+        sendTabHolder->setCurrentIndex(1);
+        return sendCoinsTab->handlePaymentRequest(recipient);
+    } else {
+        sendTabHolder->setCurrentIndex(0);
+        return sendMPTab->handlePaymentRequest(recipient);
+    }
 }
 
 void WalletView::showOutOfSyncWarning(bool fShow)

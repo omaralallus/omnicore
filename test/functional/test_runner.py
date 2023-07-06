@@ -358,7 +358,8 @@ BASE_SCRIPTS = [
     'omni_dexversionsspec.py',
     'omni_feecache.py',
     'omni_delegation.py',
-    'omni_nonfungibletokens.py'
+    'omni_nonfungibletokens.py',
+    'omni_safeaddress.py'
     # Don't append tests at the end to avoid merge conflicts
     # Put them in a random line within the section that fits their approximate run-time
 ]

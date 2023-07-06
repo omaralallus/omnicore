@@ -170,27 +170,18 @@ std::set<std::string> wallet_addresses;
 
 extern void DoWarning(const bilingual_str& warning);
 
+bool fOmniSafeAddresses = false;
+
 std::string mastercore::strMPProperty(uint32_t propertyId)
 {
-    std::string str = "*unknown*";
-
     // test user-token
     if (0x80000000 & propertyId) {
-        str = strprintf("Test token: %d : 0x%08X", 0x7FFFFFFF & propertyId, propertyId);
+        return strprintf("Test token: %d : 0x%08X", 0x7FFFFFFF & propertyId, propertyId);
     } else {
-        switch (propertyId) {
-            case OMNI_PROPERTY_BTC: str = "BTC";
-                break;
-            case OMNI_PROPERTY_MSC: str = "OMN";
-                break;
-            case OMNI_PROPERTY_TMSC: str = "TOMN";
-                break;
-            default:
-                str = strprintf("SP token: %d", propertyId);
-        }
+        return getTokenLabel(propertyId);
     }
 
-    return str;
+    return "*unknown*";
 }
 
 std::string FormatDivisibleShortMP(int64_t n)
@@ -428,17 +419,15 @@ bool mastercore::isAddressFrozen(const std::string& address, uint32_t propertyId
 
 std::string mastercore::getTokenLabel(uint32_t propertyId)
 {
-    std::string tokenStr;
-    if (propertyId < 3) {
-        if (propertyId == 1) {
-            tokenStr = " OMNI";
-        } else {
-            tokenStr = " TOMNI";
-        }
-    } else {
-        tokenStr = strprintf(" SPT#%d", propertyId);
+    static const auto isMainnet = MainNet();
+    switch (propertyId) {
+        case OMNI_PROPERTY_BTC: return "BTC";
+        case OMNI_PROPERTY_MSC: return "OMN";
+        case OMNI_PROPERTY_TMSC: return "TOMN";
+        case OMNI_PROPERTY_EMAID: if (isMainnet) return "EMAID"; break;
+        case OMNI_PROPERTY_USDT: if (isMainnet) return "USDT"; break;
     }
-    return tokenStr;
+    return strprintf("SPT#%d", propertyId);
 }
 
 // get total tokens for a property
@@ -1899,6 +1888,8 @@ int mastercore_init()
 
         PrintToLog("Exodus balance after initialization: %s\n", FormatDivisibleMP(exodus_balance));
     }
+
+    fOmniSafeAddresses = gArgs.GetBoolArg("-omnisafeaddresses", MainNet());
 
     PrintToConsole("Omni Core initialization completed\n");
 

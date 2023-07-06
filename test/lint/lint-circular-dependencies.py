@@ -34,6 +34,7 @@ EXPECTED_CIRCULAR_DEPENDENCIES = (
     "omnicore/dex -> omnicore/tx -> omnicore/dex",
     "omnicore/mdex -> omnicore/tx -> omnicore/mdex",
     "omnicore/omnicore -> omnicore/rules -> omnicore/omnicore",
+    "omnicore/omnicore -> omnicore/script -> omnicore/omnicore",
     "omnicore/omnicore -> omnicore/sp -> omnicore/omnicore",
     "omnicore/omnicore -> omnicore/tally -> omnicore/omnicore",
     "omnicore/omnicore -> omnicore/tx -> omnicore/omnicore",

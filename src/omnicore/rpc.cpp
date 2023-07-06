@@ -25,6 +25,7 @@
 #include <omnicore/rpctxobject.h>
 #include <omnicore/rpcvalues.h>
 #include <omnicore/rules.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/sto.h>
 #include <omnicore/tally.h>
@@ -68,7 +69,6 @@ using namespace wallet;
 
 #include <boost/algorithm/string.hpp> // boost::split
 
-using std::runtime_error;
 using namespace mastercore;
 
 #ifdef ENABLE_WALLET
@@ -111,8 +111,8 @@ void PropertyToJSON(const CMPSPInfo::Entry& sProperty, UniValue& property_obj)
     property_obj.pushKV("data", sProperty.data);
     property_obj.pushKV("url", sProperty.url);
     property_obj.pushKV("divisible", sProperty.isDivisible());
-    property_obj.pushKV("issuer", sProperty.issuer);
-    property_obj.pushKV("delegate", sProperty.delegate);
+    property_obj.pushKV("issuer", TryEncodeOmniAddress(sProperty.issuer));
+    property_obj.pushKV("delegate", TryEncodeOmniAddress(sProperty.delegate));
     property_obj.pushKV("creationtxid", sProperty.txid.GetHex());
     property_obj.pushKV("fixedissuance", sProperty.fixed);
     property_obj.pushKV("managedissuance", sProperty.manual);
@@ -124,7 +124,7 @@ void MetaDexObjectToJSON(const CMPMetaDEx& obj, UniValue& metadex_obj)
     bool propertyIdForSaleIsDivisible = isPropertyDivisible(obj.getProperty());
     bool propertyIdDesiredIsDivisible = isPropertyDivisible(obj.getDesProperty());
     // add data to JSON object
-    metadex_obj.pushKV("address", obj.getAddr());
+    metadex_obj.pushKV("address", TryEncodeOmniAddress(obj.getAddr()));
     metadex_obj.pushKV("txid", obj.getHash().GetHex());
     if (obj.getAction() == 4) metadex_obj.pushKV("ecosystem", isTestEcosystemProperty(obj.getProperty()) ? "test" : "main");
     metadex_obj.pushKV("propertyidforsale", (uint64_t) obj.getProperty());
@@ -330,7 +330,7 @@ UniValue omni_getnonfungibletokendata(const JSONRPCRequest& request)
 
         UniValue rpcObj(UniValue::VOBJ);
         rpcObj.pushKV("index", start);
-        rpcObj.pushKV("owner", owner);
+        rpcObj.pushKV("owner", TryEncodeOmniAddress(owner));
         rpcObj.pushKV("grantdata", grantData);
         rpcObj.pushKV("issuerdata", issuerData);
         rpcObj.pushKV("holderdata", holderData);
@@ -386,7 +386,7 @@ UniValue omni_getnonfungibletokenranges(const JSONRPCRequest& request)
         int64_t amount = (range.second - range.first) + 1;
 
         UniValue uniqueRangeObj(UniValue::VOBJ);
-        uniqueRangeObj.pushKV("address", address);
+        uniqueRangeObj.pushKV("address", TryEncodeOmniAddress(address));
         uniqueRangeObj.pushKV("tokenstart", range.first);
         uniqueRangeObj.pushKV("tokenend", range.second);
         uniqueRangeObj.pushKV("amount", amount);
@@ -446,18 +446,13 @@ static UniValue omni_getfeedistribution(const JSONRPCRequest& request)
     response.pushKV("amount", FormatMP(propertyId, total));
     UniValue recipients(UniValue::VARR);
     std::set<std::pair<std::string,int64_t> > sRecipients = pDbFeeHistory->GetFeeDistribution(id);
-    bool divisible = isPropertyDivisible(propertyId);
     if (!sRecipients.empty()) {
         for (std::set<std::pair<std::string,int64_t> >::iterator it = sRecipients.begin(); it != sRecipients.end(); it++) {
             std::string address = (*it).first;
             int64_t amount = (*it).second;
             UniValue recipient(UniValue::VOBJ);
-            recipient.pushKV("address", address);
-            if (divisible) {
-                recipient.pushKV("amount", FormatDivisibleMP(amount));
-            } else {
-                recipient.pushKV("amount", FormatIndivisibleMP(amount));
-            }
+            recipient.pushKV("address", TryEncodeOmniAddress(address));
+            recipient.pushKV("amount", FormatMP(propertyId, amount));
             recipients.push_back(recipient);
         }
     }
@@ -524,18 +519,13 @@ static UniValue omni_getfeedistributions(const JSONRPCRequest& request)
             responseObj.pushKV("amount", FormatMP(propertyId, total));
             UniValue recipients(UniValue::VARR);
             std::set<std::pair<std::string,int64_t> > sRecipients = pDbFeeHistory->GetFeeDistribution(id);
-            bool divisible = isPropertyDivisible(propertyId);
             if (!sRecipients.empty()) {
                 for (std::set<std::pair<std::string,int64_t> >::iterator it = sRecipients.begin(); it != sRecipients.end(); it++) {
                     std::string address = (*it).first;
                     int64_t amount = (*it).second;
                     UniValue recipient(UniValue::VOBJ);
-                    recipient.pushKV("address", address);
-                    if (divisible) {
-                        recipient.pushKV("amount", FormatDivisibleMP(amount));
-                    } else {
-                        recipient.pushKV("amount", FormatIndivisibleMP(amount));
-                    }
+                    recipient.pushKV("address", TryEncodeOmniAddress(address));
+                    recipient.pushKV("amount", FormatMP(propertyId, amount));
                     recipients.push_back(recipient);
                 }
             }
@@ -669,7 +659,7 @@ static UniValue omni_getfeeshare(const JSONRPCRequest& request)
             double feeShare = (double(it->first) / double(COIN)) * (double)100;
             std::string strFeeShare = strprintf("%.4f", feeShare);
             strFeeShare += "%";
-            feeShareObj.pushKV("address", it->second);
+            feeShareObj.pushKV("address", TryEncodeOmniAddress(it->second));
             feeShareObj.pushKV("feeshare", strFeeShare);
             response.push_back(feeShareObj);
         }
@@ -1118,7 +1108,7 @@ static UniValue omni_getallbalancesforid(const JSONRPCRequest& request)
             continue; // ignore this address, has never transacted in this propertyId
         }
         UniValue balanceObj(UniValue::VOBJ);
-        balanceObj.pushKV("address", address);
+        balanceObj.pushKV("address", TryEncodeOmniAddress(address));
         bool nonEmptyBalance = BalanceToJSON(address, propertyId, balanceObj, isDivisible);
 
         if (nonEmptyBalance) {
@@ -1404,7 +1394,7 @@ static UniValue omni_getwalletaddressbalances(const JSONRPCRequest& request)
 
         if (arrBalances.size() > 0) {
             UniValue objEntry(UniValue::VOBJ);
-            objEntry.pushKV("address", address);
+            objEntry.pushKV("address", TryEncodeOmniAddress(address));
             objEntry.pushKV("balances", arrBalances);
             response.push_back(objEntry);
         }
@@ -1667,7 +1657,7 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
     response.pushKV("propertyid", (uint64_t) propertyId);
     response.pushKV("name", sp.name);
     response.pushKV("active", active);
-    response.pushKV("issuer", sp.issuer);
+    response.pushKV("issuer", TryEncodeOmniAddress(sp.issuer));
     response.pushKV("propertyiddesired", (uint64_t) sp.property_desired);
     response.pushKV("tokensperunit", FormatMP(propertyId, sp.num_tokens));
     response.pushKV("earlybonus", sp.early_bird);
@@ -1762,7 +1752,7 @@ static UniValue omni_getactivecrowdsales(const JSONRPCRequest& request)
         UniValue responseObj(UniValue::VOBJ);
         responseObj.pushKV("propertyid", (uint64_t) propertyId);
         responseObj.pushKV("name", sp.name);
-        responseObj.pushKV("issuer", sp.issuer);
+        responseObj.pushKV("issuer", TryEncodeOmniAddress(sp.issuer));
         responseObj.pushKV("propertyiddesired", (uint64_t) sp.property_desired);
         responseObj.pushKV("tokensperunit", FormatMP(propertyId, sp.num_tokens));
         responseObj.pushKV("earlybonus", sp.early_bird);
@@ -1853,7 +1843,7 @@ static UniValue omni_getgrants(const JSONRPCRequest& request)
 
     response.pushKV("propertyid", (uint64_t) propertyId);
     response.pushKV("name", sp.name);
-    response.pushKV("issuer", sp.issuer);
+    response.pushKV("issuer", TryEncodeOmniAddress(sp.issuer));
     response.pushKV("creationtxid", creationHash.GetHex());
     response.pushKV("totaltokens", FormatMP(propertyId, totalTokens));
     response.pushKV("issuances", issuancetxs);
@@ -2171,7 +2161,7 @@ static UniValue omni_getactivedexsells(const JSONRPCRequest& request)
         UniValue responseObj(UniValue::VOBJ);
         responseObj.pushKV("txid", txid);
         responseObj.pushKV("propertyid", (uint64_t) propertyId);
-        responseObj.pushKV("seller", seller);
+        responseObj.pushKV("seller", TryEncodeOmniAddress(seller));
         responseObj.pushKV("amountavailable", FormatMP(propertyId, amountAvailable));
         responseObj.pushKV("bitcoindesired", FormatDivisibleMP(bitcoinDesired));
         responseObj.pushKV("unitprice", FormatDivisibleMP(unitPrice));
@@ -2195,7 +2185,7 @@ static UniValue omni_getactivedexsells(const JSONRPCRequest& request)
                 int64_t amountAccepted = accept.getAcceptAmountRemaining();
                 // TODO: don't recalculate!
                 int64_t amountToPayInBTC = calculateDesiredBTC(accept.getOfferAmountOriginal(), accept.getBTCDesiredOriginal(), amountAccepted);
-                matchedAccept.pushKV("buyer", buyer);
+                matchedAccept.pushKV("buyer", TryEncodeOmniAddress(buyer));
                 matchedAccept.pushKV("block", blockOfAccept);
                 matchedAccept.pushKV("blocksleft", blocksLeftToPay);
                 matchedAccept.pushKV("amount", FormatMP(propertyId, amountAccepted));

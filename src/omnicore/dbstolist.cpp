@@ -2,6 +2,7 @@
 #include <omnicore/convert.h>
 #include <omnicore/dbstolist.h>
 #include <omnicore/log.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/walletutils.h>
 
@@ -28,7 +29,6 @@
 
 using mastercore::atoi;
 using mastercore::IsMyAddress;
-using mastercore::isPropertyDivisible;
 
 CMPSTOList::CMPSTOList(const fs::path& path, bool fWipe)
 {
@@ -95,12 +95,8 @@ void CMPSTOList::getRecipients(const uint256 txid, std::string filterAddress, Un
                             return; //(something went wrong)
                         }
                         UniValue recipient(UniValue::VOBJ);
-                        recipient.pushKV("address", recipientAddress);
-                        if (isPropertyDivisible(propertyId)) {
-                            recipient.pushKV("amount", FormatDivisibleMP(amount));
-                        } else {
-                            recipient.pushKV("amount", FormatIndivisibleMP(amount));
-                        }
+                        recipient.pushKV("address", TryEncodeOmniAddress(recipientAddress));
+                        recipient.pushKV("amount", FormatMP(propertyId, amount));
                         *total += amount;
                         recipientArray->push_back(recipient);
                     }

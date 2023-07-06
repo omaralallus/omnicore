@@ -20,6 +20,9 @@
 #include <util/system.h>
 #include <wallet/wallet.h>
 
+#include <omnicore/omnicore.h>
+#include <omnicore/script.h>
+
 #include <cstdlib>
 #include <memory>
 
@@ -37,6 +40,7 @@
 #include <QUrlQuery>
 
 const int BITCOIN_IPC_CONNECT_TIMEOUT = 1000; // milliseconds
+const QString OMNI_IPC_PREFIX("omni:");
 const QString BITCOIN_IPC_PREFIX("bitcoin:");
 
 //
@@ -80,7 +84,8 @@ void PaymentServer::ipcParseCommandLine(int argc, char* argv[])
         QString arg(argv[i]);
         if (arg.startsWith("-")) continue;
 
-        if (arg.startsWith(BITCOIN_IPC_PREFIX, Qt::CaseInsensitive)) // bitcoin: URI
+        if (arg.startsWith(BITCOIN_IPC_PREFIX, Qt::CaseInsensitive) // bitcoin: URI
+        || arg.startsWith(OMNI_IPC_PREFIX, Qt::CaseInsensitive))    // omni: URI
         {
             savedPaymentRequests.insert(arg);
         }
@@ -196,21 +201,30 @@ void PaymentServer::handleURIOrFile(const QString& s)
         return;
     }
 
-    if (s.startsWith("bitcoin://", Qt::CaseInsensitive))
-    {
-        Q_EMIT message(tr("URI handling"), tr("'bitcoin://' is not a valid URI. Use 'bitcoin:' instead."),
-            CClientUIInterface::MSG_ERROR);
-    }
-    else if (s.startsWith(BITCOIN_IPC_PREFIX, Qt::CaseInsensitive)) // bitcoin: URI
+    if (s.startsWith(BITCOIN_IPC_PREFIX, Qt::CaseInsensitive) // bitcoin: URI
+    || s.startsWith(OMNI_IPC_PREFIX, Qt::CaseInsensitive)) // omni: URI
     {
         QUrlQuery uri((QUrl(s)));
         // normal URI
         {
             SendCoinsRecipient recipient;
-            if (GUIUtil::parseBitcoinURI(s, &recipient))
+            if (GUIUtil::parseSchemeURI(s, &recipient))
             {
                 std::string error_msg;
-                const CTxDestination dest = DecodeDestination(recipient.address.toStdString(), error_msg);
+                LogPrintf("%s: uri: %s, address: %s, unit: %d\n", __func__, s.toStdString(), recipient.address.toStdString(), recipient.unit);
+                auto address = recipient.address.toStdString();
+
+                CTxDestination dest = CNoDestination{};
+                if (s.startsWith(OMNI_IPC_PREFIX, Qt::CaseInsensitive)) {
+                    if (fOmniSafeAddresses) {
+                        dest = DecodeOmniDestination(address);
+                        error_msg = "No valid Omni destination";
+                    } else {
+                        error_msg = "Omni safe addresses are disabled";
+                    }
+                } else {
+                    dest = DecodeDestination(address, error_msg);
+                }
 
                 if (!IsValidDestination(dest)) {
                     if (uri.hasQueryItem("r")) {  // payment request

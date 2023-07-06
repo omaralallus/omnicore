@@ -2,10 +2,13 @@
 
 #include <omnicore/createtx.h>
 #include <omnicore/parse_string.h>
+#include <omnicore/rules.h>
+#include <omnicore/script.h>
 #include <omnicore/walletutils.h>
 
 #include <base58.h>
 #include <core_io.h>
+#include <chainparams.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
 #include <primitives/transaction.h>
@@ -22,14 +25,44 @@
 #include <vector>
 
 using mastercore::StrToInt64;
+using mastercore::ConsensusParams;
+
+extern bool fOmniSafeAddresses;
+
+std::string ParseOmniAddress(const UniValue& value)
+{
+    const auto& address = value.get_str();
+    if (fOmniSafeAddresses && address.find(Params().Bech32HRP()) == 0)
+        throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY,
+                           "Omni address is required to send Omni tokens.\n"
+                           "You can loose your tokens if you send it to custodial wallet\n"
+                           "If you want to disable this warning, add cli parameter or "
+                           "config entry -omnisafeaddresses=0");
+
+    return ParseAddress(value);
+}
 
 std::string ParseAddress(const UniValue& value)
 {
-    CTxDestination address = DecodeDestination(value.get_str());
-    if (!IsValidDestination(address)) {
+    CTxDestination dest;
+    const auto& address = value.get_str();
+    if (address.find(ConsensusParams().GetBech32HRO()) == 0) {
+        dest = DecodeOmniDestination(address);
+    } else {
+        dest = DecodeDestination(address);
+    }
+    if (!IsValidDestination(dest)) {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
     }
-    return EncodeDestination(address);
+    return EncodeDestination(dest);
+}
+
+std::string ParseOmniAddressOrEmpty(const UniValue& value)
+{
+    if (value.isNull() || value.get_str().empty()) {
+        return "";
+    }
+    return ParseOmniAddress(value);
 }
 
 std::string ParseAddressOrEmpty(const UniValue& value)

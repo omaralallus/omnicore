@@ -67,11 +67,12 @@ using namespace mastercore;
 
 bool hideInactiveTrades = false;
 
-TradeHistoryDialog::TradeHistoryDialog(QWidget *parent) :
+TradeHistoryDialog::TradeHistoryDialog(const PlatformStyle *platformStyle, QWidget *parent) :
     QDialog(parent),
     ui(new Ui::tradeHistoryDialog),
     clientModel(nullptr),
-    walletModel(nullptr)
+    walletModel(nullptr),
+    platformStyle(platformStyle)
 {
     // Setup the UI
     ui->setupUi(this);
@@ -211,22 +212,19 @@ void TradeHistoryDialog::UpdateTradeHistoryTable(bool forceUpdate)
             QTableWidgetItem *amountInCell = new QTableWidgetItem(QString::fromStdString(objTH.amountIn));
             QTableWidgetItem *txidCell = new QTableWidgetItem(QString::fromStdString(txid.GetHex()));
             QTableWidgetItem *iconCell = new QTableWidgetItem;
-            QIcon ic = QIcon(":/icons/omni_meta_pending");
-            if (objTH.status == "Cancelled") ic =QIcon(":/icons/omni_meta_cancelled");
-            if (objTH.status == "Part Cancel") ic = QIcon(":/icons/omni_meta_partcancelled");
-            if (objTH.status == "Filled") ic = QIcon(":/icons/omni_meta_filled");
-            if (objTH.status == "Open") ic = QIcon(":/icons/omni_meta_open");
-            if (objTH.status == "Part Filled") ic = QIcon(":/icons/omni_meta_partfilled");
+            QIcon ic = QIcon(":/icons/meta_pending");
+            if (objTH.status == "Cancelled") ic =QIcon(":/icons/meta_cancelled");
+            if (objTH.status == "Part Cancel") ic = QIcon(":/icons/meta_partcancelled");
+            if (objTH.status == "Filled") ic = QIcon(":/icons/meta_filled");
+            if (objTH.status == "Open") ic = QIcon(":/icons/meta_open");
+            if (objTH.status == "Part Filled") ic = QIcon(":/icons/meta_partfilled");
             if (!objTH.valid) {
                 ic = QIcon(":/icons/transaction_conflicted");
                 objTH.status = "Invalid";
             }
-//            ic = platformStyle->SingleColorIcon(ic);
-            iconCell->setIcon(ic);
+            iconCell->setIcon(platformStyle->SingleColorIcon(ic));
             amountOutCell->setTextAlignment(Qt::AlignRight + Qt::AlignVCenter);
-            amountOutCell->setForeground(QColor("#EE0000"));
             amountInCell->setTextAlignment(Qt::AlignRight + Qt::AlignVCenter);
-            amountInCell->setForeground(QColor("#00AA00"));
             if (objTH.status == "Cancelled" || objTH.status == "Filled" || objTH.status == "Part Cancel" || !objTH.valid) {
                 // dull the colors for non-active trades
                 dateCell->setForeground(QColor("#707070"));
@@ -235,8 +233,6 @@ void TradeHistoryDialog::UpdateTradeHistoryTable(bool forceUpdate)
                 amountOutCell->setForeground(QColor("#993333"));
                 amountInCell->setForeground(QColor("#006600"));
             }
-            if(objTH.amountIn.substr(0,2) == "0 " || objTH.amountIn == "---" ) amountInCell->setForeground(QColor("#000000"));
-            if(objTH.amountOut.substr(0,2) == "0 " || objTH.amountOut == "---" ) amountOutCell->setForeground(QColor("#000000"));
 
             // Set the cells in the new row accordingly
             ui->tradeHistoryTable->setItem(newRow, 0, txidCell);
@@ -258,13 +254,6 @@ void TradeHistoryDialog::UpdateTradeHistoryTable(bool forceUpdate)
 // Used to cache trades so we don't need to reparse all our transactions on every update
 int TradeHistoryDialog::PopulateTradeHistoryMap()
 {
-    // TODO: locks may not be needed here -- looks like wallet lock can be removed
-    //if (NULL == pwalletMain) return -1;
-    TRY_LOCK(cs_main,lckMain);
-    if (!lckMain) return -1;
-    //TRY_LOCK(pwalletMain->cs_wallet, lckWallet);
-    //if (!lckWallet) return -1;
-
     int64_t nProcessed = 0; // number of new entries, forms return code
 
     // ### START PENDING TRANSACTIONS PROCESSING ###
@@ -295,11 +284,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
             objTH.amountIn = "---";
             objTH.amountOut = "---";
             objTH.info = "Sell ";
-            if (isPropertyDivisible(propertyId)) {
-                objTH.info += FormatDivisibleShortMP(amount) + getTokenLabel(propertyId) + " (awaiting confirmation)";
-            } else {
-                objTH.info += FormatIndivisibleMP(amount) + getTokenLabel(propertyId) + " (awaiting confirmation)";
-            }
+            objTH.info += FormatShortMP(propertyId, amount) + ' ' + getTokenLabel(propertyId) + " (awaiting confirmation)";
 
             // add the new TradeHistoryObject to the map
             tradeHistoryMap.insert(std::make_pair(txid, objTH));
@@ -320,10 +305,8 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
 
         // use levelDB to perform a fast check on whether it's a bitcoin or Omni tx and whether it's a trade
         std::string tempStrValue;
-        {
-            LOCK(cs_tally);
-            if (!pDbTransactionList->getTX(hash, tempStrValue)) continue;
-        }
+        if (!pDbTransactionList->getTX(hash, tempStrValue)) continue;
+
         std::vector<std::string> vstr;
         boost::split(vstr, tempStrValue, boost::is_any_of(":"), boost::token_compress_on);
         if (vstr.size() > 2) {
@@ -367,8 +350,6 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         uint32_t propertyIdDesired = 0;
         int64_t amountForSale = 0;
         int64_t amountDesired = 0;
-        bool divisibleForSale = false;
-        bool divisibleDesired = false;
         UniValue tradeArray(UniValue::VARR);
         int64_t totalReceived = 0;
         int64_t totalSold = 0;
@@ -381,10 +362,8 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
             valid = pDbTransactionList->getValidMPTX(hash);
             propertyIdForSale = mp_obj.getProperty();
             amountForSale = mp_obj.getAmount();
-            divisibleForSale = isPropertyDivisible(propertyIdForSale);
             CMPMetaDEx temp_metadexoffer(mp_obj);
             propertyIdDesired = temp_metadexoffer.getDesProperty();
-            divisibleDesired = isPropertyDivisible(propertyIdDesired);
             amountDesired = temp_metadexoffer.getAmountDesired();
             {
                 LOCK(cs_tally);
@@ -407,19 +386,20 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         if (!valid) statusText = "Invalid";
 
         // prepare display values
-        std::string displayText = "Sell ";
-        if (divisibleForSale) { displayText += FormatDivisibleShortMP(amountForSale); } else { displayText += FormatIndivisibleMP(amountForSale); }
-        displayText += getTokenLabel(propertyIdForSale) + " for ";
-        if (divisibleDesired) { displayText += FormatDivisibleShortMP(amountDesired); } else { displayText += FormatIndivisibleMP(amountDesired); }
-        displayText += getTokenLabel(propertyIdDesired);
-        std::string displayIn = "";
+        std::string displayText = "Sell "
+                                + FormatShortMP(propertyIdForSale, amountForSale) + ' '
+                                + getTokenLabel(propertyIdForSale)
+                                + " for "
+                                + FormatShortMP(propertyIdDesired, amountDesired) + ' '
+                                + getTokenLabel(propertyIdDesired);
+        std::string displayIn;
         std::string displayOut = "-";
-        if(divisibleDesired) { displayIn += FormatDivisibleShortMP(totalReceived); } else { displayIn += FormatIndivisibleMP(totalReceived); }
-        if(divisibleForSale) { displayOut += FormatDivisibleShortMP(totalSold); } else { displayOut += FormatIndivisibleMP(totalSold); }
-        if(totalReceived == 0) displayIn = "0";
-        if(totalSold == 0) displayOut = "0";
-        displayIn += getTokenLabel(propertyIdDesired);
-        displayOut += getTokenLabel(propertyIdForSale);
+        displayIn += FormatShortMP(propertyIdDesired, totalReceived);
+        displayOut += FormatShortMP(propertyIdForSale, totalSold);
+        if (totalReceived == 0) displayIn = "0";
+        if (totalSold == 0) displayOut = "0";
+        displayIn += ' ' + getTokenLabel(propertyIdDesired);
+        displayOut += ' ' + getTokenLabel(propertyIdForSale);
 
         // create a TradeHistoryObject and populate it
         TradeHistoryObject objTH;
@@ -492,14 +472,14 @@ void TradeHistoryDialog::UpdateData()
         if (!tmpObjTH->valid) { statusText = "Invalid"; ic = QIcon(":/icons/transaction_invalid"); }
 
         // format new amounts
-        std::string displayIn = "";
+        std::string displayIn;
         std::string displayOut = "-";
-        if (isPropertyDivisible(propertyIdDesired)) { displayIn += FormatDivisibleShortMP(totalReceived); } else { displayIn += FormatIndivisibleMP(totalReceived); }
-        if (isPropertyDivisible(propertyIdForSale)) { displayOut += FormatDivisibleShortMP(totalSold); } else { displayOut += FormatIndivisibleMP(totalSold); }
+        displayIn += FormatShortMP(propertyIdDesired, totalReceived);
+        displayOut += FormatShortMP(propertyIdForSale, totalSold);
         if (totalReceived == 0) displayIn = "0";
         if (totalSold == 0) displayOut = "0";
-        displayIn += getTokenLabel(propertyIdDesired);
-        displayOut += getTokenLabel(propertyIdForSale);
+        displayIn += ' ' + getTokenLabel(propertyIdDesired);
+        displayOut += ' ' + getTokenLabel(propertyIdForSale);
 
         // create and format replacement cells
         QTableWidgetItem *lastUpdateBlockCell = new QTableWidgetItem(QString::fromStdString(FormatIndivisibleMP(chainHeight)));
@@ -510,11 +490,9 @@ void TradeHistoryDialog::UpdateData()
         QTableWidgetItem *dateCell = new QTableWidgetItem;
         dateCell->setData(Qt::DisplayRole, ui->tradeHistoryTable->item(row, 3)->data(Qt::DisplayRole)); // values don't change so can be copied
         QTableWidgetItem *infoCell = new QTableWidgetItem(ui->tradeHistoryTable->item(row, 5)->text()); // as above
-        iconCell->setIcon(ic);
+        iconCell->setIcon(platformStyle->SingleColorIcon(ic));
         amountOutCell->setTextAlignment(Qt::AlignRight + Qt::AlignVCenter);
-        amountOutCell->setForeground(QColor("#EE0000"));
         amountInCell->setTextAlignment(Qt::AlignRight + Qt::AlignVCenter);
-        amountInCell->setForeground(QColor("#00AA00"));
         if (statusText == "Cancelled" || statusText == "Filled" || statusText == "Part Cancel" || statusText == "Invalid") {
             // dull the colors for non-active trades
             dateCell->setForeground(QColor("#707070"));
@@ -523,8 +501,6 @@ void TradeHistoryDialog::UpdateData()
             amountOutCell->setForeground(QColor("#993333"));
             amountInCell->setForeground(QColor("#006600"));
         }
-        if(displayIn.substr(0,2) == "0 ") amountInCell->setForeground(QColor("#000000"));
-        if(displayOut.substr(0,2) == "0 ") amountOutCell->setForeground(QColor("#000000"));
         // replace cells in row accordingly
         ui->tradeHistoryTable->setItem(row, 1, lastUpdateBlockCell);
         ui->tradeHistoryTable->setItem(row, 2, iconCell);

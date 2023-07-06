@@ -626,6 +626,7 @@ void SetupServerArgs(ArgsManager& argsman)
     argsman.AddArg("-omniuiwalletscope", "Max. transactions to show in trade and transaction history (default: 65535)", false, OptionsCategory::OMNI);
     argsman.AddArg("-omnishowblockconsensushash", "Calculate and log the consensus hash for the specified block", false, OptionsCategory::OMNI);
     argsman.AddArg("-omniuseragent", "Show Omni and Omni version in user agent string (default: 1)", false, OptionsCategory::OMNI);
+    argsman.AddArg("-omnisafeaddresses", "Enforce using of Omni safe address over segwit and taproot (default: 1)", false, OptionsCategory::OMNI);
 
 #if HAVE_DECL_FORK
     argsman.AddArg("-daemon", strprintf("Run in the background as a daemon and accept commands (default: %d)", DEFAULT_DAEMON), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);

@@ -3,12 +3,14 @@
 #include <omnicore/dbtradelist.h>
 #include <omnicore/log.h>
 #include <omnicore/mdex.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 
 #include <chain.h>
 #include <chainparams.h>
 #include <consensus/amount.h>
 #include <fs.h>
+#include <reverse_iterator.h>
 #include <uint256.h>
 #include <util/strencodings.h>
 #include <validation.h>
@@ -177,14 +179,14 @@ bool CMPTradeList::getMatchingTrades(const uint256& txid, uint32_t propertyId, U
             trade.pushKV("blocktime", pBlockIndex->GetBlockTime());
         }
         if (prop1 == propertyId) {
-            trade.pushKV("address", address1);
+            trade.pushKV("address", TryEncodeOmniAddress(address1));
             trade.pushKV("amountsold", strAmount1);
             trade.pushKV("amountreceived", strAmount2);
             trade.pushKV("tradingfee", strTradingFee);
             totalReceived += amount2;
             totalSold += amount1;
         } else {
-            trade.pushKV("address", address2);
+            trade.pushKV("address", TryEncodeOmniAddress(address2));
             trade.pushKV("amountsold", strAmount2PlusFee);
             trade.pushKV("amountreceived", strAmount1);
             trade.pushKV("tradingfee", FormatMP(prop1, 0)); // not the liquidity taker so no fee for this participant - include attribute for standardness
@@ -242,15 +244,10 @@ void CMPTradeList::getTradesForAddress(const std::string& address, std::vector<u
     }
 }
 
-static bool CompareTradePair(const std::pair<int64_t, UniValue>& firstJSONObj, const std::pair<int64_t, UniValue>& secondJSONObj)
-{
-    return firstJSONObj.first > secondJSONObj.first;
-}
-
 // obtains an array of matching trades with pricing and volume details for a pair sorted by blocknumber
 void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyIdSideB, UniValue& responseArray, uint64_t count)
 {
-    if (!pdb) return;
+    if (!pdb || !count) return;
     leveldb::Iterator* it = NewIterator();
     std::vector<std::pair<int64_t, UniValue> > vecResponse;
     bool propertyIdSideAIsDivisible = isPropertyDivisible(propertyIdSideA);
@@ -292,8 +289,14 @@ void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyI
 
         rational_t unitPrice(amountReceived, amountSold);
         rational_t inversePrice(amountSold, amountReceived);
-        if (!propertyIdSideAIsDivisible) unitPrice = unitPrice / COIN;
-        if (!propertyIdSideBIsDivisible) inversePrice = inversePrice / COIN;
+        if (propertyIdSideAIsDivisible && !propertyIdSideBIsDivisible) {
+            unitPrice *= COIN;
+            inversePrice /= COIN;
+        }
+        if (!propertyIdSideAIsDivisible && propertyIdSideBIsDivisible) {
+            unitPrice /= COIN;
+            inversePrice *= COIN;
+        }
         std::string unitPriceStr = xToString(unitPrice); // TODO: not here!
         std::string inversePriceStr = xToString(inversePrice);
 
@@ -307,38 +310,23 @@ void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyI
         trade.pushKV("unitprice", unitPriceStr);
         trade.pushKV("inverseprice", inversePriceStr);
         trade.pushKV("sellertxid", sellerTxid.GetHex());
-        trade.pushKV("selleraddress", sellerAddress);
-        if (propertyIdSideAIsDivisible) {
-            trade.pushKV("amountsold", FormatDivisibleMP(amountSold));
-        } else {
-            trade.pushKV("amountsold", FormatIndivisibleMP(amountSold));
-        }
-        if (propertyIdSideBIsDivisible) {
-            trade.pushKV("amountreceived", FormatDivisibleMP(amountReceived));
-        } else {
-            trade.pushKV("amountreceived", FormatIndivisibleMP(amountReceived));
-        }
+        trade.pushKV("selleraddress", TryEncodeOmniAddress(sellerAddress));
+        trade.pushKV("amountsold", FormatMP(propertyIdSideA, amountSold));
+        trade.pushKV("amountreceived", FormatMP(propertyIdSideB, amountReceived));
         trade.pushKV("matchingtxid", matchingTxid.GetHex());
-        trade.pushKV("matchingaddress", matchingAddress);
+        trade.pushKV("matchingaddress", TryEncodeOmniAddress(matchingAddress));
         vecResponse.push_back(std::make_pair(blockNum, trade));
     }
 
-    // sort the response most recent first before adding to the array
-    std::sort(vecResponse.begin(), vecResponse.end(), CompareTradePair);
-    uint64_t processed = 0;
-    for (std::vector<std::pair<int64_t, UniValue> >::iterator it = vecResponse.begin(); it != vecResponse.end(); ++it) {
-        responseArray.push_back(it->second);
-        processed++;
-        if (processed >= count) break;
+    std::sort(vecResponse.begin(), vecResponse.end(), [](auto& lhs, auto& rhs) {
+        return lhs.first > rhs.first;
+    });
+    if (vecResponse.size() > count) {
+        vecResponse.resize(count);
     }
-
-    std::vector<UniValue> responseArrayValues = responseArray.getValues();
-    std::reverse(responseArrayValues.begin(), responseArrayValues.end());
-    responseArray.clear();
-    for (std::vector<UniValue>::iterator it = responseArrayValues.begin(); it != responseArrayValues.end(); ++it) {
-        responseArray.push_back(*it);
+    for (auto& [_, value] : reverse_iterate(vecResponse)) {
+        responseArray.push_back(std::move(value));
     }
-
     delete it;
 }
 

@@ -9,6 +9,8 @@
 #include <qt/optionsmodel.h>
 #include <qt/walletmodel.h>
 
+#include <omnicore/omnicore.h>
+
 #include <clientversion.h>
 #include <interfaces/wallet.h>
 #include <key_io.h>
@@ -82,13 +84,25 @@ QVariant RecentRequestsTableModel::data(const QModelIndex &index, int role) cons
             {
                 return rec->recipient.message;
             }
-        case Amount:
+        case Amount: {
+            BitcoinUnit unit;
+            if (fOmniSafeAddresses) {
+                unit = rec->recipient.unit;
+            } else {
+                unit = walletModel->getOptionsModel()->getDisplayUnit();
+            }
+            QString str;
             if (rec->recipient.amount == 0 && role == Qt::DisplayRole)
                 return tr("(no amount requested)");
             else if (role == Qt::EditRole)
-                return BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), rec->recipient.amount, false, BitcoinUnits::SeparatorStyle::NEVER);
+                str += BitcoinUnits::format(unit, rec->recipient.amount, false, BitcoinUnits::SeparatorStyle::NEVER);
             else
-                return BitcoinUnits::format(walletModel->getOptionsModel()->getDisplayUnit(), rec->recipient.amount);
+                str += BitcoinUnits::format(unit, rec->recipient.amount);
+            if (fOmniSafeAddresses) {
+                str += QString(" ") + BitcoinUnits::shortName(unit);
+            }
+            return str;
+        }
         }
     }
     else if (role == Qt::TextAlignmentRole)
@@ -126,6 +140,9 @@ void RecentRequestsTableModel::updateAmountColumnTitle()
 /** Gets title for amount column including current display unit if optionsModel reference available. */
 QString RecentRequestsTableModel::getAmountTitle()
 {
+    if (fOmniSafeAddresses) {
+        return tr("Requested");
+    }
     if (!walletModel->getOptionsModel()) return {};
     return tr("Requested") +
            QLatin1String(" (") +

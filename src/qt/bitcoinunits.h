@@ -39,13 +39,11 @@ public:
     /** Bitcoin units.
       @note Source: https://en.bitcoin.it/wiki/Units . Please add only sensible ones
      */
-    enum class Unit {
-        BTC,
-        mBTC,
-        uBTC,
-        SAT
-    };
-    Q_ENUM(Unit)
+    using Unit = uint8_t;
+    static constexpr Unit BTC = 0;
+    static constexpr Unit mBTC = 1;
+    static constexpr Unit uBTC = 2;
+    static constexpr Unit SAT = 3;
 
     enum class SeparatorStyle
     {
@@ -93,6 +91,8 @@ public:
     };
     int rowCount(const QModelIndex &parent) const override;
     QVariant data(const QModelIndex &index, int role) const override;
+    bool canFetchMore(const QModelIndex &parent) const override;
+    void fetchMore(const QModelIndex &parent) override;
     ///@}
 
     static QString removeSpaces(QString text)
@@ -109,8 +109,5 @@ private:
     QList<Unit> unitlist;
 };
 typedef BitcoinUnits::Unit BitcoinUnit;
-
-QDataStream& operator<<(QDataStream& out, const BitcoinUnit& unit);
-QDataStream& operator>>(QDataStream& in, BitcoinUnit& unit);
 
 #endif // BITCOIN_QT_BITCOINUNITS_H

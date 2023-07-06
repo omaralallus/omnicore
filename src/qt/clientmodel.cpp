@@ -262,6 +262,29 @@ bool ClientModel::tryLockOmniBalanceChanged()
     return true;
 }
 
+void ClientModel::updateOmniState()
+{
+    lockedOmniStateChanged = false;
+    Q_EMIT refreshOmniState();
+}
+
+void ClientModel::updateOmniPending(bool pending)
+{
+    Q_EMIT refreshOmniPending(pending);
+}
+
+void ClientModel::updateOmniBalance()
+{
+    lockedOmniBalanceChanged = false;
+    Q_EMIT refreshOmniBalance();
+}
+
+void ClientModel::invalidateOmniState()
+{
+    Q_EMIT reinitOmniState();
+}
+
+
 static void OmniStateChanged(ClientModel *clientmodel)
 {
     // This will be triggered for each block that contains Omni layer transactions

@@ -17,6 +17,7 @@
 #include <omnicore/omnicore.h>
 #include <omnicore/parsing.h>
 #include <omnicore/pending.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/sto.h>
 #include <omnicore/tx.h>
@@ -119,7 +120,7 @@ int populateRPCTransactionObject(const CTransaction& tx, const uint256& blockHas
         if (populateRPCDExPurchases(tx, purchases, filterAddress, iWallet) <= 0) return -1;
         txobj.pushKV("txid", txid.GetHex());
         txobj.pushKV("type", "DEx Purchase");
-        txobj.pushKV("sendingaddress", tmpBuyer);
+        txobj.pushKV("sendingaddress", TryEncodeOmniAddress(tmpBuyer));
         txobj.pushKV("purchases", purchases);
         txobj.pushKV("blockhash", blockHash.GetHex());
         txobj.pushKV("blocktime", blockTime);
@@ -147,8 +148,9 @@ int populateRPCTransactionObject(const CTransaction& tx, const uint256& blockHas
     if (IsMyAddress(mp_obj.getSender(), iWallet) || IsMyAddress(mp_obj.getReceiver(), iWallet)) fMine = true;
     txobj.pushKV("txid", txid.GetHex());
     txobj.pushKV("fee", FormatDivisibleMP(mp_obj.getFeePaid()));
-    txobj.pushKV("sendingaddress", mp_obj.getSender());
-    if (showRefForTx(mp_obj.getType())) txobj.pushKV("referenceaddress", mp_obj.getReceiver());
+    txobj.pushKV("sendingaddress", TryEncodeOmniAddress(mp_obj.getSender()));
+    if (showRefForTx(mp_obj.getType()))
+        txobj.pushKV("referenceaddress", TryEncodeOmniAddress(mp_obj.getReceiver()));
     txobj.pushKV("ismine", fMine);
     txobj.pushKV("version", (uint64_t)mp_obj.getVersion());
     txobj.pushKV("type_int", (uint64_t)mp_obj.getType());
@@ -352,7 +354,7 @@ void populateRPCTypeSendToMany(CMPTransaction& omniObj, UniValue& txobj)
         if (valid) {
             UniValue outputEntry(UniValue::VOBJ);
             outputEntry.pushKV("output", output);
-            outputEntry.pushKV("address", destination);
+            outputEntry.pushKV("address", TryEncodeOmniAddress(destination));
             outputEntry.pushKV("amount", amount);
             outputValues.push_back(outputEntry);
         }
@@ -803,7 +805,7 @@ int populateRPCDExPurchases(const CTransaction& wtx, UniValue& purchases, std::s
         purchaseObj.pushKV("vout", vout);
         purchaseObj.pushKV("amountpaid", FormatDivisibleMP(amountPaid));
         purchaseObj.pushKV("ismine", bIsMine);
-        purchaseObj.pushKV("referenceaddress", seller);
+        purchaseObj.pushKV("referenceaddress", TryEncodeOmniAddress(seller));
         purchaseObj.pushKV("propertyid", propertyId);
         purchaseObj.pushKV("amountbought", FormatMP(propertyId, nValue));
         purchaseObj.pushKV("valid", true); //only valid purchases are stored, anything else is regular BTC tx

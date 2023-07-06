@@ -14,7 +14,7 @@ class NetworkStyle
 {
 public:
     /** Get style associated with provided network id, or 0 if not known */
-    static const NetworkStyle* instantiate(const std::string& networkId);
+    static const NetworkStyle& instance();
 
     const QString &getAppName() const { return appName; }
     const QIcon &getAppIcon() const { return appIcon; }

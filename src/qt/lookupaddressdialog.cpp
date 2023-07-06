@@ -9,6 +9,8 @@
 #include <qt/guiutil.h>
 
 #include <omnicore/omnicore.h>
+#include <omnicore/rules.h>
+#include <omnicore/script.h>
 #include <omnicore/sp.h>
 #include <omnicore/walletutils.h>
 
@@ -48,7 +50,7 @@ using std::ostringstream;
 using namespace mastercore;
 
 MPQRImageWidget::MPQRImageWidget(QWidget *parent):
-    QLabel(parent), contextMenu(0)
+    QLabel(parent), contextMenu(nullptr)
 {
     contextMenu = new QMenu();
     QAction *saveImageAction = new QAction(tr("&Save Image..."), this);
@@ -143,20 +145,23 @@ void LookupAddressDialog::searchAddress()
     // first let's check if we have a searchText, if not do nothing
     if (searchText.empty()) return;
 
+    searchText = TryDecodeOmniAddress(searchText);
     // lets see if the string is a valid bitcoin address
     CTxDestination address = DecodeDestination(searchText); // no null check on searchText required we've already checked it's not empty above
     if (IsValidDestination(address)) //do what?
     {
         // update top fields
-        ui->addressLabel->setText(QString::fromStdString(searchText));
+        QString addressToShow = TryEncodeOmniAddress(searchText).c_str();
+        ui->addressLabel->setText(addressToShow);
         if ((searchText.substr(0,1) == "1") || (searchText.substr(0,1) == "m") || (searchText.substr(0,1) == "n")) ui->addressTypeLabel->setText("Public Key Hash");
         if ((searchText.substr(0,1) == "2") || (searchText.substr(0,1) == "3")) ui->addressTypeLabel->setText("Pay to Script Hash");
+        if (addressToShow.startsWith(ConsensusParams().GetBech32HRO().c_str())) ui->addressTypeLabel->setText("Pay to Witness Script Hash");
         if (IsMyAddress(searchText, &walletModel->wallet())) { ui->isMineLabel->setText("Yes"); } else { ui->isMineLabel->setText("No"); }
         ui->balanceLabel->setText(QString::fromStdString(FormatDivisibleMP(GetAvailableTokenBalance(searchText, 1)) + " OMNI"));
         // QR
         #ifdef USE_QRCODE
         ui->QRCode->setText("");
-        QRcode *code = QRcode_encodeString(QString::fromStdString(searchText).toUtf8().constData(), 0, QR_ECLEVEL_L, QR_MODE_8, 1);
+        QRcode *code = QRcode_encodeString(addressToShow.toUtf8().constData(), 0, QR_ECLEVEL_L, QR_MODE_8, 1);
         if (!code)
         {
             ui->QRCode->setText(tr("Error encoding address into QR Code."));

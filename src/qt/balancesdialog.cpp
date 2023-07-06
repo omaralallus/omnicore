@@ -9,6 +9,7 @@
 
 #include <omnicore/omnicore.h>
 #include <omnicore/sp.h>
+#include <omnicore/script.h>
 #include <omnicore/tally.h>
 #include <omnicore/walletutils.h>
 
@@ -70,6 +71,7 @@ BalancesDialog::BalancesDialog(QWidget *parent) :
 
     // initial resizing
     ui->balancesTable->resizeColumnToContents(0);
+    ui->balancesTable->resizeColumnToContents(1);
     ui->balancesTable->resizeColumnToContents(2);
     ui->balancesTable->resizeColumnToContents(3);
     borrowedColumnResizingFixer->stretchColumnWidth(1);
@@ -186,17 +188,17 @@ void BalancesDialog::PopulateBalances(unsigned int propertyId)
 {
     ui->balancesTable->setRowCount(0); // fresh slate (note this will automatically cleanup all existing QWidgetItems in the table)
 
-    LOCK(cs_tally);
     //are we summary?
     if(propertyId==2147483646) {
         ui->balancesTable->setHorizontalHeaderItem(0, new QTableWidgetItem("Property ID"));
         ui->balancesTable->setHorizontalHeaderItem(1, new QTableWidgetItem("Property Name"));
 
+        LOCK(cs_tally);
         // loop over the wallet property list and add the wallet totals
         for (std::set<uint32_t>::iterator it = global_wallet_property_list.begin() ; it != global_wallet_property_list.end(); ++it) {
             uint32_t propertyId = *it;
             std::string spId = strprintf("%d", propertyId);
-            std::string spName = getPropertyName(propertyId).c_str();
+            std::string spName = getPropertyName(propertyId);
             std::string available = FormatMP(propertyId, global_balance_money[propertyId]);
             std::string reserved = FormatMP(propertyId, global_balance_reserved[propertyId]);
             AddRow(spId, spName, reserved, available);
@@ -206,53 +208,33 @@ void BalancesDialog::PopulateBalances(unsigned int propertyId)
         ui->balancesTable->setHorizontalHeaderItem(1, new QTableWidgetItem("Address"));
         bool propertyIsDivisible = isPropertyDivisible(propertyId); // only fetch the SP once, not for every address
 
+        auto walletAddresses = walletModel->wallet().getAddresses();
+        LOCK(cs_tally);
         // iterate mp_tally_map looking for addresses that hold a balance in propertyId
-        for(std::unordered_map<std::string, CMPTally>::iterator my_it = mp_tally_map.begin(); my_it != mp_tally_map.end(); ++my_it) {
-            const std::string& address = my_it->first;
-            CMPTally& tally = my_it->second;
-            tally.init();
-
-            uint32_t id;
-            bool watchAddress = false, includeAddress = false;
-            while (0 != (id = (tally.next()))) {
-                if (id == propertyId) {
-                    includeAddress = true;
-                    break;
-                }
-            }
-            if (!includeAddress) continue; //ignore this address, has never transacted in this propertyId
-
+        for (const auto& waddress : walletAddresses) {
+            auto address = EncodeDestination(waddress.dest);
+            auto my_it = mp_tally_map.find(address);
+            if (my_it == mp_tally_map.end()) continue;
+            const CMPTally& tally = my_it->second;
             // obtain the balances for the address directly form tally
-            int64_t available = tally.getMoney(propertyId, BALANCE);
-            available += tally.getMoney(propertyId, PENDING);
-            int64_t reserved = tally.getMoney(propertyId, SELLOFFER_RESERVE);
-            reserved += tally.getMoney(propertyId, ACCEPT_RESERVE);
-            reserved += tally.getMoney(propertyId, METADEX_RESERVE);
+            int64_t available = tally.getMoneyAvailable(propertyId);
+            int64_t reserved = tally.getMoneyReserved(propertyId);
+
+            if (!available && !reserved) continue;
 
             // format the balances
-            std::string reservedStr, availableStr;
-            if (propertyIsDivisible) {
-                reservedStr = FormatDivisibleMP(reserved);
-                availableStr = FormatDivisibleMP(available);
-            } else {
-                reservedStr = FormatIndivisibleMP(reserved);
-                availableStr = FormatIndivisibleMP(available);
-            }
+            auto reservedStr = FormatMP(propertyId, reserved);
+            auto availableStr = FormatMP(propertyId, available);
 
-            CTxDestination destination = DecodeDestination(address);
-            std::string name;
-            wallet::isminetype ismine;
-            walletModel->wallet().getAddress(destination, &name, &ismine, nullptr);
-            if (ismine != wallet::ISMINE_SPENDABLE) watchAddress = true;
+            auto addressToShow = TryEncodeOmniAddress(address);
+            auto watchAddress = !(waddress.is_mine & wallet::ISMINE_SPENDABLE);
+            if (watchAddress) addressToShow += " (watch-only)";
 
             // add the row
-            if (!watchAddress) {
-                AddRow(name, address, reservedStr, availableStr);
-            } else {
-                AddRow(name, address + " (watch-only)", reservedStr, availableStr);
-            }
+            AddRow(waddress.name, addressToShow, reservedStr, availableStr);
         }
     }
+    ui->balancesTable->resizeColumnToContents(1);
 }
 
 void BalancesDialog::propSelectorChanged()

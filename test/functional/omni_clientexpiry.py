@@ -4,8 +4,9 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test client expiry."""
 
+import shutil
 from test_framework.test_framework import BitcoinTestFramework
-from test_framework.util import assert_raises_rpc_error
+from test_framework.util import assert_raises
 
 class OmniClientExpiry(BitcoinTestFramework):
     def set_test_params(self):
@@ -31,8 +32,9 @@ class OmniClientExpiry(BitcoinTestFramework):
         # Sending an alert with client expiry version of 999999999
         self.nodes[0].omni_sendalert(address, 3, 999999999, "Client version out of date test.")
 
+        self.options.noshutdown = True
         # Generating a block should make the client shutdown
-        assert_raises_rpc_error(-1, "MP_persist", self.generatetoaddress, self.nodes[0], 10, coinbase_address)
+        assert_raises(ConnectionRefusedError, self.generatetoaddress, self.nodes[0], 10, coinbase_address)
 
 if __name__ == '__main__':
     # We expect the client to shutdown during this test, this will raise an AssertionError, if no

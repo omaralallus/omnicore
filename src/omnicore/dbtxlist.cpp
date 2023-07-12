@@ -1,4 +1,5 @@
 
+#include <cstdint>
 #include <omnicore/activation.h>
 #include <omnicore/convert.h>
 #include <omnicore/dbtxlist.h>
@@ -104,7 +105,7 @@ void CMPTxList::recordTX(const uint256 &txid, bool fValid, int nBlock, unsigned 
     // reorgs delete all txs from levelDB above reorg_chain_height
     int64_t old_value;
     CTxKey old_key, key{txid, nBlock, fValid, type};
-    if (getTX(txid, old_key, old_value) && (old_key != key || old_value != nValue)) {
+    if (getTX(txid, old_key, old_value) && (old_key == key && old_value == nValue)) {
         PrintToLog("LEVELDB TX OVERWRITE DETECTION - %s\n", txid.ToString());
     }
 
@@ -293,7 +294,7 @@ void CMPTxList::recordSendAllSubRecord(const uint256& txid, int nBlock, int subR
 uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
 {
     CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
-    return it.Valid() ? it.Value<CPaymentTxValue>().cancelTxId : uint256();
+    return it.ValueOr<CPaymentTxValue>().cancelTxId;
 }
 
 /**
@@ -302,7 +303,7 @@ uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
 int CMPTxList::getNumberOfSubRecords(const uint256& txid)
 {
     CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
-    if (it.Valid()) return it.Value<CPaymentTxKey>().payments;
+    if (it.Valid()) return it.Key<CPaymentTxKey>().payments;
     it.Seek(PartialKey<CSendAllTxKey>(txid));
     return it.Valid() ? it.Key<CSendAllTxKey>().num : 0;
 }
@@ -310,7 +311,7 @@ int CMPTxList::getNumberOfSubRecords(const uint256& txid)
 int CMPTxList::getNumberOfMetaDExCancels(const uint256& txid)
 {
     CDBaseIterator it{NewIterator(), PartialKey<CDexCancelTxKey>(txid)};
-    return it.Valid() ? it.Value<uint32_t>() : 0;
+    return it.ValueOr<uint32_t>(0);
 }
 
 bool CMPTxList::getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t* propertyId, uint64_t* nValue)
@@ -626,9 +627,10 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
 bool CMPTxList::CheckForFreezeTxs(int blockHeight)
 {
     CDBaseIterator tx_it{NewIterator()};
-    CDBaseIterator it{NewIterator(), PartialKey<CBlockTxKey>(uint32_t(blockHeight))};
-    for (; it; ++it) {
-        if (tx_it.Seek(PartialKey<CTxKey>(it.Key<CBlockTxKey>().txid)); !tx_it) continue;
+    for (CDBaseIterator it{NewIterator(), CBlockTxKey{}}; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (key.block < blockHeight) break;
+        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
         auto txtype = tx_it.Key<CTxKey>().type;
         if (txtype == MSC_TYPE_FREEZE_PROPERTY_TOKENS || txtype == MSC_TYPE_UNFREEZE_PROPERTY_TOKENS ||
             txtype == MSC_TYPE_ENABLE_FREEZING || txtype == MSC_TYPE_DISABLE_FREEZING) {
@@ -681,49 +683,58 @@ void CMPTxList::printAll()
 }
 
 template<typename T>
-bool DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const CBlockTxKey& key)
+bool DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const uint256& txid)
 {
     bool found = false;
-    for (it.Seek(PartialKey<T>(key.txid)); it; ++it) {
+    for (it.Seek(PartialKey<T>(txid)); it; ++it) {
         found = true;
         batch.Delete(it.Key());
     }
     return found;
 }
 
+void CMPTxList::deleteTransactions(const std::set<uint256>& txs, int block)
+{
+    leveldb::WriteBatch batch;
+    CDBaseIterator it{NewIterator()};
+    std::set<uint256> paymentTxs, cancelTxs;
+    for (it.Seek(CBlockTxKey{}); it; ++it) {
+        if (it.Key<CBlockTxKey>().block < block) break;
+        batch.Delete(it.Key());
+    }
+    for (auto& txid : txs) {
+        bool deleted = DeleteToBatch<CTxKey>(batch, it, txid) ||
+                       DeleteToBatch<CSendAllTxKey>(batch, it, txid) ||
+                       (DeleteToBatch<CPaymentTxKey>(batch, it, txid) &&
+                       paymentTxs.insert(txid).second) ||
+                       (DeleteToBatch<CDexCancelTxKey>(batch, it, txid) &&
+                       cancelTxs.insert(txid).second);
+        if (deleted) {
+            PrintToLog("%s() DELETING: %s\n", __func__, txid.ToString());
+        }
+    }
+    for (it.Seek(CPaymentTxKey{}); it && !cancelTxs.empty(); ++it) {
+        auto value = it.Value<CPaymentTxValue>();
+        // if both cancel and payment txs are reverted don't put back payment one
+        if (cancelTxs.erase(value.cancelTxId)
+        && !paymentTxs.count(it.Key<CPaymentTxKey>().txid)) {
+            value.cancelTxId.SetNull();
+            batch.Put(it.Key(), ValueToString(value));
+        }
+    }
+    WriteBatch(batch);
+}
+
 // figure out if there was at least 1 Master Protocol transaction within the block range, or a block if starting equals ending
 // block numbers are inclusive
-// pass in bDeleteFound = true to erase each entry found within the block range
-bool CMPTxList::isMPinBlockRange(int starting_block, int ending_block, bool bDeleteFound)
+bool CMPTxList::isMPinBlockRange(int starting_block, int ending_block)
 {
     unsigned int n_found = 0;
-    leveldb::WriteBatch batch;
-    CDBaseIterator tx_it{NewIterator()};
-    std::set<uint256> paymentTxs, cancelTxs;
     CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(ending_block)}};
     for (; it; ++it) {
         auto key = it.Key<CBlockTxKey>();
         if (key.block < starting_block) break;
-        if (bDeleteFound) {
-            DeleteToBatch<CTxKey>(batch, tx_it, key) ||
-            DeleteToBatch<CSendAllTxKey>(batch, tx_it, key) ||
-            (DeleteToBatch<CPaymentTxKey>(batch, tx_it, key) && paymentTxs.insert(key.txid).second) ||
-            (DeleteToBatch<CDexCancelTxKey>(batch, tx_it, key) && cancelTxs.insert(key.txid).second);
-            PrintToLog("%s() DELETING: %d=%s\n", __func__, key.block, key.txid.ToString());
-        }
         ++n_found;
-    }
-    if (bDeleteFound && n_found) {
-        for (it.Seek(CPaymentTxKey{}); it && !cancelTxs.empty(); ++it) {
-            auto value = it.Value<CPaymentTxValue>();
-            // if both cancel and payment txs are deleted don't put back payment one
-            if (cancelTxs.erase(value.cancelTxId)
-            && !paymentTxs.count(it.Key<CPaymentTxKey>().txid)) {
-                value.cancelTxId.SetNull();
-                batch.Put(it.Key(), ValueToString(value));
-            }
-        }
-        WriteBatch(batch);
     }
     PrintToLog("%s(%d, %d); n_found= %d\n", __func__, starting_block, ending_block, n_found);
     return (n_found);

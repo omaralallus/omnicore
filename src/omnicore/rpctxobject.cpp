@@ -80,6 +80,7 @@ int populateRPCTransactionObject(const CTransaction& tx, std::vector<PrevTxsEntr
     }
 
     const uint256& txid = tx.GetHash();
+    confirmations = 1 + GetHeight() - blockHeight;
 
     // DEx BTC payment needs special handling since it's not actually an Omni message - handle and return
     if (parseRC > 0) {

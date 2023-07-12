@@ -6,6 +6,7 @@
 #include <httpserver.h>
 #include <key_io.h>
 #include <rpc/server.h>
+#include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <script/descriptor.h>
 #include <validation.h>
@@ -698,6 +699,11 @@ static UniValue clearmempool(const JSONRPCRequest& request)
             + HelpExampleRpc("clearmempool", "")
         }
     ).Check(request);
+
+    auto& context = EnsureAnyNodeContext(request.context);
+    if (auto& mempool = context.mempool) {
+        mempool->clear();
+    }
 
     auto vtxid = ClearMempool();
     UniValue removed(UniValue::VARR);

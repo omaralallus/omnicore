@@ -33,6 +33,7 @@ class CMPTransaction
 private:
     uint256 txid;
     int block;
+    const CBlockIndex* pindex;
     int64_t blockTime;  // internally nTime is still an "unsigned int"
     unsigned int tx_idx;  // tx # within the block, 0-based
     uint64_t tx_fee_paid;
@@ -152,7 +153,7 @@ private:
     /**
      * Logic and "effects"
      */
-    int logicMath_SimpleSend(uint256& blockHash);
+    int logicMath_SimpleSend();
     int logicMath_SendToOwners();
     int logicMath_SendAll();
     int logicMath_SendNonFungible();
@@ -163,19 +164,19 @@ private:
     int logicMath_MetaDExCancelPrice();
     int logicMath_MetaDExCancelPair();
     int logicMath_MetaDExCancelEcosystem();
-    int logicMath_CreatePropertyFixed(const CBlockIndex *pindex);
-    int logicMath_CreatePropertyVariable(const CBlockIndex *pindex);
-    int logicMath_CloseCrowdsale(const CBlockIndex *pindex);
-    int logicMath_CreatePropertyManaged(const CBlockIndex* pindex);
-    int logicMath_GrantTokens(const CBlockIndex* pindex, uint256 &blockHash);
-    int logicMath_RevokeTokens(const CBlockIndex *pindex);
-    int logicMath_ChangeIssuer(const CBlockIndex *pindex);
-    int logicMath_EnableFreezing(const CBlockIndex *pindex);
-    int logicMath_DisableFreezing(const CBlockIndex *pindex);
-    int logicMath_FreezeTokens(const CBlockIndex *pindex);
-    int logicMath_UnfreezeTokens(const CBlockIndex *pindex);
-    int logicMath_AddDelegate(const CBlockIndex *pindex);
-    int logicMath_RemoveDelegate(const CBlockIndex *pindex);
+    int logicMath_CreatePropertyFixed();
+    int logicMath_CreatePropertyVariable();
+    int logicMath_CloseCrowdsale();
+    int logicMath_CreatePropertyManaged();
+    int logicMath_GrantTokens();
+    int logicMath_RevokeTokens();
+    int logicMath_ChangeIssuer();
+    int logicMath_EnableFreezing();
+    int logicMath_DisableFreezing();
+    int logicMath_FreezeTokens();
+    int logicMath_UnfreezeTokens();
+    int logicMath_AddDelegate();
+    int logicMath_RemoveDelegate();
     int logicMath_AnyData();
     int logicMath_NonFungibleData();
     int logicMath_Activation();
@@ -185,7 +186,7 @@ private:
     /**
      * Logic helpers
      */
-    int logicHelper_CrowdsaleParticipation(uint256& blockHash);
+    int logicHelper_CrowdsaleParticipation();
 
 public:
     //! DEx and MetaDEx action values
@@ -268,6 +269,7 @@ public:
     {
         txid.SetNull();
         block = -1;
+        pindex = nullptr;
         blockTime = 0;
         tx_idx = 0;
         tx_fee_paid = 0;

@@ -1,6 +1,7 @@
 #ifndef BITCOIN_OMNICORE_DBTXLIST_H
 #define BITCOIN_OMNICORE_DBTXLIST_H
 
+#include <cstdint>
 #include <omnicore/dbbase.h>
 #include <omnicore/nftdb.h>
 
@@ -29,6 +30,8 @@ public:
     void recordSendAllSubRecord(const uint256& txid, int nBlock, int subRecordNumber, uint32_t propertyId, int64_t nvalue);
     /** Records the range awarded in a grant applied to a non-fungible property. */
     void RecordNonFungibleGrant(const uint256 &txid, int64_t start, int64_t end);
+
+    void deleteTransactions(const std::set<uint256>& txs, int block);
 
     uint256 findMetaDExCancel(const uint256& txid);
     /** Returns the number of sub records. */
@@ -61,7 +64,7 @@ public:
     void printStats();
     void printAll();
 
-    bool isMPinBlockRange(int, int, bool);
+    bool isMPinBlockRange(int, int);
 };
 
 namespace mastercore

@@ -38,7 +38,7 @@
 using namespace mastercore;
 
 //! Number of "Dev Omni" of the last processed block (needed to save global state)
-extern int64_t exodus_prev;
+extern std::atomic<int64_t> exodus_prev;
 
 //! Path for file based persistence
 extern fs::path pathStateFiles;
@@ -534,7 +534,7 @@ int PersistInMemoryState(const CBlockIndex* pBlockIndex)
     // clean-up the directory
     prune_state_files(pBlockIndex);
 
-    pDbSpInfo->setWatermark(pBlockIndex->GetBlockHash());
+    pDbSpInfo->setWatermark(pBlockIndex->GetBlockHash(), pBlockIndex->nHeight);
 
     return 0;
 }
@@ -655,18 +655,17 @@ int RestoreInMemoryState(const std::string& filename, int what, bool verifyHash)
  */
 int LoadMostRelevantInMemoryState()
 {
-    int res = -1;
+    int block = -1;
     uint256 spWatermark;
     PrintToLog("Trying to load most relevant state into memory..\n");
     // check the SP database and roll it back to its latest valid state
     // according to the active chain
-    if (!pDbSpInfo->getWatermark(spWatermark)) {
+    if (!pDbSpInfo->getWatermark(spWatermark, block)) {
         // trigger a full reparse, if the SP database has no watermark
         PrintToLog("Failed to load historical state: SP database has no watermark\n");
         return -1;
     }
 
-    LOCK(cs_tally);
     for (int i = 0; i < NUM_FILETYPES; ++i) {
         auto fileName = strprintf("%s-%s.dat", statePrefix[i], spWatermark.ToString());
         fs::path path = pathStateFiles / fileName.c_str();
@@ -677,5 +676,5 @@ int LoadMostRelevantInMemoryState()
     }
 
     // return the height of the block we settled at
-    return res;
+    return block;
 }

@@ -61,6 +61,9 @@ bool StringToValue(const std::string_view& s, T& value)
 }
 
 template<typename T>
+constexpr bool convertibleToSV = std::is_convertible<std::decay_t<T>, std::string_view>::value;
+
+template<typename T, std::enable_if_t<!convertibleToSV<T>, int> = 0>
 std::string ValueToString(const T& value)
 {
     std::string s;
@@ -69,12 +72,12 @@ std::string ValueToString(const T& value)
     return s;
 }
 
-inline std::string ValueToString(const std::string& value)
+inline std::string_view ValueToString(std::string_view value)
 {
     return value;
 }
 
-template<typename T>
+template<typename T, std::enable_if_t<!convertibleToSV<T>, int> = 0>
 std::string KeyToString(const T& key)
 {
     std::string s;
@@ -84,20 +87,9 @@ std::string KeyToString(const T& key)
     return s;
 }
 
-inline std::string_view KeyToString(const std::string& key)
+inline std::string_view KeyToString(std::string_view key)
 {
     return key;
-}
-
-inline std::string_view KeyToString(const std::string_view& key)
-{
-    return key;
-}
-
-template<size_t N>
-std::string_view KeyToString(const char (&key)[N])
-{
-    return {key, N > 0 && key[N - 1] == '\0' ? N - 1 : N};
 }
 
 template<typename T>
@@ -199,10 +191,10 @@ protected:
         return Delete(KeyToString(key));
     }
 
-    bool Write(const std::string_view& key, const std::string& value)
+    bool Write(const std::string_view& key, const std::string_view& value)
     {
         assert(pdb);
-        return pdb->Put(writeoptions, {key.data(), key.size()}, value).ok();
+        return pdb->Put(writeoptions, {key.data(), key.size()}, {value.data(), value.size()}).ok();
     }
 
     bool Read(const std::string_view& key, std::string& value) const
@@ -271,14 +263,20 @@ CPartialKey PartialKey(Args&&... args)
 class CDBaseIterator
 {
 private:
+    bool valid = false;
     CPartialKey partialKey;
     std::unique_ptr<leveldb::Iterator> it;
+
+    void SetValid()
+    {
+        valid = it->Valid() && it->key().starts_with(partialKey);
+    }
 
 public:
     explicit CDBaseIterator(std::unique_ptr<leveldb::Iterator> i, const std::string_view& first = {}) : it(std::move(i))
     {
         assert(it);
-        first.empty() ? it->SeekToFirst() : Seek(first);
+        Seek(first);
     }
 
     template<typename T>
@@ -288,10 +286,10 @@ public:
         Seek(key);
     }
 
-    explicit CDBaseIterator(std::unique_ptr<leveldb::Iterator> i, CPartialKey key) : partialKey(std::move(key)), it(std::move(i))
+    explicit CDBaseIterator(std::unique_ptr<leveldb::Iterator> i, CPartialKey key) : it(std::move(i))
     {
         assert(it);
-        it->Seek(partialKey);
+        Seek(std::move(key));
     }
 
     CDBaseIterator(CDBaseIterator&&) = default;
@@ -301,12 +299,14 @@ public:
     {
         partialKey = CPartialKey{};
         it->Seek({key.data(), key.size()});
+        SetValid();
     }
 
     void Seek(CPartialKey key)
     {
         partialKey = std::move(key);
         it->Seek(partialKey);
+        SetValid();
     }
 
     template<typename T>
@@ -314,12 +314,14 @@ public:
     {
         partialKey = CPartialKey{T::prefix};
         it->Seek(KeyToString(key));
+        SetValid();
     }
 
     CDBaseIterator& operator++()
     {
         assert(Valid());
         it->Next();
+        SetValid();
         return *this;
     }
 
@@ -327,17 +329,18 @@ public:
     {
         assert(Valid());
         it->Prev();
+        SetValid();
         return *this;
     }
 
     operator bool() const
     {
-        return Valid();
+        return valid;
     }
 
     bool Valid() const
     {
-        return it->Valid() && it->key().starts_with(partialKey);
+        return valid;
     }
 
     leveldb::Slice Key() const
@@ -374,6 +377,12 @@ public:
     {
         T value;
         return Value(value) ? value : T{};
+    }
+
+    template<typename T>
+    T ValueOr(T default_ = {}) const
+    {
+        return Valid() ? Value<T>() : default_;
     }
 };
 

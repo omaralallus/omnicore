@@ -10,6 +10,7 @@
 #include <omnicore/rules.h>
 #include <omnicore/sp.h>
 #include <omnicore/sto.h>
+#include <omnicore/utilsbitcoin.h>
 
 #include <validation.h>
 
@@ -85,19 +86,14 @@ int64_t COmniFeeCache::GetCachedAmount(const uint32_t &propertyId)
 {
     // Get the fee history, set is sorted by block so first entry is most recent
     CDBaseIterator it{NewIterator(), PartialKey<CCacheAmountKey>(propertyId)};
-    return it.Valid() ? it.Value<int64_t>() : 0;
+    return it.ValueOr<int64_t>(0);
 }
 
 // Zeros a property in the fee cache
 void COmniFeeCache::ClearCache(const uint32_t &propertyId, int block)
 {
     if (msc_debug_fees) PrintToLog("ClearCache starting (block %d, property ID %d)...\n", block, propertyId);
-    bool status = Delete(CCacheAmountKey{propertyId, uint32_t(block)});
-    ++nWritten;
-
-    PruneCache(propertyId, block);
-
-    if (msc_debug_fees) PrintToLog("Cleared cache for property %d block %d [%s]\n", propertyId, block, status ? "OK" : "NOK");
+    PruneCache(propertyId, block + 1);
 }
 
 // Adds a fee to the cache (eg on a completed trade)
@@ -114,12 +110,7 @@ void COmniFeeCache::AddFee(const uint32_t &propertyId, int block, const int64_t 
         // overflow - there is no way the fee cache should exceed the maximum possible number of tokens, not safe to continue
         const std::string& msg = strprintf("Shutting down due to fee cache overflow (block %d property %d current %d amount %d)\n", block, propertyId, currentCachedAmount, amount);
         PrintToLog(msg);
-        if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-            fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
-            if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-            BlockValidationState state;
-            AbortNode(state, msg);
-        }
+        MayAbortNode(msg);
     }
     int64_t newCachedAmount = currentCachedAmount + amount;
 
@@ -147,11 +138,11 @@ void COmniFeeCache::RollBackCache(int block)
         uint32_t startPropertyId = (ecosystem == 1) ? 1 : TEST_ECO_PROPERTY_1;
         auto lastPropertyId = mastercore::pDbSpInfo->peekNextSPID(ecosystem);
         for (uint32_t propertyId = startPropertyId; propertyId < lastPropertyId; propertyId++) {
-            for (it.Seek(CCacheAmountKey{propertyId, startBlock}); it; --it) {
+            for (it.Seek(PartialKey<CCacheAmountKey>(propertyId)); it; ++it) {
                 auto key = it.Key<CCacheAmountKey>();
-                if (key.propertyId != propertyId) break;
+                if (key.block < startBlock) break;
                 batch.Delete(it.Key());
-                PrintToLog("Rolling back fee cache for property %d [%s])\n", propertyId);
+                PrintToLog("Rolling back fee cache for property %d [block: %d])\n", propertyId, key.block);
             }
         }
     }
@@ -215,12 +206,14 @@ void COmniFeeCache::PruneCache(const uint32_t &propertyId, int block)
     if (msc_debug_fees) PrintToLog("Starting PruneCache for prop %d block %d...\n", propertyId, block);
 
     leveldb::WriteBatch batch;
-    uint32_t pruneBlock = block + 1; // prune all lower than
+    uint32_t pruneBlock = block - 1; // prune all lower than
     if (msc_debug_fees) PrintToLog("Removing entries prior to block %d...\n", pruneBlock);
     CDBaseIterator it{NewIterator(), CCacheAmountKey{propertyId, pruneBlock}};
     for (; it; ++it) {
-        if (it.Key<CCacheAmountKey>().propertyId != propertyId) break;
+        auto key = it.Key<CCacheAmountKey>();
+        if (key.propertyId != propertyId) break;
         batch.Delete(it.Key());
+        if (msc_debug_fees) PrintToLog("%s: delete entry block: %d\n", __func__, key.block);
     }
     if (batch.ApproximateSize() == 0) {
         if (msc_debug_fees) PrintToLog("Ending PruneCache - no matured entries found.\n");
@@ -308,8 +301,8 @@ struct CDistributionPropertyKey {
     uint32_t id = 0;
 
     SERIALIZE_METHODS(CDistributionPropertyKey, obj) {
-        READWRITE(obj.propertyId);
-        READWRITE(obj.id);
+        READWRITE(VARINT(obj.propertyId));
+        READWRITE(VARINT(obj.id));
     }
 };
 
@@ -371,19 +364,14 @@ bool COmniFeeHistory::GetDistributionData(int id, uint32_t *propertyId, int *blo
 std::set<feeHistoryItem> COmniFeeHistory::GetFeeDistribution(int id)
 {
     CDBaseIterator it{NewIterator(), PartialKey<CDistributionKey>(uint32_t(id))};
-    if (!it) return {};
-    auto key = it.Key<CDistributionKey>();
-    return it.Value<std::set<feeHistoryItem>>();
+    return it.ValueOr<std::set<feeHistoryItem>>();
 }
 
 // Record a fee distribution
 void COmniFeeHistory::RecordFeeDistribution(const uint32_t &propertyId, int block, int64_t total, const std::set<feeHistoryItem>& feeRecipients)
 {
-    uint32_t id = 1;
     CDBaseIterator it{NewIterator(), CDistributionKey{}};
-    if (it) {
-        id = it.Value<CDistributionKey>().id + 1;
-    }
+    auto id = it.ValueOr<CDistributionKey>({0}).id + 1;
     bool status = Write(CDistributionPropertyKey{propertyId, id}, "")
         && Write(CDistributionKey{id, uint32_t(block), propertyId, total}, feeRecipients);
     if (msc_debug_fees) PrintToLog("Added fee distribution to feeCacheHistory - key=%d, property=%d, block=%d, total=%d, [%s]\n", id, propertyId, block, total, status ? "OK" : "NOK");

@@ -246,13 +246,13 @@ TestingSetup::TestingSetup(const std::string& chainName, const std::vector<const
     std::tie(status, error) = VerifyLoadedChainstate(*Assert(m_node.chainman), options);
     assert(status == node::ChainstateLoadStatus::SUCCESS);
 
+    // initialize Omni after chainstate
+    mastercore_init(m_node);
+
     BlockValidationState state;
     if (!m_node.chainman->ActiveChainstate().ActivateBestChain(state)) {
         throw std::runtime_error(strprintf("ActivateBestChain failed. (%s)", state.ToString()));
     }
-
-    // initialize Omni after chainstate
-    mastercore_init(m_node);
 
     m_node.netgroupman = std::make_unique<NetGroupManager>(/*asmap=*/std::vector<bool>());
     m_node.addrman = std::make_unique<AddrMan>(*m_node.netgroupman,

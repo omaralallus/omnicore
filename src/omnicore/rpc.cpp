@@ -154,7 +154,6 @@ void MetaDexObjectsToJSON(std::vector<CMPMetaDEx>& vMetaDexObjs, UniValue& respo
     for (std::vector<CMPMetaDEx>::const_iterator it = vMetaDexObjs.begin(); it != vMetaDexObjs.end(); ++it) {
         UniValue metadex_obj(UniValue::VOBJ);
         MetaDexObjectToJSON(*it, metadex_obj);
-
         response.push_back(metadex_obj);
     }
 }
@@ -907,7 +906,7 @@ static UniValue mscrpc(const JSONRPCRequest& request)
         }
         case 5:
         {
-            PrintToConsole("isMPinBlockRange(%d,%d)=%s\n", extra2, extra3, pDbTransactionList->isMPinBlockRange(extra2, extra3, false) ? "YES" : "NO");
+            PrintToConsole("isMPinBlockRange(%d,%d)=%s\n", extra2, extra3, pDbTransactionList->isMPinBlockRange(extra2, extra3) ? "YES" : "NO");
             break;
         }
         case 6:

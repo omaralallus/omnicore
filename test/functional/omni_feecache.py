@@ -386,6 +386,11 @@ class OmniFeeCache(BitcoinTestFramework):
         result = node.omni_getbalance(address, 6)
         assert_equal(result['balance'], "9999.95000000")
 
+        result = node.omni_getfeecache(3)
+        assert_equal(result[0]['cachedfees'], "6")
+        result = node.omni_getfeecache(6)
+        assert_equal(result[0]['cachedfees'], "0.00000000")
+
         # Rolling back the chain to test ability to roll back a distribution during reorg (disconnecting 1 block from tip and mining a replacement)
         block = node.getblockcount()
         blockhash = node.getblockhash(block)

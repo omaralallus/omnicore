@@ -190,38 +190,16 @@ uint32_t CMPSPInfo::peekNextSPID(uint8_t ecosystem) const
 struct CUpdatePropertyKey {
     static constexpr uint8_t prefix = 's';
     uint32_t propertyId;
+    uint32_t block = ~0u;
 
     SERIALIZE_METHODS(CUpdatePropertyKey, obj) {
-        READWRITE(obj.propertyId);
-    }
-};
-
-struct CDelegatePropertyKey {
-    static constexpr uint8_t prefix = 'd';
-    uint32_t propertyId;
-
-    SERIALIZE_METHODS(CDelegatePropertyKey, obj) {
-        READWRITE(obj.propertyId);
-    }
-};
-
-struct CUniquePropertyKey {
-    static constexpr uint8_t prefix = 'u';
-    uint32_t propertyId;
-
-    SERIALIZE_METHODS(CUniquePropertyKey, obj) {
-        READWRITE(obj.propertyId);
-    }
-};
-
-struct CHistoricalPropertyKey {
-    static constexpr uint8_t prefix = 'b';
-    const uint256& blockHash;
-    const uint32_t& propertyId;
-
-    SERIALIZE_METHODS(CHistoricalPropertyKey, obj) {
-        READWRITE(obj.blockHash);
-        READWRITE(obj.propertyId);
+        READWRITE(VARINT(obj.propertyId));
+        if constexpr (ser_action.ForRead()) {
+            READWRITE(obj.block);
+            obj.block = ~obj.block;
+        } else {
+            READWRITE(~obj.block);
+        }
     }
 };
 
@@ -234,17 +212,7 @@ struct CLookupTxKey {
     }
 };
 
-struct CDelegateValue {
-    CRef<std::string> delegate;
-    CRef<std::map<std::pair<int, int>, std::string>> historicalDelegates;
-
-    SERIALIZE_METHODS(CDelegateValue, obj) {
-        READWRITE(obj.delegate);
-        READWRITE(obj.historicalDelegates);
-    }
-};
-
-bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
+bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info, int block)
 {
     // cannot update implied SP
     if (OMNI_PROPERTY_MSC == propertyId || OMNI_PROPERTY_TMSC == propertyId) {
@@ -252,38 +220,23 @@ bool CMPSPInfo::updateSP(uint32_t propertyId, const Entry& info)
     }
 
     // DB key for property entry
-    auto sKey = KeyToString(CUpdatePropertyKey{propertyId});
+    auto sKey = KeyToString(CUpdatePropertyKey{propertyId, uint32_t(block)});
 
     // DB value for property entry
     auto sValue = ValueToString(info);
 
-    leveldb::WriteBatch batch;
-    std::string strSpPrevValue;
-
-    // if a value exists move it to the old key
-    if (Read(sKey, strSpPrevValue)) {
-        // DB key for historical property entry
-        auto slPrevKey = KeyToString(CHistoricalPropertyKey{info.update_block, propertyId});
-        batch.Put(slPrevKey, strSpPrevValue);
-    }
-    batch.Put(sKey, sValue);
-
-    // Update delegate info if set
-    if (!info.historicalDelegates.empty()) {
-        batch.Put(KeyToString(CDelegatePropertyKey{propertyId}), ValueToString(CDelegateValue{info.delegate, info.historicalDelegates}));
+    // sanity checking
+    std::string existingEntry;
+    if (Read(sKey, existingEntry) && sValue.compare(existingEntry) != 0) {
+        std::string strError = strprintf("writing SP %d to DB, when a different SP already exists for that identifier", propertyId);
+        PrintToLog("%s() ERROR: %s\n", __func__, strError);
     }
 
-    if (!WriteBatch(batch)) {
-        PrintToLog("%s(): ERROR for SP %d: NOK\n", __func__, propertyId);
-        return false;
-    }
-
-    PrintToLog("%s(): updated entry for SP %d successfully\n", __func__, propertyId);
-    return true;
+    return Write(sKey, sValue);
 }
 
 
-uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
+uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info, int block)
 {
     uint32_t propertyId = 0;
     switch (ecosystem) {
@@ -297,48 +250,9 @@ uint32_t CMPSPInfo::putSP(uint8_t ecosystem, const Entry& info)
             propertyId = 0;
     }
 
-    // DB key for property entry
-    auto sKey = KeyToString(CUpdatePropertyKey{propertyId});
+    updateSP(propertyId, info, block);
 
-    // DB value for property entry
-    auto sValue = ValueToString(info);
-
-    // DB key for identifier lookup entry
-    auto lKey = KeyToString(CLookupTxKey{info.txid});
-
-    // DB value for identifier
-    auto lValue = ValueToString(propertyId);
-
-    // sanity checking
-    std::string existingEntry;
-    if (Read(sKey, existingEntry) && sValue.compare(existingEntry) != 0) {
-        std::string strError = strprintf("writing SP %d to DB, when a different SP already exists for that identifier", propertyId);
-        PrintToLog("%s() ERROR: %s\n", __func__, strError);
-    } else if (Read(lKey, existingEntry) && lValue.compare(existingEntry) != 0) {
-        std::string strError = strprintf("writing index txid %s : SP %d is overwriting a different value", info.txid.ToString(), propertyId);
-        PrintToLog("%s() ERROR: %s\n", __func__, strError);
-    }
-
-    // Create and check unique field
-    auto uKey = KeyToString(CUniquePropertyKey{propertyId});
-    if (info.unique) {
-        // sanity checking
-        if (Read(uKey, existingEntry) && existingEntry != strprintf("%d", info.unique)) {
-            std::string strError = strprintf("writing SP %d unique field to DB, when a different SP already exists for that identifier", propertyId);
-            PrintToLog("%s() ERROR: %s\n", __func__, strError);
-        }
-    }
-
-    // atomically write both the the SP and the index to the database
-    leveldb::WriteBatch batch;
-    batch.Put(sKey, sValue);
-    batch.Put(lKey, lValue);
-
-    if (info.unique) {
-        batch.Put(uKey, ValueToString(info.unique));
-    }
-
-    if (!WriteBatch(batch)) {
+    if (!Write(CLookupTxKey{info.txid}, propertyId)) {
         PrintToLog("%s(): ERROR for SP %d: NOK\n", __func__, propertyId);
     }
 
@@ -357,21 +271,12 @@ bool CMPSPInfo::getSP(uint32_t propertyId, Entry& info) const
     }
 
     // DB value for property entry
-    if (!Read(CUpdatePropertyKey{propertyId}, info)) {
+    CDBaseIterator it{NewIterator(), PartialKey<CUpdatePropertyKey>(propertyId)};
+    auto status = it.Valid() && it.Value(info);
+    if (!status) {
         PrintToLog("%s(): ERROR for SP %d: not found\n", __func__, propertyId);
-        return false;
     }
-
-    // Check for unique entry
-    info.unique = Read(CUniquePropertyKey{propertyId}, info.unique) && info.unique;
-
-    // Check for delegate entry
-    if (!Read(CDelegatePropertyKey{propertyId}, CDelegateValue{info.delegate, info.historicalDelegates})) {
-        info.delegate.clear();
-        info.historicalDelegates.clear();
-    }
-
-    return true;
+    return status;
 }
 
 bool CMPSPInfo::hasSP(uint32_t propertyId) const
@@ -380,71 +285,60 @@ bool CMPSPInfo::hasSP(uint32_t propertyId) const
     if (OMNI_PROPERTY_MSC == propertyId || OMNI_PROPERTY_TMSC == propertyId) {
         return true;
     }
-
-    // DB key for property entry
-    auto sKey = KeyToString(CUpdatePropertyKey{propertyId});
-
-    // DB value for property entry
-    std::string strSpValue;
-    return Read(sKey, strSpValue);
+    Entry info;
+    return getSP(propertyId, info);
 }
 
 uint32_t CMPSPInfo::findSPByTX(const uint256& txid) const
 {
-    uint32_t propertyId = 0;
     // DB key for identifier lookup entry
+    uint32_t propertyId;
     return Read(CLookupTxKey{txid}, propertyId) ? propertyId : 0;
 }
 
-int64_t CMPSPInfo::popBlock(const uint256& block_hash)
+void CMPSPInfo::deleteSPAboveBlock(int block)
 {
-    int64_t remainingSPs = 0;
-    leveldb::WriteBatch commitBatch;
-    for (CDBaseIterator it{NewIterator(), CUniquePropertyKey{0}}; it; ++it) {
-        // deserialize the persisted value
-        Entry info;
-        if (!it.Value(info)) {
-            continue;
-        }
-        // pop the block
-        if (info.update_block == block_hash) {
-            // need to roll this SP back
-            if (info.update_block == info.creation_block) {
-                // this is the block that created this SP, so delete the SP and the tx index ent
-                commitBatch.Delete(it.Key());
-                commitBatch.Delete(KeyToString(CLookupTxKey{info.txid}));
-            } else {
-                auto propertyId = it.Key<CUniquePropertyKey>().propertyId;
-                auto hKey = KeyToString(CHistoricalPropertyKey{info.update_block, propertyId});
-                std::string strSpPrevValue;
-                if (Read(hKey, strSpPrevValue)) {
-                    // copy the prev state to the current state and delete the old state
-                    commitBatch.Put(it.Key(), strSpPrevValue);
-                    commitBatch.Delete(hKey);
-                    ++remainingSPs;
-                } else {
-                    continue;
+    leveldb::WriteBatch batch;
+    uint32_t startBlock = block;
+    CDBaseIterator it{NewIterator()};
+    for (uint8_t ecosystem = 1; ecosystem <= 2; ecosystem++) {
+        uint32_t startPropertyId = (ecosystem == 1) ? 1 : TEST_ECO_PROPERTY_1;
+        auto lastPropertyId = peekNextSPID(ecosystem);
+        for (uint32_t propertyId = startPropertyId; propertyId < lastPropertyId; propertyId++) {
+            for (it.Seek(PartialKey<CUpdatePropertyKey>(propertyId)); it; ++it) {
+                auto key = it.Key<CUpdatePropertyKey>();
+                if (key.block < startBlock) break;
+                auto info = it.Value<Entry>();
+                if (info.creation_block == info.update_block) {
+                    batch.Delete(KeyToString(CLookupTxKey{info.txid}));
                 }
+                batch.Delete(it.Key());
             }
-        } else {
-            ++remainingSPs;
         }
     }
-
-    WriteBatch(commitBatch);
-    return remainingSPs;
+    WriteBatch(batch);
 }
 
 static constexpr std::string_view wprefix = "B";
 
-void CMPSPInfo::setWatermark(const uint256& watermark)
+struct CWattermarkValue {
+    CRef<uint256> blockHash;
+    CRef<int> blockHeight;
+
+    SERIALIZE_METHODS(CWattermarkValue, obj) {
+        READWRITE(obj.blockHash);
+        READWRITE(obj.blockHeight);
+    }
+};
+
+void CMPSPInfo::setWatermark(const uint256& watermark, int block)
 {
-    Write(wprefix, watermark);
+    Write(wprefix, CWattermarkValue{watermark, block});
 }
 
-bool CMPSPInfo::getWatermark(uint256& watermark) const
+bool CMPSPInfo::getWatermark(uint256& watermark, int& block) const
 {
-    return Read(wprefix, watermark);
+    return Read(wprefix, CWattermarkValue{watermark, block});
 }
 
 void CMPSPInfo::printAll() const
@@ -460,12 +354,12 @@ void CMPSPInfo::printAll() const
         }
     }
 
-    for (CDBaseIterator it{NewIterator(), CUniquePropertyKey{0}}; it; ++it) {
-        auto propertyId = it.Key<CUniquePropertyKey>().propertyId;
+    for (CDBaseIterator it{NewIterator(), CLookupTxKey{{}}}; it; ++it) {
+        auto propertyId = it.Value<uint32_t>();
         PrintToConsole("%10s => ", propertyId);
         // deserialize the persisted data
         Entry info;
-        if (it.Value(info)) {
+        if (getSP(propertyId, info)) {
             info.print();
         }
     }

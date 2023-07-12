@@ -5,10 +5,13 @@
  */
 
 #include <omnicore/omnicore.h>
+#include <omnicore/validationinterface.h>
+#include <omnicore/utilsbitcoin.h>
 
 #include <chain.h>
 #include <chainparams.h>
-#include <validation.h>
+#include <stdexcept>
+#include <shutdown.h>
 #include <sync.h>
 
 #include <stdint.h>
@@ -16,6 +19,42 @@
 
 namespace mastercore
 {
+static const COmniValidationInterface& EnsureValidationInterface()
+{
+    if (omniValidationInterface) {
+        return *omniValidationInterface;
+    }
+    throw std::logic_error("COmniValidationInterface isn't initialized");
+}
+
+int GetHeight()
+{
+    return EnsureValidationInterface().LastBlockHeight();
+}
+
+const CChainIndex& GetActiveChain()
+{
+    return EnsureValidationInterface().GetActiveChain();
+}
+
+uint32_t GetLatestBlockTime()
+{
+    return EnsureValidationInterface().LastBlockTime();
+}
+
+bool IsInitialBlockDownload()
+{
+    return EnsureValidationInterface().IsInitialBlockDownload();
+}
+
+void MayAbortNode(const std::string& message)
+{
+    if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
+        fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
+        if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
+        AbortNode(message);
+    }
+}
 
 std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey)
 {

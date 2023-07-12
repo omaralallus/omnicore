@@ -135,12 +135,12 @@ int CMPSTOList::deleteAboveBlock(int blockNum)
 {
     leveldb::WriteBatch batch;
     unsigned int n_found = 0;
-    uint32_t block = blockNum;
     std::vector<std::string> vecSTORecords;
     CDBaseIterator tx_it{NewIterator()};
-    for (CDBaseIterator it{NewIterator(), CBlockTxKey{block}}; it; --it) {
-        batch.Delete(it.Key());
+    for (CDBaseIterator it{NewIterator(), CBlockTxKey{}}; it; ++it) {
         auto key = it.Key<CBlockTxKey>();
+        if (key.block < blockNum) break;
+        batch.Delete(it.Key());
         for (tx_it.Seek(PartialKey<CTxAddressKey>(Uint256(key.chash))); tx_it; ++tx_it) {
             auto tx_key = tx_it.Key<CTxAddressKey>();
             if (tx_key.block != key.block) continue;

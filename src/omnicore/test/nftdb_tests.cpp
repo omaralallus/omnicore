@@ -15,7 +15,6 @@ BOOST_FIXTURE_TEST_SUITE(omnicore_nftdb_tests, BasicTestingSetup)
 
 BOOST_AUTO_TEST_CASE(nftdb_test_sequence)
 {
-    LOCK(cs_tally);
     std::unique_ptr<CMPNonFungibleTokensDB> UITDb{new CMPNonFungibleTokensDB(gArgs.GetDataDirNet() / "OMNI_nftdb", true)};
 
     /* Test A:

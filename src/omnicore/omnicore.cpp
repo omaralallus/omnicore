@@ -108,11 +108,6 @@ static const int64_t all_reward = 5631623576222;
 //! Seconds per year used for Dev OMNI calculations
 static const double seconds_in_one_year = 31556926;
 
-static std::atomic_int nWaterlineBlock = 0;
-
-//! Last processed block
-static int lastProcessedBlock = 0;
-
 /**
  * Used to indicate, whether to automatically commit created transactions.
  *
@@ -121,15 +116,10 @@ static int lastProcessedBlock = 0;
 bool autoCommit = true;
 
 //! Number of "Dev Omni" of the last processed block
-int64_t exodus_prev = 0;
+std::atomic<int64_t> exodus_prev = 0;
 
 //! Path for file based persistence
 fs::path pathStateFiles;
-
-//! Flag to indicate whether there was a block reorganisatzion
-static int reorgRecoveryMode = 0;
-//! Block height to recover from after a block reorganization
-static int reorgRecoveryMaxHeight = 0;
 
 //! LevelDB based storage for currencies, smart properties and tokens
 CMPSPInfo* mastercore::pDbSpInfo;
@@ -388,7 +378,8 @@ void mastercore::disableFreezing(uint32_t propertyId)
 
 bool mastercore::isFreezingEnabled(uint32_t propertyId, int block)
 {
-    return setFreezingEnabledProperties.count(std::make_pair(propertyId, block));
+    auto it = setFreezingEnabledProperties.lower_bound(std::make_pair(propertyId, 0));
+    return it != setFreezingEnabledProperties.end() && it->first == propertyId && block >= it->second;
 }
 
 void mastercore::freezeAddress(const std::string& address, uint32_t propertyId)
@@ -556,7 +547,7 @@ static int64_t calculate_devmsc(unsigned int nTime)
  * @param nTime  The timestamp of the block to update the "Dev MSC" for
  * @return The number of "Dev MSC" generated
  */
-static int64_t calculate_and_update_devmsc(unsigned int nTime, int block)
+int64_t calculate_and_update_devmsc(unsigned int nTime, int block)
 {
     // Allow disable of Dev MSC for fee cache test on regtest only
     if (Params().NetworkIDString() == CBaseChainParams::REGTEST && gArgs.GetBoolArg("-disabledevmsc", false)) {
@@ -1349,175 +1340,6 @@ static bool HandleExodusPurchase(const CTransaction& tx, int nBlock, const std::
 }
 
 /**
- * Reports the progress of the initial transaction scanning.
- *
- * The progress is printed to the console, written to the debug log file, and
- * the RPC status, as well as the splash screen progress label, are updated.
- *
- * @see msc_initial_scan()
- */
-class ProgressReporter
-{
-private:
-    const CBlockIndex* m_pblockFirst;
-    const CBlockIndex* m_pblockLast;
-    const int64_t m_timeStart;
-
-    /** Returns the estimated remaining time in milliseconds. */
-    int64_t estimateRemainingTime(double progress) const
-    {
-        int64_t timeSinceStart = GetTimeMillis() - m_timeStart;
-
-        double timeRemaining = 3600000.0; // 1 hour
-        if (progress > 0.0 && timeSinceStart > 0) {
-            timeRemaining = (100.0 - progress) / progress * timeSinceStart;
-        }
-
-        return static_cast<int64_t>(timeRemaining);
-    }
-
-    /** Converts a time span to a human readable string. */
-    std::string remainingTimeAsString(int64_t remainingTime) const
-    {
-        int64_t secondsTotal = 0.001 * remainingTime;
-        int64_t hours = secondsTotal / 3600;
-        int64_t minutes = (secondsTotal / 60) % 60;
-        int64_t seconds = secondsTotal % 60;
-
-        if (hours > 0) {
-            return strprintf("%d:%02d:%02d hours", hours, minutes, seconds);
-        } else if (minutes > 0) {
-            return strprintf("%d:%02d minutes", minutes, seconds);
-        } else {
-            return strprintf("%d seconds", seconds);
-        }
-    }
-
-public:
-    ProgressReporter(const CBlockIndex* pblockFirst, const CBlockIndex* pblockLast)
-    : m_pblockFirst(pblockFirst), m_pblockLast(pblockLast), m_timeStart(GetTimeMillis())
-    {
-    }
-
-    /** Prints the current progress to the console and notifies the UI. */
-    void update(const CBlockIndex* pblockNow) const
-    {
-        int nLastBlock = m_pblockLast->nHeight;
-        int nCurrentBlock = pblockNow->nHeight;
-        unsigned int nFirst = m_pblockFirst->nChainTx;
-        unsigned int nCurrent = pblockNow->nChainTx;
-        unsigned int nLast = m_pblockLast->nChainTx;
-
-        double dProgress = 100.0 * (nCurrent - nFirst) / (nLast - nFirst);
-        int64_t nRemainingTime = estimateRemainingTime(dProgress);
-
-        std::string strProgress = strprintf(
-                "Still scanning.. at block %d of %d. Progress: %.2f %%, about %s remaining..\n",
-                nCurrentBlock, nLastBlock, dProgress, remainingTimeAsString(nRemainingTime));
-        std::string strProgressUI = strprintf(
-                "Still scanning.. at block %d of %d.\nProgress: %.2f %% (about %s remaining)",
-                nCurrentBlock, nLastBlock, dProgress, remainingTimeAsString(nRemainingTime));
-
-        PrintToConsole(strProgress);
-        uiInterface.InitMessage(strProgressUI);
-    }
-};
-
-int mastercore_handler_block_begin(int nBlockPrev, CBlockIndex const * pBlockIndex);
-bool mastercore_handler_tx(CCoinsViewCache& view, const CTransaction& tx, int nBlock, unsigned int idx, const CBlockIndex* pBlockIndex);
-int mastercore_handler_block_end(int nBlockNow, CBlockIndex const * pBlockIndex, unsigned int countMP);
-void mastercore_handler_disc_begin(const std::shared_ptr<const CBlock>& pblock, CBlockIndex const * pBlockIndex);
-
-/**
- * Scans the blockchain for meta transactions.
- *
- * It scans the blockchain, starting at the given block index, to the current
- * tip, much like as if new block were arriving and being processed on the fly.
- *
- * Every 30 seconds the progress of the scan is reported.
- *
- * In case the current block being processed is not part of the active chain, or
- * if a block could not be retrieved from the disk, then the scan stops early.
- * Likewise, global shutdown requests are honored, and stop the scan progress.
- *
- * @see mastercore_handler_block_begin()
- * @see mastercore_handler_tx()
- * @see mastercore_handler_block_end()
- *
- * @param nFirstBlock[in]  The index of the first block to scan
- * @return An exit code, indicating success or failure
- */
-static int msc_initial_scan(int nFirstBlock)
-{
-    int nTimeBetweenProgressReports = gArgs.GetIntArg("-omniprogressfrequency", 30);  // seconds
-    int64_t nNow = GetTime();
-    unsigned int nTxsTotal = 0;
-    unsigned int nTxsFoundTotal = 0;
-    int nBlock = 999999;
-    const int nLastBlock = GetHeight();
-
-    // this function is useless if there are not enough blocks in the blockchain yet!
-    if (nFirstBlock < 0 || nLastBlock < nFirstBlock) return -1;
-    PrintToConsole("Scanning for transactions in block %d to block %d..\n", nFirstBlock, nLastBlock);
-
-    const CBlockIndex* pFirstBlock = GetActiveChain()[nFirstBlock];
-    const CBlockIndex* pLastBlock = GetActiveChain()[nLastBlock];
-
-    ProgressReporter progressReporter(pFirstBlock, pLastBlock);
-
-    CCoinsViewCacheOnly view;
-    // check if using seed block filter should be disabled
-    bool seedBlockFilterEnabled = gArgs.GetBoolArg("-omniseedblockfilter", true);
-
-    for (nBlock = nFirstBlock; nBlock <= nLastBlock; ++nBlock)
-    {
-        if (ShutdownRequested()) {
-            PrintToLog("Shutdown requested, stop scan at block %d of %d\n", nBlock, nLastBlock);
-            break;
-        }
-
-        const CBlockIndex* pblockindex = GetActiveChain()[nBlock];
-
-        if (nullptr == pblockindex) break;
-        std::string strBlockHash = pblockindex->GetBlockHash().GetHex();
-
-        if (msc_debug_exo) PrintToLog("%s(%d; max=%d):%s, line %d, file: %s\n",
-            __func__, nBlock, nLastBlock, strBlockHash, __LINE__, __FILE__);
-
-        if (GetTime() >= nNow + nTimeBetweenProgressReports) {
-            progressReporter.update(pblockindex);
-            nNow = GetTime();
-        }
-
-        unsigned int nTxNum = 0;
-        unsigned int nTxsFoundInBlock = 0;
-        mastercore_handler_block_begin(nBlock, pblockindex);
-
-        if (!seedBlockFilterEnabled || !SkipBlock(nBlock)) {
-            CBlock block;
-            if (!node::ReadBlockFromDisk(block, pblockindex, Params().GetConsensus())) break;
-
-            for(const auto& tx : block.vtx) {
-                if (mastercore_handler_tx(view, *tx, nBlock, nTxNum, pblockindex)) ++nTxsFoundInBlock;
-                ++nTxNum;
-            }
-        }
-
-        nTxsFoundTotal += nTxsFoundInBlock;
-        nTxsTotal += nTxNum;
-        mastercore_handler_block_end(nBlock, pblockindex, nTxsFoundInBlock);
-    }
-
-    if (nBlock < nLastBlock) {
-        PrintToConsole("Scan stopped early at block %d of block %d\n", nBlock, nLastBlock);
-    }
-
-    PrintToConsole("%d new transactions processed, %d meta transactions found\n", nTxsTotal, nTxsFoundTotal);
-
-    return 0;
-}
-
-/**
  * Clears the state of the system.
  */
 void clear_all_state()
@@ -1551,288 +1373,6 @@ void clear_all_state()
     exodus_prev = 0;
 }
 
-std::set<uint256> txsToDelete;
-std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexToDelete;
-std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>> spentIndexToUdpdate;
-std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> addressUnspentIndexToUpdate;
-
-void RewindDBsAndState(int nHeight, int nBlockPrev = 0, bool fInitialParse = false)
-{
-    int nWaterline;
-    bool reorgContainsFreeze;
-    {
-        LOCK(cs_tally);
-        // Check if any freeze related transactions would be rolled back - if so wipe the state and startclean
-        reorgContainsFreeze = pDbTransactionList->CheckForFreezeTxs(nHeight);
-
-        // NOTE: The blockNum parameter is inclusive, so deleteAboveBlock(1000) will delete records in block 1000 and above.
-        pDbTransactionList->isMPinBlockRange(nHeight, reorgRecoveryMaxHeight, true);
-        pDbTradeList->deleteAboveBlock(nHeight);
-        pDbStoList->deleteAboveBlock(nHeight);
-        pDbFeeCache->RollBackCache(nHeight);
-        pDbFeeHistory->RollBackHistory(nHeight);
-        pDbNFT->RollBackAboveBlock(nHeight);
-        pDbTransaction->DeleteTransactions(txsToDelete);
-        txsToDelete.clear();
-        if (fAddressIndex) {
-            pDbAddress->UpdateSpentIndex(spentIndexToUdpdate);
-            spentIndexToUdpdate.clear();
-            pDbAddress->EraseAddressIndex(addressIndexToDelete);
-            addressIndexToDelete.clear();
-            pDbAddress->UpdateAddressUnspentIndex(addressUnspentIndexToUpdate);
-            addressUnspentIndexToUpdate.clear();
-        }
-        reorgRecoveryMaxHeight = 0;
-
-        nWaterline = ConsensusParams().GENESIS_BLOCK - 1;
-    }
-
-    if (reorgContainsFreeze && !fInitialParse) {
-       PrintToConsole("Reorganization containing freeze related transactions detected, forcing a reparse...\n");
-       clear_all_state(); // unable to reorg freezes safely, clear state and reparse
-    } else {
-        int best_state_block = LoadMostRelevantInMemoryState();
-        if (best_state_block < 0) {
-            // unable to recover easily, remove stale stale state bits and reparse from the beginning.
-            clear_all_state();
-        } else {
-            nWaterline = best_state_block;
-        }
-    }
-
-    {
-        LOCK(cs_tally);
-        // clear the global wallet property list, perform a forced wallet update and tell the UI that state is no longer valid, and UI views need to be reinit
-        global_wallet_property_list.clear();
-        CheckWalletUpdate();
-        uiInterface.OmniStateInvalidated();
-        nWaterlineBlock = nWaterline;
-    }
-
-    if (nWaterline < nBlockPrev) {
-        // scan from the block after the best active block to catch up to the active chain
-        msc_initial_scan(nWaterline + 1);
-    }
-}
-
-class COmniValidationInterface : public CValidationInterface {
-    static CChainIndex chain;
-    static std::atomic_bool initialBlockDownload;
-    static std::atomic_uint32_t lastBlockTime;
-    static std::atomic_int lastBlockHeight;
-public:
-    /**
-     * Notifies listeners when the block chain tip advances.
-     *
-     * When multiple blocks are connected at once, UpdatedBlockTip will be called on the final tip
-     * but may not be called on every intermediate tip. If the latter behavior is desired,
-     * subscribe to BlockConnected() instead.
-     *
-     * Called on a background thread.
-     */
-    void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *, bool fInitialDownload) override
-    {
-        chain.SetTip(pindexNew);
-        lastBlockTime = pindexNew->nTime;
-        lastBlockHeight = pindexNew->nHeight;
-        initialBlockDownload = fInitialDownload;
-    }
-    /**
-     * Notifies listeners of a transaction having been added to mempool.
-     *
-     * Called on a background thread.
-     */
-    void TransactionAddedToMempool(const CTransactionRef& tx, uint64_t mempool_sequence) override
-    {
-        AddTransactionToMempool(tx, mempool_sequence);
-    }
-    /**
-     * Notifies listeners of a transaction leaving mempool.
-     * - TransactionRemovedFromMempool(tx1 from block A)
-     * - TransactionRemovedFromMempool(tx2 from block A)
-     * - TransactionRemovedFromMempool(tx1 from block B)
-     * - TransactionRemovedFromMempool(tx2 from block B)
-     * - BlockConnected(A)
-     * - BlockConnected(B)
-     *
-     * Called on a background thread.
-     */
-    void TransactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason, uint64_t mempool_sequence) override
-    {
-        RemoveTransactionFromMempool(tx, mempool_sequence);
-    }
-    /**
-     * Notifies listeners of a block being connected.
-     * Called on a background thread.
-     */
-    void BlockConnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex *pindex) override
-    {
-        PrintToLog("%s: Omni Core handler: height: %d\n", __func__, pindex->nHeight);
-        mastercore_handler_block_begin(pindex->nHeight - 1, pindex);
-
-        CCoinsViewCacheOnly view;
-
-        //! transaction position within the block
-        unsigned int nTxIdx = 0;
-
-        //! number of meta transactions found
-        unsigned int nNumMetaTxs = 0;
-
-        for (auto& tx : block->vtx) {
-            //! Omni Core: new confirmed transaction notification
-            if (mastercore_handler_tx(view, *tx, pindex->nHeight, nTxIdx, pindex)){
-                PrintToLog("%s: new confirmed transaction [height: %d, idx: %u]\n", __func__, pindex->nHeight, nTxIdx);
-                ++nNumMetaTxs;
-            }
-            ++nTxIdx;
-        }
-
-        //! Omni Core: end of block connect notification
-        if (nNumMetaTxs)
-            PrintToLog("%s: block connect end [new height: %d, found: %u txs]\n", __func__, pindex->nHeight, nNumMetaTxs);
-
-        mastercore_handler_block_end(pindex->nHeight, pindex, nNumMetaTxs);
-
-        if (fAddressIndex) {
-            std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndex;
-            std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> addressUnspentIndex;
-            std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>> spentIndex;
-
-            for (unsigned int i = 0; i < block->vtx.size(); i++) {
-                const CTransaction &tx = *(block->vtx[i]);
-                for (unsigned int j = 0; j < tx.vin.size(); j++) {
-                    const CTxIn& input = tx.vin[j];
-                    const CTxOut& prevout = view.GetOutputFor(input);
-
-                    if (auto result = ScriptToUint(prevout.scriptPubKey)) {
-                        auto& [index, address] = *result;
-                        addressIndex.emplace_back(CAddressIndexKey{index, address, pindex->nHeight, i, tx.GetHash(), j, true}, prevout.nValue * -1);
-
-                        // remove address from unspent index
-                        addressUnspentIndex.emplace_back(CAddressUnspentKey{index, address, input.prevout.hash, input.prevout.n}, CAddressUnspentValue{});
-                        spentIndex.emplace_back(CSpentIndexKey{input.prevout.hash, input.prevout.n}, CSpentIndexValue{tx.GetHash(), j, pindex->nHeight, prevout.nValue, index, address});
-                    }
-                }
-
-                for (unsigned int k = 0; k < tx.vout.size(); k++) {
-                    const CTxOut &out = tx.vout[k];
-                    const bool isTxCoinBase = tx.IsCoinBase();
-
-                    if (auto result = ScriptToUint(out.scriptPubKey)) {
-                        auto& [index, address] = *result;
-                        // record receiving activity
-                        addressIndex.emplace_back(CAddressIndexKey{index, address, pindex->nHeight, i, tx.GetHash(), k}, out.nValue);
-                        // record unspent output
-                        addressUnspentIndex.emplace_back(CAddressUnspentKey{index, address, tx.GetHash(), k}, CAddressUnspentValue{out.nValue, out.scriptPubKey, pindex->nHeight, isTxCoinBase});
-                    }
-                }
-            }
-
-            if (!pDbAddress->WriteAddressIndex(addressIndex))
-                PrintToLog("%s: Failed to write address index\n", __func__);
-
-            if (!pDbAddress->UpdateAddressUnspentIndex(addressUnspentIndex))
-                PrintToLog("%s: Failed to write address unspent index\n", __func__);
-
-            if (!pDbAddress->UpdateSpentIndex(spentIndex))
-                PrintToLog("%s: Failed to write transaction index\n", __func__);
-
-            unsigned int logicalTS = pindex->nTime;
-            unsigned int prevLogicalTS = 0;
-
-            // retrieve logical timestamp of the previous block
-            if (pindex->pprev && !pDbAddress->ReadTimestampBlockIndex(pindex->pprev->GetBlockHash(), prevLogicalTS))
-                PrintToLog("%s: Failed to read previous block's logical timestamp\n", __func__);
-
-            if (logicalTS <= prevLogicalTS) {
-                logicalTS = prevLogicalTS + 1;
-                PrintToLog("%s: Previous logical timestamp is newer Actual[%d] prevLogical[%d] Logical[%d]\n", __func__, pindex->nTime, prevLogicalTS, logicalTS);
-            }
-
-            if (!pDbAddress->WriteTimestampIndex(CTimestampIndexKey{logicalTS, pindex->GetBlockHash()}))
-                PrintToLog("%s: Failed to write timestamp index\n", __func__);
-
-            if (!pDbAddress->WriteTimestampBlockIndex(pindex->GetBlockHash(), logicalTS))
-                PrintToLog("%s: Failed to write blockhash index\n", __func__);
-        }
-
-        for (auto& tx : block->vtx)
-            RemoveTransactionFromMempool(tx, 0);
-    }
-    /**
-     * Notifies listeners of a block being disconnected
-     *
-     * Called on a background thread.
-     */
-    void BlockDisconnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override
-    {
-        //! Omni Core: begin block disconnect notification
-        PrintToLog("%s Omni Core handler: height: %d\n", __func__, pindex->nHeight);
-        mastercore_handler_disc_begin(block, pindex);
-    }
-    /**
-     * Notifies listeners of the new active block chain on-disk.
-     *
-     * Called on a background thread.
-     */
-    void ChainStateFlushed(const CBlockLocator&) override {}
-    /**
-     * Notifies listeners of a block validation result.
-     * If the provided BlockValidationState IsValid, the provided block
-     * is guaranteed to be the current best block at the time the
-     * callback was generated (not necessarily now)
-     */
-    void BlockChecked(const CBlock&, const BlockValidationState&) override {}
-    /**
-     * Notifies listeners that a block which builds directly on our current tip
-     * has been received and connected to the headers tree, though not validated yet */
-    void NewPoWValidBlock(const CBlockIndex*, const std::shared_ptr<const CBlock>&) override {}
-
-    template <typename T>
-    static T LoadRelaxed(const std::atomic<T>& value) { return value.load(std::memory_order_relaxed); }
-    static bool IsInitialBlockDownload() { return LoadRelaxed(initialBlockDownload); }
-    static uint32_t LastBlockTime() { return LoadRelaxed(lastBlockTime); }
-    static int LastBlockHeight() { return LoadRelaxed(lastBlockHeight); }
-    static CChainIndex& ActiveChain() { return chain; }
-};
-
-bool IsInitialBlockDownload()
-{
-    return COmniValidationInterface::IsInitialBlockDownload();
-}
-
-namespace mastercore {
-/**
- * @return The current chain length.
- */
-int GetHeight()
-{
-    return COmniValidationInterface::LastBlockHeight();
-}
-
-const CChainIndex& GetActiveChain()
-{
-    return COmniValidationInterface::ActiveChain();
-}
-
-/**
- * @return The timestamp of the latest block.
- */
-uint32_t GetLatestBlockTime()
-{
-    if (auto lastBlockTime = COmniValidationInterface::LastBlockTime()) {
-        return lastBlockTime;
-    }
-    return Params().GenesisBlock().nTime;
-}
-
-}
-
-CChainIndex COmniValidationInterface::chain;
-std::atomic_int COmniValidationInterface::lastBlockHeight = 0;
-std::atomic_uint32_t COmniValidationInterface::lastBlockTime = 0;
-std::atomic_bool COmniValidationInterface::initialBlockDownload = false;
-
 /**
  * Global handler to initialize Omni Core.
  *
@@ -1840,129 +1380,120 @@ std::atomic_bool COmniValidationInterface::initialBlockDownload = false;
  */
 int mastercore_init(node::NodeContext& node)
 {
-    bool wrongDBVersion, startClean = false;
+    LOCK(cs_tally);
 
-    {
-        LOCK(cs_tally);
+    PrintToConsole("Initializing Omni Core v%s [%s]\n", OmniCoreVersion(), Params().NetworkIDString());
+    PrintToLog("\nInitializing Omni Core v%s [%s]\n", OmniCoreVersion(), Params().NetworkIDString());
+    PrintToLog("Startup time: %s\n", FormatISO8601DateTime(GetTime()));
 
-        PrintToConsole("Initializing Omni Core v%s [%s]\n", OmniCoreVersion(), Params().NetworkIDString());
+    InitDebugLogLevels();
+    ShrinkDebugLog();
 
-        PrintToLog("\nInitializing Omni Core v%s [%s]\n", OmniCoreVersion(), Params().NetworkIDString());
-        PrintToLog("Startup time: %s\n", FormatISO8601DateTime(GetTime()));
-
-        InitDebugLogLevels();
-        ShrinkDebugLog();
-
-        if (isNonMainNet()) {
-            exodus_address = exodus_testnet;
-        }
-
-        // check for --autocommit option and set transaction commit flag accordingly
-        if (!gArgs.GetBoolArg("-autocommit", true)) {
-            PrintToLog("Process was started with --autocommit set to false. "
-                    "Created Omni transactions will not be committed to wallet or broadcast.\n");
-            autoCommit = false;
-        }
-
-        bool fWipe = node::fReindex;
-        const auto& data_dir = gArgs.GetDataDirNet();
-        // check for --startclean option and delete MP_ folders if present
-        if (gArgs.GetBoolArg("-startclean", false)) {
-            PrintToLog("Process was started with --startclean option, attempting to clear persistence files..\n");
-            try {
-                fs::path persistPath = data_dir / "MP_persist";
-                if (fs::exists(persistPath)) fs::remove_all(persistPath);
-                fWipe = startClean = true;
-            } catch (const fs::filesystem_error& e) {
-                PrintToLog("Failed to delete persistence folders: %s\n", e.what());
-                PrintToConsole("Failed to delete persistence folders: %s\n", e.what());
-            }
-        }
-
-        pDbTradeList = new CMPTradeList(data_dir / "MP_tradelist", fWipe);
-        pDbStoList = new CMPSTOList(data_dir / "MP_stolist", fWipe);
-        pDbTransactionList = new CMPTxList(data_dir / "MP_txlist", fWipe);
-        pDbSpInfo = new CMPSPInfo(data_dir / "MP_spinfo", fWipe);
-        pDbTransaction = new COmniTransactionDB(data_dir / "Omni_TXDB", fWipe);
-        pDbFeeCache = new COmniFeeCache(data_dir / "OMNI_feecache", fWipe);
-        pDbFeeHistory = new COmniFeeHistory(data_dir / "OMNI_feehistory", fWipe);
-        pDbNFT = new CMPNonFungibleTokensDB(data_dir / "OMNI_nftdb", fWipe);
-        pDbAddress = new COmniAddressDB(data_dir / "OMNI_addressindex", fWipe);
-
-        pathStateFiles = data_dir / "MP_persist";
-        TryCreateDirectories(pathStateFiles);
-
-        bool fAddressIndex;
-        if (!pDbAddress->ReadFlag("addressindex", fAddressIndex)) {
-            fAddressIndex = gArgs.GetBoolArg("-experimental-btc-balances", DEFAULT_ADDRINDEX);
-            pDbAddress->WriteFlag("addressindex", fAddressIndex);
-        }
-
-        if (fAddressIndex != gArgs.GetBoolArg("-experimental-btc-balances", DEFAULT_ADDRINDEX)) {
-            PrintToConsole("You need to rebuild the database using -reindex-chainstate to change -experimental-btc-balances\n");
-        }
-        wrongDBVersion = (pDbTransactionList->getDBVersion() != DB_VERSION);
+    if (isNonMainNet()) {
+        exodus_address = exodus_testnet;
     }
 
-    int nWaterline = LoadMostRelevantInMemoryState();
-
-    if (!startClean && nWaterline > 0 && nWaterline < GetHeight()) {
-        RewindDBsAndState(nWaterline + 1, 0, true);
+    // check for --autocommit option and set transaction commit flag accordingly
+    if (!gArgs.GetBoolArg("-autocommit", true)) {
+        PrintToLog("Process was started with --autocommit set to false. "
+                   "Created Omni transactions will not be committed to wallet or broadcast.\n");
+        autoCommit = false;
     }
 
-    {
-        LOCK(cs_tally);
-        nWaterlineBlock = nWaterline;
-
-        bool noPreviousState = (nWaterlineBlock <= 0);
-
-        if (startClean) {
-            assert(pDbTransactionList->setDBVersion() == DB_VERSION); // new set of databases, set DB version
-        } else if (wrongDBVersion) {
-            nWaterlineBlock = -1; // force a clear_all_state and parse from start
+    bool startClean = false;
+    bool fWipe = node::fReindex;
+    const auto& data_dir = gArgs.GetDataDirNet();
+    // check for --startclean option and delete MP_ folders if present
+    if (gArgs.GetBoolArg("-startclean", false)) {
+        PrintToLog("Process was started with --startclean option, attempting to clear persistence files..\n");
+        try {
+            fs::path persistPath = data_dir / "MP_persist";
+            if (fs::exists(persistPath)) fs::remove_all(persistPath);
+            fWipe = startClean = true;
+        } catch (const fs::filesystem_error& e) {
+            PrintToLog("Failed to delete persistence folders: %s\n", e.what());
+            PrintToConsole("Failed to delete persistence folders: %s\n", e.what());
         }
+    }
 
-        // consistency check
-        bool inconsistentDb = !VerifyTransactionExistence(nWaterlineBlock);
-        if (inconsistentDb) {
-            nWaterlineBlock = -1; // force a clear_all_state and parse from start
-        }
+    pDbTradeList = new CMPTradeList(data_dir / "MP_tradelist", fWipe);
+    pDbStoList = new CMPSTOList(data_dir / "MP_stolist", fWipe);
+    pDbTransactionList = new CMPTxList(data_dir / "MP_txlist", fWipe);
+    pDbSpInfo = new CMPSPInfo(data_dir / "MP_spinfo", fWipe);
+    pDbTransaction = new COmniTransactionDB(data_dir / "Omni_TXDB", fWipe);
+    pDbFeeCache = new COmniFeeCache(data_dir / "OMNI_feecache", fWipe);
+    pDbFeeHistory = new COmniFeeHistory(data_dir / "OMNI_feehistory", fWipe);
+    pDbNFT = new CMPNonFungibleTokensDB(data_dir / "OMNI_nftdb", fWipe);
+    pDbAddress = new COmniAddressDB(data_dir / "OMNI_addressindex", fWipe);
 
-        if (nWaterlineBlock > 0) {
-            PrintToConsole("Loading persistent state: OK [block %d]\n", nWaterlineBlock);
-        } else {
-            std::string strReason = "unknown";
-            if (wrongDBVersion) strReason = "client version changed";
-            if (noPreviousState) strReason = "no usable previous state found";
-            if (startClean) strReason = "-startclean parameter used";
-            if (inconsistentDb) strReason = "INCONSISTENT DB DETECTED!\n"
-                    "\n!!! WARNING !!!\n\n"
-                    "IF YOU ARE USING AN OVERLAY DB, YOU MAY NEED TO REPROCESS\n"
-                    "ALL OMNI LAYER TRANSACTIONS TO AVOID INCONSISTENCIES!\n"
-                    "\n!!! WARNING !!!";
-            PrintToConsole("Loading persistent state: NONE (%s)\n", strReason);
-        }
+    pathStateFiles = data_dir / "MP_persist";
+    TryCreateDirectories(pathStateFiles);
 
-        if (nWaterlineBlock < 0) {
-            // persistence says we reparse!, nuke some stuff in case the partial loads left stale bits
-            clear_all_state();
-        }
+    if (!pDbAddress->ReadFlag("addressindex", fAddressIndex)) {
+        fAddressIndex = gArgs.GetBoolArg("-experimental-btc-balances", DEFAULT_ADDRINDEX);
+        pDbAddress->WriteFlag("addressindex", fAddressIndex);
+    }
 
-        if (inconsistentDb) {
-            std::string strAlert("INCONSISTENT DB DETECTED! IF YOU ARE USING AN OVERLAY DB, YOU MAY NEED TO REPROCESS"
-                    "ALL OMNI LAYER TRANSACTIONS TO AVOID INCONSISTENCIES!");
-            AddAlert("omnicore", ALERT_CLIENT_VERSION_EXPIRY, std::numeric_limits<uint32_t>::max(), strAlert);
-            DoWarning({strAlert, strAlert});
-        }
+    if (fAddressIndex != gArgs.GetBoolArg("-experimental-btc-balances", DEFAULT_ADDRINDEX)) {
+        PrintToConsole("You need to rebuild the database using -reindex-chainstate to change -experimental-btc-balances\n");
+    }
 
-        // legacy code, setting to pre-genesis-block
-        int snapshotHeight = ConsensusParams().GENESIS_BLOCK - 1;
+    // db version isn't set
+    if (startClean || pDbTransactionList->getDBVersion() == 0) {
+        assert(pDbTransactionList->setDBVersion() == DB_VERSION); // new set of databases, set DB version
+    }
 
-        if (nWaterlineBlock < snapshotHeight) {
-            nWaterlineBlock = snapshotHeight;
-            exodus_prev = 0;
-        }
+    auto wrongDBVersion = pDbTransactionList->setDBVersion() != DB_VERSION;
+    int nWaterlineBlock = wrongDBVersion ? -1 : LoadMostRelevantInMemoryState();
+    bool noPreviousState = (nWaterlineBlock <= 0);
 
+    // consistency check
+    bool inconsistentDb = !VerifyTransactionExistence(nWaterlineBlock);
+    if (inconsistentDb || wrongDBVersion || noPreviousState) {
+        nWaterlineBlock = -1; // force a clear_all_state and parse from start
+    }
+
+    if (nWaterlineBlock > 0) {
+        PrintToConsole("Loading persistent state: OK [block %d]\n", nWaterlineBlock);
+    } else {
+        std::string strReason = "unknown";
+        if (wrongDBVersion) strReason = "client version changed";
+        if (noPreviousState) strReason = "no usable previous state found";
+        if (startClean) strReason = "-startclean parameter used";
+        if (inconsistentDb) strReason = "INCONSISTENT DB DETECTED!\n"
+                                        "\n!!! WARNING !!!\n\n"
+                                        "IF YOU ARE USING AN OVERLAY DB, YOU MAY NEED TO REPROCESS\n"
+                                        "ALL OMNI LAYER TRANSACTIONS TO AVOID INCONSISTENCIES!\n"
+                                        "\n!!! WARNING !!!";
+        PrintToConsole("Loading persistent state: NONE (%s)\n", strReason);
+    }
+
+    if (inconsistentDb) {
+        std::string strAlert("INCONSISTENT DB DETECTED! IF YOU ARE USING AN OVERLAY DB, YOU MAY NEED TO REPROCESS"
+                             "ALL OMNI LAYER TRANSACTIONS TO AVOID INCONSISTENCIES!");
+        AddAlert("omnicore", ALERT_CLIENT_VERSION_EXPIRY, std::numeric_limits<uint32_t>::max(), strAlert);
+        DoWarning({strAlert, strAlert});
+    }
+
+    if (nWaterlineBlock < 0) {
+        // persistence says we reparse!, nuke some stuff in case the partial loads left stale bits
+        clear_all_state();
+    }
+
+    auto tip = node.chainman->ActiveChainstate().m_chain.Tip();
+    omniValidationInterface = std::make_shared<COmniValidationInterface>();
+
+    // empty blockchain or prior last record
+    if (!tip || tip->nHeight < nWaterlineBlock) {
+        clear_all_state();
+        nWaterlineBlock = -1;
+    }
+
+    if (tip) {
+        omniValidationInterface->Init(tip, nWaterlineBlock);
+    }
+
+    if (nWaterlineBlock >= ConsensusParams().GENESIS_BLOCK - 1) {
         // advance the waterline so that we start on the next unaccounted for block
         nWaterlineBlock += 1;
 
@@ -1972,10 +1503,7 @@ int mastercore_init(node::NodeContext& node)
             int64_t exodus_balance = GetTokenBalance(exodus_address, OMNI_PROPERTY_MSC, BALANCE);
             PrintToLog("Exodus balance at start: %s\n", FormatDivisibleMP(exodus_balance));
         }
-    }
 
-    {
-        LOCK(cs_tally);
         // load feature activation messages from txlistdb and process them accordingly
         pDbTransactionList->LoadActivations(nWaterlineBlock);
 
@@ -1986,31 +1514,17 @@ int mastercore_init(node::NodeContext& node)
         if (!pDbTransactionList->LoadFreezeState(nWaterlineBlock)) {
             std::string strShutdownReason = "Failed to load freeze state from levelDB.  It is unsafe to continue.\n";
             PrintToLog(strShutdownReason);
-            if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-                BlockValidationState state;
-                AbortNode(state, strShutdownReason);
-            }
+            MayAbortNode(strShutdownReason);
         }
 
-        nWaterline = nWaterlineBlock;
-    }
-
-    COmniValidationInterface::ActiveChain().SetTip(node.chainman->ActiveChainstate().m_chain.Tip());
-
-    // initial scan
-    msc_initial_scan(nWaterline);
-
-    {
-        LOCK(cs_tally);
         // display Exodus balance
         int64_t exodus_balance = GetTokenBalance(exodus_address, OMNI_PROPERTY_MSC, BALANCE);
-
         PrintToLog("Exodus balance after initialization: %s\n", FormatDivisibleMP(exodus_balance));
     }
 
     fOmniSafeAddresses = gArgs.GetBoolArg("-omnisafeaddresses", MainNet());
 
-    RegisterSharedValidationInterface(std::make_shared<COmniValidationInterface>());
+    RegisterSharedValidationInterface(omniValidationInterface);
 
     PrintToConsole("Omni Core initialization completed\n");
 
@@ -2034,11 +1548,12 @@ int mastercore_init(node::NodeContext& node)
  */
 int mastercore_shutdown()
 {
-    if (lastProcessedBlock > 0) {
-        if (auto blockIndex = GetActiveChain()[lastProcessedBlock]) {
+    if (omniValidationInterface) {
+        auto blockIndex = GetActiveChain().Tip();
+        if (blockIndex && blockIndex->nHeight > ConsensusParams().GENESIS_BLOCK) {
             PersistInMemoryState(blockIndex);
         }
-        lastProcessedBlock = 0;
+        omniValidationInterface.reset();
     }
     if (pDbTransactionList) {
         delete pDbTransactionList;
@@ -2088,7 +1603,7 @@ int mastercore_shutdown()
 }
 
 namespace mastercore {
-    extern std::atomic_bool pendingAdded;
+extern std::atomic_bool pendingAdded;
 }
 
 /**
@@ -2096,12 +1611,9 @@ namespace mastercore {
  *
  * @return True, if the transaction was an Exodus purchase, DEx payment or a valid Omni transaction
  */
-bool mastercore_handler_tx(CCoinsViewCache& view, const CTransaction& tx, int nBlock, unsigned int idx, const CBlockIndex* pBlockIndex)
+bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned int idx, const CBlockIndex* pBlockIndex)
 {
-    // we do not care about parsing blocks prior to our waterline (empty blockchain defense)
-    if (nBlock < nWaterlineBlock) return false;
-
-    if (pendingAdded.exchange(false, std::memory_order_consume)) {
+    if (pendingAdded.load(std::memory_order_consume)) {
         // clear pending, if any
         // NOTE1: Every incoming TX is checked, not just MP-ones because:
         // if for some reason the incoming TX doesn't pass our parser validation steps successfully, I'd still want to clear pending amounts for that TX.
@@ -2109,6 +1621,7 @@ bool mastercore_handler_tx(CCoinsViewCache& view, const CTransaction& tx, int nB
         PendingDelete(tx.GetHash());
     }
 
+    int nBlock = pBlockIndex->nHeight;
     int64_t nBlockTime = pBlockIndex->GetBlockTime();
     CMPTransaction mp_obj;
     mp_obj.unlockLogic();
@@ -2174,172 +1687,6 @@ bool mastercore::UseEncodingClassC(size_t nDataSize)
         fDataEnabled = false;
     }
     return nTotalSize <= nMaxDatacarrierBytes && fDataEnabled;
-}
-
-int mastercore_handler_block_begin(int nBlockPrev, CBlockIndex const * pBlockIndex)
-{
-    bool bRecoveryMode{false};
-    {
-        LOCK(cs_tally);
-
-        if (reorgRecoveryMode > 0) {
-            reorgRecoveryMode = 0; // clear reorgRecovery here as this is likely re-entrant
-            bRecoveryMode = true;
-        }
-    }
-
-    if (bRecoveryMode) {
-        RewindDBsAndState(pBlockIndex->nHeight, nBlockPrev);
-    }
-
-    {
-        LOCK(cs_tally);
-
-        // handle any features that go live with this block
-        CheckLiveActivations(pBlockIndex->nHeight);
-
-        eraseExpiredCrowdsale(pBlockIndex);
-    }
-
-    return 0;
-}
-
-// called once per block, after the block has been processed
-// TODO: consolidate into *handler_block_begin() << need to adjust Accept expiry check.............
-// it performs cleanup and other functions
-int mastercore_handler_block_end(int nBlockNow, CBlockIndex const * pBlockIndex, unsigned int countMP)
-{
-    LOCK(cs_tally);
-
-    // for every new received block must do:
-    // 1) remove expired entries from the accept list (per spec accept entries are
-    //    valid until their blocklimit expiration; because the customer can keep
-    //    paying BTC for the offer in several installments)
-    // 2) update the amount in the Exodus address
-    int64_t devmsc = 0;
-    unsigned int how_many_erased = eraseExpiredAccepts(nBlockNow);
-
-    if (how_many_erased) {
-        PrintToLog("%s(%d); erased %u accepts this block, line %d, file: %s\n",
-                    __func__, how_many_erased, nBlockNow, __LINE__, __FILE__);
-    }
-
-    // calculate devmsc as of this block and update the Exodus' balance
-    devmsc = calculate_and_update_devmsc(pBlockIndex->GetBlockTime(), nBlockNow);
-
-    if (msc_debug_exo) {
-        int64_t balance = GetTokenBalance(exodus_address, OMNI_PROPERTY_MSC, BALANCE);
-        PrintToLog("devmsc for block %d: %d, Exodus balance: %d\n", nBlockNow, devmsc, FormatDivisibleMP(balance));
-    }
-
-    // check the alert status, do we need to do anything else here?
-    CheckExpiredAlerts(nBlockNow, pBlockIndex->GetBlockTime());
-
-    // check that pending transactions are still in the mempool
-    PendingCheck();
-
-    // transactions were found in the block, signal the UI accordingly
-    if (countMP > 0) CheckWalletUpdate();
-
-    // calculate and print a consensus hash if required
-    if (ShouldConsensusHashBlock(nBlockNow)) {
-        uint256 consensusHash = GetConsensusHash();
-        PrintToLog("Consensus hash for block %d: %s\n", nBlockNow, consensusHash.GetHex());
-    }
-
-    // request nftdb sanity check
-    bool sanityCheck = true;
-    pDbNFT->WriteBlockCache(nBlockNow, sanityCheck);
-
-    // request checkpoint verification
-    bool checkpointValid = VerifyCheckpoint(nBlockNow, pBlockIndex->GetBlockHash());
-    if (!checkpointValid) {
-        // failed checkpoint, can't be trusted to provide valid data - shutdown client
-        const std::string& msg = strprintf(
-            "Shutting down due to failed checkpoint for block %d (hash %s). "
-            "Please restart with -startclean flag and if this doesn't work, please reach out to the support.\n",
-            nBlockNow, pBlockIndex->GetBlockHash().GetHex());
-        PrintToLog(msg);
-        if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-            const auto& data_dir = gArgs.GetDataDirNet();
-            fs::path persistPath = data_dir / "MP_persist";
-            if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-            BlockValidationState state;
-            AbortNode(state, msg);
-        }
-    }
-
-    if (checkpointValid && nBlockNow >= ConsensusParams().GENESIS_BLOCK) {
-        // save out the state after this block
-        if (IsPersistenceEnabled(nBlockNow)) {
-            PersistInMemoryState(pBlockIndex);
-        }
-        lastProcessedBlock = nBlockNow;
-    }
-
-    return 0;
-}
-
-uint160 Uint160(const uint256& uint_256)
-{
-    uint160 uint_160;
-    std::copy(uint_256.begin(), uint_256.begin() + 20, uint_160.begin());
-    return uint_160;
-}
-
-CScript GetScriptFromIndex(size_t type, const uint256 &hash)
-{
-    switch (type) {
-        case 1: return GetScriptForDestination(PKHash(Uint160(hash)));
-        case 2: return GetScriptForDestination(ScriptHash(Uint160(hash)));
-        case 3: return GetScriptForDestination(WitnessV0ScriptHash(hash));
-        case 4: return GetScriptForDestination(WitnessV0KeyHash(Uint160(hash)));
-        case 5: return GetScriptForDestination(WitnessV1Taproot(XOnlyPubKey{hash}));
-    }
-    return {};
-}
-
-void mastercore_handler_disc_begin(const std::shared_ptr<const CBlock>& pblock, CBlockIndex const * pBlockIndex)
-{
-    LOCK(cs_tally);
-
-    reorgRecoveryMode = 1;
-    reorgRecoveryMaxHeight = (pBlockIndex->nHeight > reorgRecoveryMaxHeight) ? pBlockIndex->nHeight : reorgRecoveryMaxHeight;
-
-    for (auto& tx : pblock->vtx) {
-        txsToDelete.insert(tx->GetHash());
-    }
-
-    if (!fAddressIndex) {
-        return;
-    }
-
-    for (int i = pblock->vtx.size() - 1; i >= 0; i--) {
-        const CTransaction &tx = *(pblock->vtx[i]);
-        for (int k = tx.vout.size() - 1; k >= 0; k--) {
-            const CTxOut &out = tx.vout[k];
-            if (auto result = ScriptToUint(out.scriptPubKey)) {
-                auto& [index, address] = *result;
-                // undo receiving activity
-                addressIndexToDelete.emplace_back(CAddressIndexKey{index, address, pBlockIndex->nHeight, unsigned(i), tx.GetHash(), unsigned(k), false}, 0);
-                // undo unspent index
-                addressUnspentIndexToUpdate.emplace_back(CAddressUnspentKey{index, address, tx.GetHash(), unsigned(k)}, CAddressUnspentValue{});
-            }
-        }
-        const bool isTxCoinBase = tx.IsCoinBase();
-        for (int j = tx.vin.size() - 1; j >= 0; j--) {
-            const CTxIn& input = tx.vin[j];
-            CSpentIndexValue spend;
-            if (pDbAddress->ReadSpentIndex({input.prevout.hash, input.prevout.n}, spend)) {
-                // undo spending activity
-                addressIndexToDelete.emplace_back(CAddressIndexKey{spend.addressType, spend.addressHash, pBlockIndex->nHeight, unsigned(i), tx.GetHash(), unsigned(j), true}, 0);
-                // restore unspent index
-                addressUnspentIndexToUpdate.emplace_back(CAddressUnspentKey{spend.addressType, spend.addressHash, input.prevout.hash, input.prevout.n},
-                                                        CAddressUnspentValue{spend.satoshis, GetScriptFromIndex(spend.addressType, spend.addressHash), spend.blockHeight, isTxCoinBase});
-            }
-            spentIndexToUdpdate.emplace_back(CSpentIndexKey{input.prevout.hash, input.prevout.n}, CSpentIndexValue{});
-        }
-    }
 }
 
 /**

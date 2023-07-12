@@ -9,10 +9,10 @@
 #include <omnicore/activation.h>
 
 #include <omnicore/log.h>
+#include <omnicore/utilsbitcoin.h>
 #include <omnicore/version.h>
 
 #include <fs.h>
-#include <validation.h>
 #include <node/interface_ui.h>
 
 #include <stdint.h>
@@ -89,12 +89,7 @@ void CheckLiveActivations(int blockHeight)
             std::string msgText = strprintf("Shutting down due to unsupported feature activation (%d: %s)", liveActivation.featureId, liveActivation.featureName);
             PrintToLog(msgText);
             PrintToConsole(msgText);
-            if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-                fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
-                if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-                BlockValidationState state;
-                AbortNode(state, msgText);
-            }
+            MayAbortNode(msgText);
         }
         PendingActivationCompleted(liveActivation);
     }

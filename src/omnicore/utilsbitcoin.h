@@ -1,8 +1,7 @@
 #ifndef BITCOIN_OMNICORE_UTILSBITCOIN_H
 #define BITCOIN_OMNICORE_UTILSBITCOIN_H
 
-class CBlockIndex;
-class uint256;
+#include <omnicore/validationinterface.h>
 
 #include <stdint.h>
 #include <optional>
@@ -10,7 +9,6 @@ class uint256;
 #include <uint256.h>
 
 class CScript;
-class CChainIndex;
 
 namespace mastercore
 {
@@ -18,8 +16,12 @@ namespace mastercore
 int GetHeight();
 /** Returns the timestamp of the latest block. */
 uint32_t GetLatestBlockTime();
+/** Used to inform the node is in initial block download. */
+bool IsInitialBlockDownload();
 /** Returns the active chain. */
 const CChainIndex& GetActiveChain();
+/** Abort the node. */
+void MayAbortNode(const std::string& message);
 
 std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey);
 

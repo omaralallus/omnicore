@@ -8,6 +8,7 @@
 #include <omnicore/omnicore.h>
 #include <omnicore/errors.h>
 #include <omnicore/log.h>
+#include <omnicore/utilsbitcoin.h>
 
 #include <unordered_map>
 #include <utility>
@@ -413,8 +414,7 @@ void CMPNonFungibleTokensDB::SanityCheck()
     for (std::map<uint32_t,int64_t>::iterator it = totals.begin(); it != totals.end(); ++it) {
         auto total = mastercore::getTotalTokens(it->first);
         if (total != it->second) {
-            BlockValidationState state;
-            AbortNode(state, strprintf("Failed sanity check on property %d (%d != %d)\n", it->first, total, it->second));
+            mastercore::MayAbortNode(strprintf("Failed sanity check on property %d (%d != %d)\n", it->first, total, it->second));
         } else if (msc_debug_nftdb) {
             result += strprintf("%d:%d=%d,", it->first, total, it->second);
         }

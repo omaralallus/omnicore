@@ -7,10 +7,6 @@
 
 class uint256;
 
-namespace node {
-struct NodeContext;
-}
-
 namespace interfaces {
 class Wallet;
 } // namespace interfaces

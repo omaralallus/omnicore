@@ -63,18 +63,23 @@ void PendingAdd(const uint256& txid, const std::string& sendingAddress, uint16_t
  */
 void PendingDelete(const uint256& txid)
 {
-    LOCK(cs_pending);
-
-    PendingMap::iterator it = my_pending.find(txid);
-    if (it != my_pending.end()) {
-        const CMPPending& pending = it->second;
-        int64_t src_amount = GetTokenBalance(pending.src, pending.prop, PENDING);
-        if (msc_debug_pending) PrintToLog("%s(%s): amount=%d\n", __FUNCTION__, txid.GetHex(), src_amount);
-        if (src_amount) update_tally_map(pending.src, pending.prop, pending.amount, PENDING);
-        my_pending.erase(it);
-
+    bool pending_empty = false;
+    {
+        LOCK(cs_pending);
+        PendingMap::iterator it = my_pending.find(txid);
+        if (it != my_pending.end()) {
+            const CMPPending& pending = it->second;
+            int64_t src_amount = GetTokenBalance(pending.src, pending.prop, PENDING);
+            if (msc_debug_pending) PrintToLog("%s(%s): amount=%d\n", __FUNCTION__, txid.GetHex(), src_amount);
+            if (src_amount) update_tally_map(pending.src, pending.prop, pending.amount, PENDING);
+            my_pending.erase(it);
+            pending_empty = my_pending.empty();
+        }
+    }
+    if (pending_empty) {
+        pendingAdded.store(false, std::memory_order_release);
         // if pending map is now empty following deletion, trigger a status change
-        if (my_pending.empty()) uiInterface.OmniPendingChanged(false);
+        uiInterface.OmniPendingChanged(false);
     }
 }
 

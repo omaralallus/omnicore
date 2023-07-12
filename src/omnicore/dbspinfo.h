@@ -97,15 +97,16 @@ public:
 
         SERIALIZE_METHODS(Entry, obj) {
             READWRITE(obj.issuer);
-            READWRITE(obj.prop_type);
-            READWRITE(obj.prev_prop_id);
+            READWRITE(obj.delegate);
+            READWRITE(VARINT(obj.prop_type));
+            READWRITE(VARINT(obj.prev_prop_id));
             READWRITE(obj.category);
             READWRITE(obj.subcategory);
             READWRITE(obj.name);
             READWRITE(obj.url);
             READWRITE(obj.data);
             READWRITE(obj.num_tokens);
-            READWRITE(obj.property_desired);
+            READWRITE(VARINT(obj.property_desired));
             READWRITE(obj.deadline);
             READWRITE(obj.early_bird);
             READWRITE(obj.percentage);
@@ -119,8 +120,10 @@ public:
             READWRITE(obj.update_block);
             READWRITE(obj.fixed);
             READWRITE(obj.manual);
+            READWRITE(obj.unique);
             READWRITE(obj.historicalData);
             READWRITE(obj.historicalIssuers);
+            READWRITE(obj.historicalDelegates);
         }
 
         bool isDivisible() const;
@@ -160,16 +163,16 @@ public:
     void init(uint32_t nextSPID = 0x3UL, uint32_t nextTestSPID = TEST_ECO_PROPERTY_1);
 
     uint32_t peekNextSPID(uint8_t ecosystem) const;
-    bool updateSP(uint32_t propertyId, const Entry& info);
-    uint32_t putSP(uint8_t ecosystem, const Entry& info);
+    bool updateSP(uint32_t propertyId, const Entry& info, int block);
+    uint32_t putSP(uint8_t ecosystem, const Entry& info, int block);
     bool getSP(uint32_t propertyId, Entry& info) const;
     bool hasSP(uint32_t propertyId) const;
     uint32_t findSPByTX(const uint256& txid) const;
 
-    int64_t popBlock(const uint256& block_hash);
+    void deleteSPAboveBlock(int block);
 
-    void setWatermark(const uint256& watermark);
-    bool getWatermark(uint256& watermark) const;
+    void setWatermark(const uint256& watermark, int block);
+    bool getWatermark(uint256& watermark, int& block) const;
 
     void printAll() const;
 };

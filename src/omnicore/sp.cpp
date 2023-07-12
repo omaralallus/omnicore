@@ -356,7 +356,7 @@ bool mastercore::isCrowdsalePurchase(const uint256& txid, const std::string& add
     return false;
 }
 
-void mastercore::eraseMaxedCrowdsale(const std::string& address, int64_t blockTime, int block, uint256& blockHash)
+void mastercore::eraseMaxedCrowdsale(const std::string& address, int64_t blockTime, int block, const uint256& blockHash)
 {
     CrowdMap::iterator it = my_crowds.find(address);
 
@@ -382,7 +382,7 @@ void mastercore::eraseMaxedCrowdsale(const std::string& address, int64_t blockTi
         sp.timeclosed = blockTime;
         sp.update_block = blockHash;
 
-        assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp));
+        assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp, block));
 
         // no calculate fractional calls here, no more tokens (at MAX)
         my_crowds.erase(it);
@@ -424,7 +424,7 @@ unsigned int mastercore::eraseExpiredCrowdsale(const CBlockIndex* pBlockIndex)
 
             // update SP with this data
             sp.update_block = pBlockIndex->GetBlockHash();
-            assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp));
+            assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp, blockHeight));
 
             // update values
             if (missedTokens > 0) {

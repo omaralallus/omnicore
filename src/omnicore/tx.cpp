@@ -1125,16 +1125,17 @@ int CMPTransaction::interpretPacket()
     }
 
     LOCK(cs_tally);
-    auto pindex = GetActiveChain()[block];
-    auto blockHash = pindex->GetBlockHash();
     if (isAddressFrozen(sender, property)) {
         PrintToLog("%s(): REJECTED: address %s is frozen for property %d\n", __func__, sender, property);
         return (PKT_ERROR -3);
     }
 
+    // pindex is not initialized
+    pindex = GetActiveChain()[block];
+
     switch (type) {
         case MSC_TYPE_SIMPLE_SEND:
-            return logicMath_SimpleSend(blockHash);
+            return logicMath_SimpleSend();
 
         case MSC_TYPE_SEND_TO_OWNERS:
             return logicMath_SendToOwners();
@@ -1167,43 +1168,43 @@ int CMPTransaction::interpretPacket()
             return logicMath_MetaDExCancelEcosystem();
 
         case MSC_TYPE_CREATE_PROPERTY_FIXED:
-            return logicMath_CreatePropertyFixed(pindex);
+            return logicMath_CreatePropertyFixed();
 
         case MSC_TYPE_CREATE_PROPERTY_VARIABLE:
-            return logicMath_CreatePropertyVariable(pindex);
+            return logicMath_CreatePropertyVariable();
 
         case MSC_TYPE_CLOSE_CROWDSALE:
-            return logicMath_CloseCrowdsale(pindex);
+            return logicMath_CloseCrowdsale();
 
         case MSC_TYPE_CREATE_PROPERTY_MANUAL:
-            return logicMath_CreatePropertyManaged(pindex);
+            return logicMath_CreatePropertyManaged();
 
         case MSC_TYPE_GRANT_PROPERTY_TOKENS:
-            return logicMath_GrantTokens(pindex, blockHash);
+            return logicMath_GrantTokens();
 
         case MSC_TYPE_REVOKE_PROPERTY_TOKENS:
-            return logicMath_RevokeTokens(pindex);
+            return logicMath_RevokeTokens();
 
         case MSC_TYPE_CHANGE_ISSUER_ADDRESS:
-            return logicMath_ChangeIssuer(pindex);
+            return logicMath_ChangeIssuer();
 
         case MSC_TYPE_ENABLE_FREEZING:
-            return logicMath_EnableFreezing(pindex);
+            return logicMath_EnableFreezing();
 
         case MSC_TYPE_DISABLE_FREEZING:
-            return logicMath_DisableFreezing(pindex);
+            return logicMath_DisableFreezing();
 
         case MSC_TYPE_FREEZE_PROPERTY_TOKENS:
-            return logicMath_FreezeTokens(pindex);
+            return logicMath_FreezeTokens();
 
         case MSC_TYPE_UNFREEZE_PROPERTY_TOKENS:
-            return logicMath_UnfreezeTokens(pindex);
+            return logicMath_UnfreezeTokens();
 
         case MSC_TYPE_ADD_DELEGATE:
-            return logicMath_AddDelegate(pindex);
+            return logicMath_AddDelegate();
 
         case MSC_TYPE_REMOVE_DELEGATE:
-            return logicMath_RemoveDelegate(pindex);
+            return logicMath_RemoveDelegate();
 
         case MSC_TYPE_ANYDATA:
             return logicMath_AnyData();
@@ -1225,7 +1226,7 @@ int CMPTransaction::interpretPacket()
 }
 
 /** Passive effect of crowdsale participation. */
-int CMPTransaction::logicHelper_CrowdsaleParticipation(uint256& blockHash)
+int CMPTransaction::logicHelper_CrowdsaleParticipation()
 {
     CMPCrowd* pcrowdsale = getCrowd(receiver);
 
@@ -1292,7 +1293,7 @@ int CMPTransaction::logicHelper_CrowdsaleParticipation(uint256& blockHash)
 
     // Close crowdsale, if we hit MAX_TOKENS
     if (close_crowdsale) {
-        eraseMaxedCrowdsale(receiver, blockTime, block, blockHash);
+        eraseMaxedCrowdsale(receiver, blockTime, block, pindex->GetBlockHash());
     }
 
     // Indicate, if no tokens were transferred
@@ -1304,7 +1305,7 @@ int CMPTransaction::logicHelper_CrowdsaleParticipation(uint256& blockHash)
 }
 
 /** Tx 0 */
-int CMPTransaction::logicMath_SimpleSend(uint256& blockHash)
+int CMPTransaction::logicMath_SimpleSend()
 {
     if (!IsTransactionTypeAllowed(block, property, type, version)) {
         PrintToLog("%s(): rejected: type %d or version %d not permitted for property %d at block %d\n",
@@ -1349,7 +1350,7 @@ int CMPTransaction::logicMath_SimpleSend(uint256& blockHash)
     assert(update_tally_map(receiver, property, nValue, BALANCE));
 
     // Is there an active crowdsale running from this recipient?
-    logicHelper_CrowdsaleParticipation(blockHash);
+    logicHelper_CrowdsaleParticipation();
 
     return 0;
 }
@@ -2078,7 +2079,7 @@ int CMPTransaction::logicMath_MetaDExCancelEcosystem()
 }
 
 /** Tx 50 */
-int CMPTransaction::logicMath_CreatePropertyFixed(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_CreatePropertyFixed()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2133,7 +2134,7 @@ int CMPTransaction::logicMath_CreatePropertyFixed(const CBlockIndex* pindex)
     newSP.creation_block = blockHash;
     newSP.update_block = newSP.creation_block;
 
-    const uint32_t propertyId = pDbSpInfo->putSP(ecosystem, newSP);
+    const uint32_t propertyId = pDbSpInfo->putSP(ecosystem, newSP, block);
     assert(propertyId > 0);
     assert(update_tally_map(sender, propertyId, nValue, BALANCE));
 
@@ -2143,7 +2144,7 @@ int CMPTransaction::logicMath_CreatePropertyFixed(const CBlockIndex* pindex)
 }
 
 /** Tx 51 */
-int CMPTransaction::logicMath_CreatePropertyVariable(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_CreatePropertyVariable()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2230,7 +2231,7 @@ int CMPTransaction::logicMath_CreatePropertyVariable(const CBlockIndex* pindex)
     newSP.creation_block = blockHash;
     newSP.update_block = newSP.creation_block;
 
-    const uint32_t propertyId = pDbSpInfo->putSP(ecosystem, newSP);
+    const uint32_t propertyId = pDbSpInfo->putSP(ecosystem, newSP, block);
     assert(propertyId > 0);
     my_crowds.insert(std::make_pair(sender, CMPCrowd(propertyId, nValue, property, deadline, early_bird, percentage, 0, 0)));
 
@@ -2240,7 +2241,7 @@ int CMPTransaction::logicMath_CreatePropertyVariable(const CBlockIndex* pindex)
 }
 
 /** Tx 53 */
-int CMPTransaction::logicMath_CloseCrowdsale(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_CloseCrowdsale()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2294,7 +2295,7 @@ int CMPTransaction::logicMath_CloseCrowdsale(const CBlockIndex* pindex)
     sp.txid_close = txid;
     sp.missedTokens = missedTokens;
 
-    assert(pDbSpInfo->updateSP(property, sp));
+    assert(pDbSpInfo->updateSP(property, sp, block));
     if (missedTokens > 0) {
         assert(update_tally_map(sp.issuer, property, missedTokens, BALANCE));
     }
@@ -2306,7 +2307,7 @@ int CMPTransaction::logicMath_CloseCrowdsale(const CBlockIndex* pindex)
 }
 
 /** Tx 54 */
-int CMPTransaction::logicMath_CreatePropertyManaged(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_CreatePropertyManaged()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2366,7 +2367,7 @@ int CMPTransaction::logicMath_CreatePropertyManaged(const CBlockIndex* pindex)
     newSP.creation_block = blockHash;
     newSP.update_block = newSP.creation_block;
 
-    uint32_t propertyId = pDbSpInfo->putSP(ecosystem, newSP);
+    uint32_t propertyId = pDbSpInfo->putSP(ecosystem, newSP, block);
     assert(propertyId > 0);
 
     if (prop_type != MSC_PROPERTY_TYPE_NONFUNGIBLE) {
@@ -2379,13 +2380,13 @@ int CMPTransaction::logicMath_CreatePropertyManaged(const CBlockIndex* pindex)
 }
 
 /** Tx 55 */
-int CMPTransaction::logicMath_GrantTokens(const CBlockIndex* pindex, uint256& blockHash)
+int CMPTransaction::logicMath_GrantTokens()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
         return (PKT_ERROR_SP -20);
     }
-    uint256 pindexBlockHash = pindex->GetBlockHash();
+    uint256 blockHash = pindex->GetBlockHash();
 
     if (!IsTransactionTypeAllowed(block, property, type, version)) {
         PrintToLog("%s(): rejected: type %d or version %d not permitted for property %d at block %d\n",
@@ -2450,10 +2451,10 @@ int CMPTransaction::logicMath_GrantTokens(const CBlockIndex* pindex, uint256& bl
     dataPt.push_back(nValue);
     dataPt.push_back(0);
     sp.historicalData.insert(std::make_pair(txid, dataPt));
-    sp.update_block = pindexBlockHash;
+    sp.update_block = blockHash;
 
     // Persist the number of granted tokens
-    assert(pDbSpInfo->updateSP(property, sp));
+    assert(pDbSpInfo->updateSP(property, sp, block));
 
     // Move the tokens
     if (sp.unique) {
@@ -2472,7 +2473,7 @@ int CMPTransaction::logicMath_GrantTokens(const CBlockIndex* pindex, uint256& bl
      */
     if (!IsFeatureActivated(FEATURE_GRANTEFFECTS, block)) {
         // Is there an active crowdsale running from this recipient?
-        logicHelper_CrowdsaleParticipation(blockHash);
+        logicHelper_CrowdsaleParticipation();
     }
 
     NotifyTotalTokensChanged(property, block);
@@ -2481,7 +2482,7 @@ int CMPTransaction::logicMath_GrantTokens(const CBlockIndex* pindex, uint256& bl
 }
 
 /** Tx 56 */
-int CMPTransaction::logicMath_RevokeTokens(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_RevokeTokens()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2542,7 +2543,7 @@ int CMPTransaction::logicMath_RevokeTokens(const CBlockIndex* pindex)
     sp.update_block = blockHash;
 
     assert(update_tally_map(sender, property, -nValue, BALANCE));
-    assert(pDbSpInfo->updateSP(property, sp));
+    assert(pDbSpInfo->updateSP(property, sp, block));
 
     NotifyTotalTokensChanged(property, block);
 
@@ -2550,7 +2551,7 @@ int CMPTransaction::logicMath_RevokeTokens(const CBlockIndex* pindex)
 }
 
 /** Tx 70 */
-int CMPTransaction::logicMath_ChangeIssuer(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_ChangeIssuer()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2608,13 +2609,13 @@ int CMPTransaction::logicMath_ChangeIssuer(const CBlockIndex* pindex)
     sp.issuer = receiver;
     sp.update_block = blockHash;
 
-    assert(pDbSpInfo->updateSP(property, sp));
+    assert(pDbSpInfo->updateSP(property, sp, block));
 
     return 0;
 }
 
 /** Tx 71 */
-int CMPTransaction::logicMath_EnableFreezing(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_EnableFreezing()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2668,7 +2669,7 @@ int CMPTransaction::logicMath_EnableFreezing(const CBlockIndex* pindex)
 }
 
 /** Tx 72 */
-int CMPTransaction::logicMath_DisableFreezing(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_DisableFreezing()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2714,7 +2715,7 @@ int CMPTransaction::logicMath_DisableFreezing(const CBlockIndex* pindex)
 }
 
 /** Tx 185 */
-int CMPTransaction::logicMath_FreezeTokens(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_FreezeTokens()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2778,7 +2779,7 @@ int CMPTransaction::logicMath_FreezeTokens(const CBlockIndex* pindex)
 }
 
 /** Tx 186 */
-int CMPTransaction::logicMath_UnfreezeTokens(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_UnfreezeTokens()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2842,7 +2843,7 @@ int CMPTransaction::logicMath_UnfreezeTokens(const CBlockIndex* pindex)
 }
 
 /** Tx 73 */
-int CMPTransaction::logicMath_AddDelegate(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_AddDelegate()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2890,13 +2891,13 @@ int CMPTransaction::logicMath_AddDelegate(const CBlockIndex* pindex)
     sp.delegate = receiver;
     sp.update_block = blockHash;
 
-    assert(pDbSpInfo->updateSP(property, sp));
+    assert(pDbSpInfo->updateSP(property, sp, block));
 
     return 0;
 }
 
 /** Tx 74 */
-int CMPTransaction::logicMath_RemoveDelegate(const CBlockIndex* pindex)
+int CMPTransaction::logicMath_RemoveDelegate()
 {
     if (pindex == nullptr) {
         PrintToLog("%s(): ERROR: block %d not in the active chain\n", __func__, block);
@@ -2947,10 +2948,10 @@ int CMPTransaction::logicMath_RemoveDelegate(const CBlockIndex* pindex)
 
     sp.removeDelegate(block, tx_idx);
 
-    sp.delegate = "";
+    sp.delegate.clear();
     sp.update_block = blockHash;
 
-    assert(pDbSpInfo->updateSP(property, sp));
+    assert(pDbSpInfo->updateSP(property, sp, block));
 
     return 0;
 }
@@ -3159,12 +3160,7 @@ int CMPTransaction::logicMath_Alert()
             std::string msgText = "Client upgrade is required!  Shutting down due to unsupported consensus state!";
             PrintToLog(msgText);
             PrintToConsole(msgText);
-            if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
-                fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
-                if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
-                BlockValidationState state;
-                AbortNode(state, msgText);
-            }
+            MayAbortNode(msgText);
         }
     }
 

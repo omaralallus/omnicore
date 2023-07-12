@@ -823,7 +823,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
             shutil.rmtree(cache_path('MP_stolist'))
             shutil.rmtree(cache_path('MP_tradelist'))
             shutil.rmtree(cache_path('MP_txlist'))
-            shutil.rmtree(cache_path('indexes')) # for txindex enabled by default in Omni
 
             for entry in os.listdir(cache_path()):
                 if entry not in ['chainstate', 'blocks']:  # Only keep chainstate and blocks folder

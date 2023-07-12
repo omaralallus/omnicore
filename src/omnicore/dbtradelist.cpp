@@ -36,7 +36,6 @@
 
 using mastercore::GetActiveChain;
 using mastercore::isPropertyDivisible;
-using mastercore::pDbTransaction;
 using mastercore::Uint256;
 
 CMPTradeList::CMPTradeList(const fs::path& path, bool fWipe)
@@ -160,12 +159,12 @@ int CMPTradeList::deleteAboveBlock(int blockNum)
 {
     unsigned int n_found = 0;
     leveldb::WriteBatch batch;
-    uint32_t block = blockNum;
     std::vector<std::string> vecSTORecords;
     CDBaseIterator tx_it{NewIterator()};
-    for (CDBaseIterator it{NewIterator(), CBlockTxKey{block}}; it; --it) {
-        batch.Delete(it.Key());
+    for (CDBaseIterator it{NewIterator(), CBlockTxKey{}}; it; ++it) {
         auto key = it.Key<CBlockTxKey>();
+        if (key.block < blockNum) break;
+        batch.Delete(it.Key());
         n_found += DeleteToBatch<CTxTradeKey>(batch, tx_it, key);
         n_found += DeleteToBatch<CTradeMatchKey>(batch, tx_it, key);
     }

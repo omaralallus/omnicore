@@ -484,7 +484,7 @@ bool mastercore::update_tally_map(const std::string& who, uint32_t propertyId, i
     if (my_it == mp_tally_map.end()) {
         // insert an empty element
         my_it = (mp_tally_map.insert(std::make_pair(who, CMPTally()))).first;
-        if (fQtMode && IsMyAddressAllWallets(who, false, wallet::ISMINE_SPENDABLE)) {
+        if (fQtMode && IsMyAddressAllWallets(who)) {
             wallet_addresses.insert(who);
         }
     }
@@ -605,12 +605,6 @@ void NotifyTotalTokensChanged(uint32_t propertyId, int block)
 
 void CheckWalletUpdate()
 {
-#ifdef ENABLE_WALLET
-    if (!HasWallets()) {
-        return;
-    }
-#endif
-
     // because the wallet balance cache is *only* used by the UI, it's not needed,
     // when the daemon is running without UI.
     if (!fQtMode) {
@@ -643,8 +637,7 @@ void CheckWalletUpdate()
         wallet_addresses.clear();
         // populate global balance totals and wallet property list - note global balances do not include additional balances from watch-only addresses
         for (std::unordered_map<std::string, CMPTally>::iterator my_it = mp_tally_map.begin(); my_it != mp_tally_map.end(); ++my_it) {
-            int addressIsMine = IsMyAddressAllWallets(my_it->first, false, wallet::ISMINE_SPENDABLE);
-            if (!addressIsMine) continue;
+            if (!IsMyAddressAllWallets(my_it->first)) continue;
             wallet_addresses.insert(my_it->first);
             update_tally(my_it->first, my_it->second);
         }

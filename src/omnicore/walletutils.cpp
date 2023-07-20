@@ -150,22 +150,15 @@ int IsMyAddress(const std::string& address, interfaces::Wallet* iWallet)
 /**
  * IsMine wrapper to determine whether the address is in the wallet.
  */
-int IsMyAddressAllWallets(const std::string& address, const bool matchAny, const wallet::isminefilter& filter)
+bool IsMyAddressAllWallets(const std::string& address)
 {
 #ifdef ENABLE_WALLET
-    if (!HasWallets())
-        return 0;
-
     CTxDestination destination = DecodeDestination(address);
-    for(const std::shared_ptr<CWallet>& wallet : GetWallets()) {
-        isminetype ismine = WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(destination));
-        if (matchAny && ismine != ISMINE_NO)
-            return static_cast<int>(ismine);
-        else if (ismine & filter)
-            return static_cast<int>(ismine);
-    }
+    for(auto& wallet : GetWallets())
+        if (wallet->isSpendable(destination))
+            return true;
 #endif
-    return 0;
+    return false;
 }
 
 /**
@@ -352,30 +345,13 @@ int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddre
 
 #ifdef ENABLE_WALLET
 interfaces::WalletLoader *g_wallet_loader = nullptr;
-static wallet::WalletContext* GetWalletContext()
-{
-    if (auto walletLoader = g_wallet_loader) {
-        return walletLoader->context();
-    }
-    return nullptr;
-}
 #endif
 
-bool HasWallets()
+std::vector<std::unique_ptr<interfaces::Wallet>> GetWallets()
 {
 #ifdef ENABLE_WALLET
-    if (auto walletContext = GetWalletContext()) {
-        return WITH_LOCK(walletContext->wallets_mutex, return !walletContext->wallets.empty());
-    }
-#endif
-    return false;
-}
-
-std::vector<std::shared_ptr<wallet::CWallet>> GetWallets()
-{
-#ifdef ENABLE_WALLET
-    if (auto walletContext = GetWalletContext()) {
-        return WITH_LOCK(walletContext->wallets_mutex, return walletContext->wallets);
+    if (auto wallet_loader = g_wallet_loader) {
+        return wallet_loader->getWallets();
     }
 #endif
     return {};

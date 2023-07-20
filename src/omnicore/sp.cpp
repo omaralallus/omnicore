@@ -149,7 +149,6 @@ std::string mastercore::GetDelegate(uint32_t propertyId)
 
 bool mastercore::isPropertyDivisible(uint32_t propertyId)
 {
-    // TODO: is a lock here needed
     CMPSPInfo::Entry sp;
 
     if (pDbSpInfo->getSP(propertyId, sp)) return sp.isDivisible();

@@ -59,17 +59,9 @@ struct CBlockTxKey {
     uint32_t block = ~0u;
     uint256 txid;
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ser_writedata32be(s, ~block);
-        ::Serialize(s, txid);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        block = ~ser_readdata32be(s);
-        ::Unserialize(s, txid);
+    SERIALIZE_METHODS(CBlockTxKey, obj) {
+        READWRITE(Using<BigEndian32Inv>(obj.block));
+        READWRITE(obj.txid);
     }
 };
 
@@ -120,25 +112,15 @@ void CMPTxList::recordTX(const uint256 &txid, bool fValid, int nBlock, unsigned 
 struct CPaymentTxKey {
     static constexpr uint8_t prefix = 'p';
     uint256 txid;
-    size_t payments = ~0u;
+    uint32_t payments = ~0u;
     int block = 0;
     uint8_t valid = 0;
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ::Serialize(s, txid);
-        ser_writedata32be(s, ~payments);
-        ser_writedata32(s, block);
-        ser_writedata8(s, valid);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        ::Unserialize(s, txid);
-        payments = ~ser_readdata32be(s);
-        block = ser_readdata32(s);
-        valid = ser_readdata8(s);
+    SERIALIZE_METHODS(CPaymentTxKey, obj) {
+        READWRITE(obj.txid);
+        READWRITE(Using<BigEndian32Inv>(obj.payments));
+        READWRITE(obj.block);
+        READWRITE(obj.valid);
     }
 };
 
@@ -148,7 +130,6 @@ struct CPaymentTxValue {
     std::string seller;
     uint32_t propertyId;
     uint64_t amount;
-    uint256 cancelTxId;
 
     SERIALIZE_METHODS(CPaymentTxValue, obj) {
         READWRITE(VARINT(obj.vout));
@@ -156,15 +137,6 @@ struct CPaymentTxValue {
         READWRITE(obj.seller);
         READWRITE(VARINT(obj.propertyId));
         READWRITE(obj.amount);
-        if constexpr (ser_action.ForRead()) {
-            if (!s.empty()) {
-                READWRITE(obj.cancelTxId);
-            }
-        } else {
-            if (!obj.cancelTxId.IsNull()) {
-                READWRITE(obj.cancelTxId);
-            }
-        }
     }
 };
 
@@ -199,21 +171,11 @@ struct CDexCancelTxKey {
     int block = 0;
     uint8_t valid = 0;
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ::Serialize(s, txid);
-        ser_writedata32be(s, ~affected);
-        ser_writedata32(s, block);
-        ser_writedata8(s, valid);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        ::Unserialize(s, txid);
-        affected = ~ser_readdata32be(s);
-        block = ser_readdata32(s);
-        valid = ser_readdata8(s);
+    SERIALIZE_METHODS(CDexCancelTxKey, obj) {
+        READWRITE(obj.txid);
+        READWRITE(Using<BigEndian32Inv>(obj.affected));
+        READWRITE(obj.block);
+        READWRITE(obj.valid);
     }
 };
 
@@ -224,6 +186,15 @@ struct CDexCancelTxValue {
     SERIALIZE_METHODS(CDexCancelTxValue, obj) {
         READWRITE(VARINT(obj.propertyId));
         READWRITE(obj.amount);
+    }
+};
+
+struct CDexTxToCancelKey {
+    static constexpr uint8_t prefix = 'e';
+    const uint256& txid;
+
+    SERIALIZE_METHODS(CDexTxToCancelKey, obj) {
+        READWRITE(obj.txid);
     }
 };
 
@@ -244,14 +215,7 @@ void CMPTxList::recordMetaDExCancelTX(const uint256& txid, const uint256& txidSu
     Write(CBlockTxKey{uint32_t(nBlock), txid}, "");
     PrintToLog("METADEXCANCELDEBUG : Writing master record %s(%s, valid=%s, block= %d, number of affected transactions= %d)\n", __func__, txid.ToString(), fValid ? "YES" : "NO", nBlock, numerOfAffected);
 
-    CDBaseIterator pit{NewIterator(), PartialKey<CPaymentTxKey>(txidSub)};
-    if (pit.Valid()) {
-        auto value = pit.Value<CPaymentTxValue>();
-        value.cancelTxId = txid;
-        Write(pit.Key<CPaymentTxKey>(), value);
-    } else {
-        PrintToLog("METADEXCANCELDEBUG %s: Logic error: %s not found\n", __func__, txidSub.ToString());
-    }
+    Write(CDexTxToCancelKey{txidSub}, txid);
     // Step 4 - Write sub-record with cancel details
     CDexCancelTxValue value{propertyId, nValue};
     Write(CDexCancelTxKey{txid, numerOfAffected, nBlock, fValid}, value);
@@ -261,11 +225,11 @@ void CMPTxList::recordMetaDExCancelTX(const uint256& txid, const uint256& txidSu
 struct CSendAllTxKey {
     static constexpr uint8_t prefix = 's';
     uint256 txid;
-    uint32_t num = 0;
+    uint32_t num = ~0u;
 
     SERIALIZE_METHODS(CSendAllTxKey, obj) {
         READWRITE(obj.txid);
-        READWRITE(VARINT(obj.num));
+        READWRITE(Using<BigEndian32Inv>(obj.num));
     }
 };
 
@@ -284,8 +248,7 @@ struct CSendAllTxValue {
  */
 void CMPTxList::recordSendAllSubRecord(const uint256& txid, int nBlock, int subRecordNumber, uint32_t propertyId, int64_t nValue)
 {
-    CSendAllTxKey key{txid, uint32_t(subRecordNumber)};
-    bool status = Write(key, CSendAllTxValue{propertyId, nValue});
+    bool status = Write(CSendAllTxKey{txid, uint32_t(subRecordNumber)}, CSendAllTxValue{propertyId, nValue});
     Write(CBlockTxKey{uint32_t(nBlock), txid}, "");
     ++nWritten;
     if (msc_debug_txdb) PrintToLog("%s(): store: %s:%d=%d:%d, status: %s\n", __func__, txid.ToString(), subRecordNumber, propertyId, nValue, status ? "OK" : "NOK");
@@ -293,8 +256,8 @@ void CMPTxList::recordSendAllSubRecord(const uint256& txid, int nBlock, int subR
 
 uint256 CMPTxList::findMetaDExCancel(const uint256& txid)
 {
-    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
-    return it.ValueOr<CPaymentTxValue>().cancelTxId;
+    uint256 cancelTxId;
+    return Read(CDexTxToCancelKey{txid}, cancelTxId) ? cancelTxId : uint256{};
 }
 
 /**
@@ -316,8 +279,9 @@ int CMPTxList::getNumberOfMetaDExCancels(const uint256& txid)
 
 bool CMPTxList::getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t* propertyId, uint64_t* nValue)
 {
-    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid, uint32_t(purchaseNumber))};
-    if (it.Valid()) {
+    CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
+    for (; it; ++it) {
+        if (it.Key<CPaymentTxKey>().payments != purchaseNumber) continue;
         auto value = it.Value<CPaymentTxValue>();
         *vout = value.vout;
         *buyer = value.buyer;
@@ -376,8 +340,12 @@ int CMPTxList::getMPTransactionCountTotal()
 int CMPTxList::getMPTransactionCountBlock(int block)
 {
     int count = 0;
-    CDBaseIterator it{NewIterator(), PartialKey<CBlockTxKey>(uint32_t(block))};
-    for (; it; ++it) ++count;
+    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(block)}};
+    for (; it; ++it) {
+        auto key = it.Key<CBlockTxKey>();
+        if (key.block != block) break;
+        ++count;
+    }
     return count;
 }
 
@@ -697,7 +665,7 @@ void CMPTxList::deleteTransactions(const std::set<uint256>& txs, int block)
 {
     leveldb::WriteBatch batch;
     CDBaseIterator it{NewIterator()};
-    std::set<uint256> paymentTxs, cancelTxs;
+    std::set<uint256> cancelTxs;
     for (it.Seek(CBlockTxKey{}); it; ++it) {
         if (it.Key<CBlockTxKey>().block < block) break;
         batch.Delete(it.Key());
@@ -705,21 +673,19 @@ void CMPTxList::deleteTransactions(const std::set<uint256>& txs, int block)
     for (auto& txid : txs) {
         bool deleted = DeleteToBatch<CTxKey>(batch, it, txid) ||
                        DeleteToBatch<CSendAllTxKey>(batch, it, txid) ||
-                       (DeleteToBatch<CPaymentTxKey>(batch, it, txid) &&
-                       paymentTxs.insert(txid).second) ||
+                       DeleteToBatch<CPaymentTxKey>(batch, it, txid) ||
                        (DeleteToBatch<CDexCancelTxKey>(batch, it, txid) &&
                        cancelTxs.insert(txid).second);
         if (deleted) {
             PrintToLog("%s() DELETING: %s\n", __func__, txid.ToString());
         }
+        DeleteToBatch<CDexTxToCancelKey>(batch, it, txid);
     }
-    for (it.Seek(CPaymentTxKey{}); it && !cancelTxs.empty(); ++it) {
-        auto value = it.Value<CPaymentTxValue>();
+    for (it.Seek(CDexTxToCancelKey{{}}); it && !cancelTxs.empty(); ++it) {
+        auto txid = it.Value<uint256>();
         // if both cancel and payment txs are reverted don't put back payment one
-        if (cancelTxs.erase(value.cancelTxId)
-        && !paymentTxs.count(it.Key<CPaymentTxKey>().txid)) {
-            value.cancelTxId.SetNull();
-            batch.Put(it.Key(), ValueToString(value));
+        if (cancelTxs.erase(txid)) {
+            batch.Delete(it.Key());
         }
     }
     WriteBatch(batch);

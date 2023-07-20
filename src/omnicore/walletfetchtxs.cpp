@@ -49,9 +49,6 @@ std::map<std::string, uint256> FetchWalletOmniTransactions(interfaces::Wallet& i
 {
     std::map<std::string, uint256> mapResponse;
 #ifdef ENABLE_WALLET
-    if (!HasWallets()) {
-        return mapResponse;
-    }
     std::set<uint256> seenHashes;
     std::multimap<int64_t, const interfaces::WalletTx*> txOrdered;
     const auto& transactions = iWallet.getWalletTxs();

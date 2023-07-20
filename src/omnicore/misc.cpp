@@ -30,12 +30,11 @@ using namespace mastercore;
 bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint256, unsigned> > &addresses)
 {
     if (params[0].isStr()) {
-        uint256 hashBytes;
-        int type = 0;
-        if (!DecodeIndexKey(params[0].get_str(), hashBytes, type)) {
+        auto result = AddressToUint(params[0].get_str());
+        if (!result) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
         }
-        addresses.push_back(std::make_pair(hashBytes, type));
+        addresses.emplace_back(result->second, result->first);
     } else if (params[0].isObject()) {
 
         UniValue addressValues = find_value(params[0].get_obj(), "addresses");
@@ -46,13 +45,11 @@ bool getAddressesFromParams(const UniValue& params, std::vector<std::pair<uint25
         std::vector<UniValue> values = addressValues.getValues();
 
         for (std::vector<UniValue>::iterator it = values.begin(); it != values.end(); ++it) {
-
-            uint256 hashBytes;
-            int type = 0;
-            if (!DecodeIndexKey(it->get_str(), hashBytes, type)) {
+            auto result = AddressToUint(it->get_str());
+            if (!result) {
                 throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");
             }
-            addresses.push_back(std::make_pair(hashBytes, type));
+            addresses.emplace_back(result->second, result->first);
         }
     } else {
         throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid address");

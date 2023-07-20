@@ -7,55 +7,50 @@
 
 #include <boost/test/unit_test.hpp>
 
-struct CTestDB : public CDBBase
-{
-    CTestDB(const fs::path& path)
-    {
+struct CTestDB : public CDBBase {
+    CTestDB(const fs::path& path) {
         BOOST_REQUIRE(Open(path, true).ok());
     }
     using CDBBase::Write;
     template<typename T>
-    CDBaseIterator CreateIterator(const T& key)
-    {
+    CDBaseIterator CreateIterator(const T& key) {
         return CDBaseIterator{NewIterator(), key};
     }
 };
 
-struct CTestAscOrder {
-    static constexpr uint8_t prefix = 'A';
+struct CTestAscKey {
     uint32_t idx = 0; // asc
-    uint32_t i2 = ~0u; // desc
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ser_writedata32be(s, idx);
-        ser_writedata32be(s, ~i2);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        idx = ser_readdata32be(s);
-        i2 = ~ser_readdata32be(s);
+    SERIALIZE_METHODS(CTestAscKey, obj) {
+        READWRITE(Using<BigEndian32>(obj.idx));
     }
 };
 
-struct CTestDescOrder {
+struct CTestAscOrder : CTestAscKey {
     static constexpr uint8_t prefix = 'A';
+    uint32_t i2 = ~0u; // desc
+
+    SERIALIZE_METHODS(CTestAscOrder, obj) {
+        READWRITEAS(CTestAscKey, obj);
+        READWRITE(Using<BigEndian32Inv>(obj.i2));
+    }
+};
+
+struct CTestDescKey {
     uint32_t idx = ~0u; // desc
+
+    SERIALIZE_METHODS(CTestDescKey, obj) {
+        READWRITE(Using<BigEndian32Inv>(obj.idx));
+    }
+};
+
+struct CTestDescOrder : CTestDescKey {
+    static constexpr uint8_t prefix = 'A';
     uint32_t i2 = 0; // asc
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ser_writedata32be(s, ~idx);
-        ser_writedata32be(s, i2);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        idx = ~ser_readdata32be(s);
-        i2 = ser_readdata32be(s);
+    SERIALIZE_METHODS(CTestDescOrder, obj) {
+        READWRITEAS(CTestDescKey, obj);
+        READWRITE(Using<BigEndian32>(obj.i2));
     }
 };
 
@@ -97,7 +92,7 @@ BOOST_AUTO_TEST_CASE(iterator_asc_order)
     BOOST_CHECK_EQUAL(key.i2, 2);
 
     // parial key iterate over keys start with '6'
-    it = testdb->CreateIterator(PartialKey<CTestAscOrder>(6u));
+    it = testdb->CreateIterator(PartialKey<CTestAscOrder>(CTestAscKey{6u}));
     BOOST_REQUIRE(it.Valid());
     key = it.Key<CTestAscOrder>();
     BOOST_CHECK_EQUAL(key.idx, 6);
@@ -147,7 +142,7 @@ BOOST_AUTO_TEST_CASE(iterator_desc_order)
     BOOST_CHECK_EQUAL(key.i2, 4);
 
     // parial key iterate over keys start with '2'
-    it = testdb->CreateIterator(PartialKey<CTestDescOrder>(2u));
+    it = testdb->CreateIterator(PartialKey<CTestDescOrder>(CTestDescKey{2u}));
     BOOST_REQUIRE(it.Valid());
     key = it.Key<CTestDescOrder>();
     BOOST_CHECK_EQUAL(key.idx, 2);

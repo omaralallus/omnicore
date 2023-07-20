@@ -35,31 +35,29 @@ COmniFeeCache::~COmniFeeCache()
     if (msc_debug_fees) PrintToLog("COmniFeeCache closed\n");
 }
 
-struct CDisTresholdKey {
-    static constexpr uint8_t prefix = 'd';
+struct CPropertyBaseKey {
     uint32_t propertyId = 0;
 
-    SERIALIZE_METHODS(CDisTresholdKey, obj) {
+    SERIALIZE_METHODS(CPropertyBaseKey, obj) {
         READWRITE(VARINT(obj.propertyId));
     }
 };
 
-struct CCacheAmountKey {
+struct CDisTresholdKey : CPropertyBaseKey {
+    static constexpr uint8_t prefix = 'd';
+
+    SERIALIZE_METHODS(CDisTresholdKey, obj) {
+        READWRITEAS(CPropertyBaseKey, obj);
+    }
+};
+
+struct CCacheAmountKey : CPropertyBaseKey {
     static constexpr uint8_t prefix = 'c';
-    uint32_t propertyId = 0;
     uint32_t block = ~0u;
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ::Serialize(s, VARINT(propertyId));
-        ser_writedata32be(s, ~block);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        ::Unserialize(s, VARINT(propertyId));
-        block = ~ser_readdata32be(s);
+    SERIALIZE_METHODS(CCacheAmountKey, obj) {
+        READWRITEAS(CPropertyBaseKey, obj);
+        READWRITE(Using<BigEndian32Inv>(obj.block));
     }
 };
 
@@ -85,7 +83,7 @@ void COmniFeeCache::UpdateDistributionThresholds(uint32_t propertyId)
 int64_t COmniFeeCache::GetCachedAmount(const uint32_t &propertyId)
 {
     // Get the fee history, set is sorted by block so first entry is most recent
-    CDBaseIterator it{NewIterator(), PartialKey<CCacheAmountKey>(propertyId)};
+    CDBaseIterator it{NewIterator(), PartialKey<CCacheAmountKey>(CPropertyBaseKey{propertyId})};
     return it.ValueOr<int64_t>(0);
 }
 
@@ -138,7 +136,7 @@ void COmniFeeCache::RollBackCache(int block)
         uint32_t startPropertyId = (ecosystem == 1) ? 1 : TEST_ECO_PROPERTY_1;
         auto lastPropertyId = mastercore::pDbSpInfo->peekNextSPID(ecosystem);
         for (uint32_t propertyId = startPropertyId; propertyId < lastPropertyId; propertyId++) {
-            for (it.Seek(PartialKey<CCacheAmountKey>(propertyId)); it; ++it) {
+            for (it.Seek(PartialKey<CCacheAmountKey>(CPropertyBaseKey{propertyId})); it; ++it) {
                 auto key = it.Key<CCacheAmountKey>();
                 if (key.block < startBlock) break;
                 batch.Delete(it.Key());
@@ -245,7 +243,7 @@ void COmniFeeCache::printAll()
 std::set<feeCacheItem> COmniFeeCache::GetCacheHistory(const uint32_t &propertyId)
 {
     std::set<feeCacheItem> sCacheHistoryItems;
-    CDBaseIterator it {NewIterator(), PartialKey<CCacheAmountKey>(propertyId)};
+    CDBaseIterator it {NewIterator(), PartialKey<CCacheAmountKey>(CPropertyBaseKey{propertyId})};
     for (; it; ++it) {
         auto key = it.Key<CCacheAmountKey>();
         sCacheHistoryItems.emplace(key.block, it.Value<int64_t>());
@@ -277,31 +275,20 @@ struct CDistributionKey {
     uint32_t propertyId = 0;
     int64_t total = 0;
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ser_writedata32be(s, ~id);
-        ser_writedata32be(s, ~block);
-        ::Serialize(s, VARINT(propertyId));
-        ::Serialize(s, total);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        id = ~ser_readdata32be(s);
-        block = ~ser_readdata32be(s);
-        ::Unserialize(s, VARINT(propertyId));
-        ::Unserialize(s, total);
+    SERIALIZE_METHODS(CDistributionKey, obj) {
+        READWRITE(Using<BigEndian32Inv>(obj.id));
+        READWRITE(Using<BigEndian32Inv>(obj.block));
+        READWRITE(VARINT(obj.propertyId));
+        READWRITE(obj.total);
     }
 };
 
-struct CDistributionPropertyKey {
+struct CDistributionPropertyKey : CPropertyBaseKey {
     static constexpr uint8_t prefix = 'p';
-    uint32_t propertyId = 0;
     uint32_t id = 0;
 
     SERIALIZE_METHODS(CDistributionPropertyKey, obj) {
-        READWRITE(VARINT(obj.propertyId));
+        READWRITEAS(CPropertyBaseKey, obj);
         READWRITE(VARINT(obj.id));
     }
 };
@@ -340,7 +327,7 @@ void COmniFeeHistory::RollBackHistory(int block)
 std::set<int> COmniFeeHistory::GetDistributionsForProperty(const uint32_t &propertyId)
 {
     std::set<int> sDistributions;
-    CDBaseIterator it{NewIterator(), PartialKey<CDistributionPropertyKey>(propertyId)};
+    CDBaseIterator it{NewIterator(), PartialKey<CDistributionPropertyKey>(CPropertyBaseKey{propertyId})};
     for (; it; ++it) {
         auto key = it.Key<CDistributionPropertyKey>();
         sDistributions.insert(key.id);
@@ -351,9 +338,10 @@ std::set<int> COmniFeeHistory::GetDistributionsForProperty(const uint32_t &prope
 // Populate data about a fee distribution
 bool COmniFeeHistory::GetDistributionData(int id, uint32_t *propertyId, int *block, int64_t *total)
 {
-    CDBaseIterator it{NewIterator(), PartialKey<CDistributionKey>(uint32_t(id))};
-    if (!it) return {};
+    CDBaseIterator it{NewIterator(), CDistributionKey{uint32_t(id)}};
+    if (!it) return false;
     auto key = it.Key<CDistributionKey>();
+    if (key.id != id) return false;
     *block = key.block;
     *propertyId = key.propertyId;
     *total = key.total;
@@ -363,7 +351,8 @@ bool COmniFeeHistory::GetDistributionData(int id, uint32_t *propertyId, int *blo
 // Retrieve the recipients for a fee distribution
 std::set<feeHistoryItem> COmniFeeHistory::GetFeeDistribution(int id)
 {
-    CDBaseIterator it{NewIterator(), PartialKey<CDistributionKey>(uint32_t(id))};
+    CDBaseIterator it{NewIterator(), CDistributionKey{uint32_t(id)}};
+    if (!it.Valid() || it.Key<CDistributionKey>().id != id) return {};
     return it.ValueOr<std::set<feeHistoryItem>>();
 }
 

@@ -23,10 +23,9 @@ class CStringWriter
     const int nType;
     const int nVersion;
     std::string& data;
-    uint32_t limit;
 
 public:
-    CStringWriter(int nType_, int nVersion_, std::string& s, uint32_t limit = UINT32_MAX) : nType(nType_), nVersion(nVersion_), data(s), limit(limit) {}
+    CStringWriter(int nType_, int nVersion_, std::string& s) : nType(nType_), nVersion(nVersion_), data(s) {}
 
     template<typename T>
     CStringWriter& operator<<(const T& obj)
@@ -37,16 +36,36 @@ public:
 
     void write(Span<const std::byte> src)
     {
-        if (limit) {
-            data.append((const char*)src.data(), src.size());
-            --limit;
-        }
+        data.append((const char*)src.data(), src.size());
     }
 
     int GetVersion() const { return nVersion; }
     int GetType() const { return nType; }
     size_t size() const { return data.size(); }
 };
+
+template<size_t N>
+struct BigEndianInvFormatter : private BigEndianFormatter<N>
+{
+    template<typename Stream, typename T> void Ser(Stream &s, const T& v)
+    {
+        static_assert(std::is_unsigned_v<std::decay_t<T>>);
+        BigEndianFormatter<N>::Ser(s, ~v);
+    }
+
+    template<typename Stream, typename T> void Unser(Stream& s, T& v)
+    {
+        static_assert(std::is_unsigned_v<std::decay_t<T>>);
+        BigEndianFormatter<N>::Unser(s, v);
+        v = ~v;
+    }
+};
+
+using Enum8 = CustomUintFormatter<1>;
+using BigEndian32 = BigEndianFormatter<4>;
+using BigEndian64 = BigEndianFormatter<8>;
+using BigEndian32Inv = BigEndianInvFormatter<4>;
+using BigEndian64Inv = BigEndianInvFormatter<8>;
 
 template<typename T>
 bool StringToValue(const std::string_view& s, T& value)
@@ -251,12 +270,12 @@ public:
     }
 };
 
-template<typename T, typename... Args>
-CPartialKey PartialKey(Args&&... args)
+template<typename T, typename S>
+CPartialKey PartialKey(S&& subkey)
 {
     std::string s;
-    CStringWriter writer(SER_DISK, CLIENT_VERSION, s, sizeof...(Args) + 1);
-    writer << T::prefix << T{std::forward<Args>(args)...};
+    CStringWriter writer(SER_DISK, CLIENT_VERSION, s);
+    writer << T::prefix << std::forward<S>(subkey);
     return CPartialKey{std::move(s)};
 }
 

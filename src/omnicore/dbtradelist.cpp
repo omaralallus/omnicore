@@ -36,7 +36,6 @@
 
 using mastercore::GetActiveChain;
 using mastercore::isPropertyDivisible;
-using mastercore::Uint256;
 
 CMPTradeList::CMPTradeList(const fs::path& path, bool fWipe)
 {
@@ -49,43 +48,16 @@ CMPTradeList::~CMPTradeList()
     if (msc_debug_persistence) PrintToLog("CMPTradeList closed\n");
 }
 
-struct CBlockTxKey {
-    static constexpr uint8_t prefix = 'b';
-    uint32_t block = ~0u;
-    uint8_t chash[4];
-
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ser_writedata32be(s, ~block);
-        ::Serialize(s, chash);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        block = ~ser_readdata32be(s);
-        ::Unserialize(s, chash);
-    }
-};
-
 struct CTradeMatchKey {
     static constexpr uint8_t prefix = 'm';
+    uint32_t block = ~0u;
     uint256 txid1;
     uint256 txid2;
-    std::string address1;
-    std::string address2;
-    uint32_t prop1 = 0;
-    uint32_t prop2 = 0;
-    int block = 0;
 
     SERIALIZE_METHODS(CTradeMatchKey, obj) {
+        READWRITE(Using<BigEndian32Inv>(obj.block));
         READWRITE(obj.txid1);
         READWRITE(obj.txid2);
-        READWRITE(obj.address1);
-        READWRITE(obj.address2);
-        READWRITE(VARINT(obj.prop1));
-        READWRITE(VARINT(obj.prop2));
-        READWRITE(obj.block);
     }
 };
 
@@ -101,18 +73,23 @@ struct CTradeMatchValue {
     }
 };
 
-void CMPTradeList::recordMatchedTrade(const uint256& txid1, const uint256& txid2, const std::string& address1, const std::string& address2, uint32_t prop1, uint32_t prop2, int64_t amount1, int64_t amount2, int blockNum, int64_t fee)
+void CMPTradeList::recordMatchedTrade(const uint256& txid1, const uint256& txid2, int block, int64_t amount1, int64_t amount2, int64_t fee)
 {
-    CBlockTxKey txkey{uint32_t(blockNum)};
-    std::copy(txid1.begin(), txid1.begin() + sizeof(txkey.chash), txkey.chash);
-    bool status = Write(txkey, "") && Write(CTradeMatchKey{txid1, txid2, address1, address2, prop1, prop2, blockNum}, CTradeMatchValue{amount1, amount2, fee});
+    bool status = Write(CTradeMatchKey{uint32_t(block), txid1, txid2}, CTradeMatchValue{amount1, amount2, fee});
     ++nWritten;
     if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status ? "OK" : "NOK");
 }
 
-struct CTxTradeKey {
-    static constexpr uint8_t prefix = 't';
+struct CBaseTxKey {
     uint256 txid;
+
+    SERIALIZE_METHODS(CBaseTxKey, obj) {
+        READWRITE(obj.txid);
+    }
+};
+
+struct CTxTradeKey : CBaseTxKey {
+    static constexpr uint8_t prefix = 't';
     std::string address;
     uint32_t propertyIdForSale = 0;
     uint32_t propertyIdDesired = 0;
@@ -120,7 +97,7 @@ struct CTxTradeKey {
     uint32_t blockIndex = 0;
 
     SERIALIZE_METHODS(CTxTradeKey, obj) {
-        READWRITE(obj.txid);
+        READWRITEAS(CBaseTxKey, obj);
         READWRITE(obj.address);
         READWRITE(VARINT(obj.propertyIdForSale));
         READWRITE(VARINT(obj.propertyIdDesired));
@@ -131,23 +108,9 @@ struct CTxTradeKey {
 
 void CMPTradeList::recordNewTrade(const uint256& txid, const std::string& address, uint32_t propertyIdForSale, uint32_t propertyIdDesired, int blockNum, int blockIndex)
 {
-    CBlockTxKey txkey{uint32_t(blockNum)};
-    std::copy(txid.begin(), txid.begin() + sizeof(txkey.chash), txkey.chash);
-    bool status = Write(txkey, "") && Write(CTxTradeKey{txid, address, propertyIdForSale, propertyIdDesired, blockNum, uint32_t(blockIndex)}, "");
+    bool status = Write(CTxTradeKey{txid, address, propertyIdForSale, propertyIdDesired, blockNum, uint32_t(blockIndex)}, "");
     ++nWritten;
     if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status ? "OK" : "NOK");
-}
-
-template<typename T>
-uint32_t DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const CBlockTxKey& key)
-{
-    uint32_t found = 0;
-    for (it.Seek(PartialKey<T>(Uint256(key.chash))); it; ++it) {
-        if (it.Key<T>().block != key.block) continue;
-        ++found;
-        batch.Delete(it.Key());
-    }
-    return found;
 }
 
 /**
@@ -155,21 +118,27 @@ uint32_t DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const CBl
  *
  * Returns the number of records changed.
  */
-int CMPTradeList::deleteAboveBlock(int blockNum)
+int CMPTradeList::deleteTransactions(const std::set<uint256>& txs, int block)
 {
     unsigned int n_found = 0;
     leveldb::WriteBatch batch;
     std::vector<std::string> vecSTORecords;
-    CDBaseIterator tx_it{NewIterator()};
-    for (CDBaseIterator it{NewIterator(), CBlockTxKey{}}; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
-        if (key.block < blockNum) break;
-        batch.Delete(it.Key());
-        n_found += DeleteToBatch<CTxTradeKey>(batch, tx_it, key);
-        n_found += DeleteToBatch<CTradeMatchKey>(batch, tx_it, key);
+    CDBaseIterator it{NewIterator()};
+    for (const auto& txid : txs) {
+        auto found = n_found;
+        for (it.Seek(PartialKey<CTxTradeKey>(CBaseTxKey{txid})); it; ++it) {
+            batch.Delete(it.Key());
+            n_found++;
+        }
+        for (it.Seek(CTradeMatchKey{}); it; ++it) {
+            auto key = it.Key<CTradeMatchKey>();
+            if (key.block < block) break;
+            batch.Delete(it.Key());
+            n_found++;
+        }
     }
     WriteBatch(batch);
-    PrintToLog("%s(%d); tradedb n_found= %d\n", __func__, blockNum, n_found);
+    PrintToLog("%s: tradedb n_found= %d\n", __func__, n_found);
     return n_found;
 }
 
@@ -193,7 +162,7 @@ void CMPTradeList::printAll()
                 auto key = it.Key<CTradeMatchKey>();
                 skey = strprintf("%s:%s", key.txid1.ToString(), key.txid2.ToString());
                 auto [amount1, amount2, fee] = it.Value<CTradeMatchValue>();
-                svalue = strprintf("%s:%s:%d:%d:%d:%d:%d:%d", key.address1, key.address2, key.prop1, key.prop2, amount1, amount2, key.block, fee);
+                svalue = strprintf("%d:%d:%d", amount1, amount2, fee);
             } break;
             default: continue;
         }
@@ -205,32 +174,40 @@ bool CMPTradeList::getMatchingTrades(const uint256& txid, uint32_t propertyId, U
 {
     int count = 0;
     totalReceived = totalSold = 0;
+    CDBaseIterator tx_it{NewIterator(), PartialKey<CTxTradeKey>(CBaseTxKey{txid})};
+    if (!tx_it.Valid()) return false;
+    auto tx1key = tx_it.Key<CTxTradeKey>();
     for (CDBaseIterator it{NewIterator(), CTradeMatchKey{}}; it; ++it) {
         // search key to see if this is a matching trade
         auto key = it.Key<CTradeMatchKey>();
-        if (key.txid1 != txid && key.txid2 != txid) continue;
+        auto mtxid = key.txid1 == txid ? &key.txid2 : key.txid2 == txid ? &key.txid1 : nullptr;
+        if (!mtxid) continue;
         auto [amount1, amount2, tradingFee] = it.Value<CTradeMatchValue>();
-        std::string strAmount1 = FormatMP(key.prop1, amount1);
 
+        tx_it.Seek(PartialKey<CTxTradeKey>(*mtxid));
+        if (!tx_it.Valid()) continue;
+        auto tx2key = tx_it.Key<CTxTradeKey>();
+        const auto& t1key = mtxid == &key.txid2 ? tx1key : tx2key;
+        const auto& t2key = mtxid == &key.txid2 ? tx2key : tx1key;
         // populate trade object and add to the trade array, correcting for orientation of trade
         UniValue trade(UniValue::VOBJ);
-        trade.pushKV("txid", txid.ToString());
+        trade.pushKV("txid", mtxid->ToString());
         trade.pushKV("block", key.block);
         if (auto pBlockIndex = GetActiveChain()[key.block]) {
             trade.pushKV("blocktime", pBlockIndex->GetBlockTime());
         }
-        if (key.prop1 == propertyId) {
-            trade.pushKV("address", TryEncodeOmniAddress(key.address1));
-            trade.pushKV("amountsold", strAmount1);
-            trade.pushKV("amountreceived", FormatMP(key.prop2, amount2));
-            trade.pushKV("tradingfee", FormatMP(key.prop2, tradingFee));
+        if (t1key.propertyIdDesired == propertyId) {
+            trade.pushKV("address", TryEncodeOmniAddress(t1key.address));
+            trade.pushKV("amountsold", FormatMP(t1key.propertyIdDesired, amount1));
+            trade.pushKV("amountreceived", FormatMP(t1key.propertyIdForSale, amount2));
+            trade.pushKV("tradingfee", FormatMP(t1key.propertyIdForSale, tradingFee));
             totalReceived += amount2;
             totalSold += amount1;
         } else {
-            trade.pushKV("address", TryEncodeOmniAddress(key.address2));
-            trade.pushKV("amountsold", FormatMP(key.prop2, amount2 + tradingFee));
-            trade.pushKV("amountreceived", strAmount1);
-            trade.pushKV("tradingfee", FormatMP(key.prop1, 0)); // not the liquidity taker so no fee for this participant - include attribute for standardness
+            trade.pushKV("address", TryEncodeOmniAddress(t2key.address));
+            trade.pushKV("amountsold", FormatMP(t2key.propertyIdDesired, amount2 + tradingFee));
+            trade.pushKV("amountreceived", FormatMP(t2key.propertyIdForSale, amount1));
+            trade.pushKV("tradingfee", FormatMP(t2key.propertyIdForSale, 0)); // not the liquidity taker so no fee for this participant - include attribute for standardness
             totalReceived += amount1;
             totalSold += amount2;
         }
@@ -264,29 +241,35 @@ void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyI
 {
     if (!count) return;
     std::vector<std::pair<int64_t, UniValue> > vecResponse;
+    CDBaseIterator tx1_it{NewIterator()}, tx2_it{NewIterator()};
     bool propertyIdSideAIsDivisible = isPropertyDivisible(propertyIdSideA);
     bool propertyIdSideBIsDivisible = isPropertyDivisible(propertyIdSideB);
     for (CDBaseIterator it{NewIterator(), CTradeMatchKey{}}; it; ++it) {
         auto key = it.Key<CTradeMatchKey>();
+        tx1_it.Seek(PartialKey<CTxTradeKey>(CBaseTxKey{key.txid1}));
+        tx2_it.Seek(PartialKey<CTxTradeKey>(CBaseTxKey{key.txid2}));
+        if (!tx1_it || !tx2_it) continue;
+        auto tx1_key = tx1_it.Key<CTxTradeKey>();
+        auto tx2_key = tx2_it.Key<CTxTradeKey>();
         uint256 sellerTxid, matchingTxid;
         std::string sellerAddress, matchingAddress;
         int64_t amountReceived = 0, amountSold = 0;
-        if (key.prop1 == propertyIdSideA && key.prop2 == propertyIdSideB) {
+        if (tx1_key.propertyIdDesired == propertyIdSideA && tx1_key.propertyIdForSale == propertyIdSideB) {
             sellerTxid = key.txid2;
-            sellerAddress = key.address2;
+            sellerAddress = tx2_key.address;
             matchingTxid = key.txid1;
-            matchingAddress = key.address1;
+            matchingAddress = tx1_key.address;
             auto value = it.Value<CTradeMatchValue>();
             amountSold = value.amount1;
             amountReceived = value.amount2;
-        } else if (key.prop2 == propertyIdSideA && key.prop1 == propertyIdSideB) {
+        } else if (tx1_key.propertyIdDesired == propertyIdSideB && tx1_key.propertyIdForSale == propertyIdSideA) {
             sellerTxid = key.txid1;
-            sellerAddress = key.address1;
+            sellerAddress = tx1_key.address;
             matchingTxid = key.txid2;
-            matchingAddress = key.address2;
+            matchingAddress = tx2_key.address;
             auto value = it.Value<CTradeMatchValue>();
-            amountReceived = value.amount1;
             amountSold = value.amount2;
+            amountReceived = value.amount1;
         } else {
             continue;
         }
@@ -336,7 +319,7 @@ void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyI
 int CMPTradeList::getMPTradeCountTotal()
 {
     int count = 0;
-    for (CDBaseIterator it{NewIterator()}; it; ++it) {
+    for (CDBaseIterator it{NewIterator(), CTxTradeKey{}}; it; ++it) {
         ++count;
     }
     return count;

@@ -170,13 +170,13 @@ void COmniValidationInterface::RewindDBsState(int nHeight)
         best_state_block = -1; // start from genesis block
     } else {
         auto block = best_state_block + 1; // revert to block inclusive
-        pDbTradeList->deleteAboveBlock(block);
         pDbStoList->deleteAboveBlock(block);
         pDbSpInfo->deleteSPAboveBlock(block);
         pDbFeeCache->RollBackCache(block);
         pDbFeeHistory->RollBackHistory(block);
         pDbNFT->RollBackAboveBlock(block);
         pDbTransaction->DeleteTransactions(txsToDelete);
+        pDbTradeList->deleteTransactions(txsToDelete, block);
         pDbTransactionList->deleteTransactions(txsToDelete, block);
         if (fAddressIndex) {
             pDbAddress->UpdateSpentIndex(spentIndexToUdpdate);

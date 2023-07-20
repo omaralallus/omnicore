@@ -33,7 +33,7 @@ bool CheckInput(const CTxOut& txOut, int nHeight, CTxDestination& dest);
 int IsMyAddress(const std::string& address, interfaces::Wallet* iWallet);
 
 /** IsMine wrapper to determine whether the address is in the wallet. */
-int IsMyAddressAllWallets(const std::string& address, const bool matchAny = false, const wallet::isminefilter& filter = wallet::ISMINE_SPENDABLE);
+bool IsMyAddressAllWallets(const std::string& address);
 
 /** Estimate the minimum fee considering user set parameters and the required fee. */
 CAmount GetEstimatedFeePerKb(interfaces::Wallet& iWallet);
@@ -51,7 +51,6 @@ int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddre
 #endif
 }
 
-bool HasWallets();
-std::vector<std::shared_ptr<wallet::CWallet>> GetWallets();
+std::vector<std::unique_ptr<interfaces::Wallet>> GetWallets();
 
 #endif // BITCOIN_OMNICORE_WALLETUTILS_H

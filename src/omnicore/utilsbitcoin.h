@@ -23,6 +23,7 @@ const CChainIndex& GetActiveChain();
 /** Abort the node. */
 void MayAbortNode(const std::string& message);
 
+std::optional<std::pair<unsigned int, uint256>> AddressToUint(const std::string& address);
 std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey);
 
 bool MainNet();

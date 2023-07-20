@@ -10,6 +10,7 @@
 
 #include <chain.h>
 #include <chainparams.h>
+#include <key_io.h>
 #include <stdexcept>
 #include <shutdown.h>
 #include <sync.h>
@@ -56,10 +57,36 @@ void MayAbortNode(const std::string& message)
     }
 }
 
+struct DataVisitor
+{
+    std::vector<unsigned char> operator()(const CNoDestination& noDest) const { return {}; }
+    std::vector<unsigned char> operator()(const PKHash& hash) const { return {hash.begin(), hash.end()}; }
+    std::vector<unsigned char> operator()(const ScriptHash& scriptHash) const { return {scriptHash.begin(), scriptHash.end()}; }
+    std::vector<unsigned char> operator()(const WitnessV0ScriptHash& witnessScriptHash) const { return {witnessScriptHash.begin(), witnessScriptHash.end()}; }
+    std::vector<unsigned char> operator()(const WitnessV0KeyHash& witnessKeyHash) const { return {witnessKeyHash.begin(), witnessKeyHash.end()}; }
+    std::vector<unsigned char> operator()(const WitnessV1Taproot& witnessTaproot) const { return {witnessTaproot.begin(), witnessTaproot.end()}; }
+    std::vector<unsigned char> operator()(const WitnessUnknown& witnessUnknown) const { return {}; }
+};
+
 std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey)
 {
     CTxDestination dest;
     if (!ExtractDestination(scriptPubKey, dest)) {
+        return {};
+    }
+    auto bytes = std::visit(DataVisitor{}, dest);
+    if (bytes.empty() || bytes.size() > uint256::size()) {
+        return {};
+    }
+    uint256 addressBytes;
+    std::copy(bytes.begin(), bytes.end(), addressBytes.begin());
+    return std::make_pair(dest.index(), addressBytes);
+}
+
+std::optional<std::pair<unsigned int, uint256>> AddressToUint(const std::string& address)
+{
+    auto dest = DecodeDestination(address);
+    if (!IsValidDestination(dest)) {
         return {};
     }
     auto bytes = std::visit(DataVisitor{}, dest);

@@ -25,7 +25,6 @@
 #include <vector>
 
 using mastercore::IsMyAddress;
-using mastercore::Uint256;
 
 CMPSTOList::CMPSTOList(const fs::path& path, bool fWipe)
 {
@@ -92,19 +91,18 @@ struct CBlockTxKey {
     uint32_t block = ~0u;
     uint8_t chash[4];
 
-    template<typename Stream>
-    void Serialize(Stream& s) const
-    {
-        ser_writedata32be(s, ~block);
-        ::Serialize(s, chash);
-    }
-    template<typename Stream>
-    void Unserialize(Stream& s)
-    {
-        block = ~ser_readdata32be(s);
-        ::Unserialize(s, chash);
+    SERIALIZE_METHODS(CBlockTxKey, obj) {
+        READWRITE(Using<BigEndian32Inv>(obj.block));
+        READWRITE(obj.chash);
     }
 };
+
+CPartialKey PartialTxId(const CBlockTxKey& key)
+{
+    std::string pkey;
+    CStringWriter{SER_DISK, CLIENT_VERSION, pkey} << CTxAddressKey::prefix << key.chash;
+    return CPartialKey{std::move(pkey)};
+}
 
 std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string& filterAddress, int startBlock, int endBlock, interfaces::Wallet &iWallet)
 {
@@ -114,7 +112,7 @@ std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string&
     for (CDBaseIterator it{NewIterator(), CBlockTxKey{block}}; it; ++it) {
         auto key = it.Key<CBlockTxKey>();
         if (key.block < startBlock) break;
-        for (tx_it.Seek(PartialKey<CTxAddressKey>(Uint256(key.chash))); tx_it; ++tx_it) {
+        for (tx_it.Seek(PartialTxId(key)); tx_it; ++tx_it) {
             auto tx_key = tx_it.Key<CTxAddressKey>();
             if (tx_key.block != key.block) continue;
             if (!filterAddress.empty() && tx_key.address != filterAddress) continue;
@@ -141,7 +139,7 @@ int CMPSTOList::deleteAboveBlock(int blockNum)
         auto key = it.Key<CBlockTxKey>();
         if (key.block < blockNum) break;
         batch.Delete(it.Key());
-        for (tx_it.Seek(PartialKey<CTxAddressKey>(Uint256(key.chash))); tx_it; ++tx_it) {
+        for (tx_it.Seek(PartialTxId(key)); tx_it; ++tx_it) {
             auto tx_key = tx_it.Key<CTxAddressKey>();
             if (tx_key.block != key.block) continue;
             ++n_found;

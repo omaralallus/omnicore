@@ -41,7 +41,7 @@ bool CMPSPInfo::Entry::isDivisible() const
 
 void CMPSPInfo::Entry::print() const
 {
-    PrintToConsole("%s:%s(Fixed=%s,Divisible=%s):%d:%s/%s, %s %s\n",
+    PrintToLog("%s:%s(Fixed=%s;Manual=%s;Unique=%s;Divisible=%s):%d:%s/%s, %s %s\n",
             issuer,
             name,
             fixed ? "Yes" : "No",
@@ -187,19 +187,21 @@ uint32_t CMPSPInfo::peekNextSPID(uint8_t ecosystem) const
     return nextId;
 }
 
-struct CUpdatePropertyKey {
+struct CBasePropertyKey {
+    uint32_t propertyId = 0;
+
+    SERIALIZE_METHODS(CBasePropertyKey, obj) {
+        READWRITE(VARINT(obj.propertyId));
+    }
+};
+
+struct CUpdatePropertyKey : CBasePropertyKey {
     static constexpr uint8_t prefix = 's';
-    uint32_t propertyId;
     uint32_t block = ~0u;
 
     SERIALIZE_METHODS(CUpdatePropertyKey, obj) {
-        READWRITE(VARINT(obj.propertyId));
-        if constexpr (ser_action.ForRead()) {
-            READWRITE(obj.block);
-            obj.block = ~obj.block;
-        } else {
-            READWRITE(~obj.block);
-        }
+        READWRITEAS(CBasePropertyKey, obj);
+        READWRITE(Using<BigEndian32Inv>(obj.block));
     }
 };
 
@@ -271,7 +273,7 @@ bool CMPSPInfo::getSP(uint32_t propertyId, Entry& info) const
     }
 
     // DB value for property entry
-    CDBaseIterator it{NewIterator(), PartialKey<CUpdatePropertyKey>(propertyId)};
+    CDBaseIterator it{NewIterator(), PartialKey<CUpdatePropertyKey>(CBasePropertyKey{propertyId})};
     auto status = it.Valid() && it.Value(info);
     if (!status) {
         PrintToLog("%s(): ERROR for SP %d: not found\n", __func__, propertyId);
@@ -305,7 +307,7 @@ void CMPSPInfo::deleteSPAboveBlock(int block)
         uint32_t startPropertyId = (ecosystem == 1) ? 1 : TEST_ECO_PROPERTY_1;
         auto lastPropertyId = peekNextSPID(ecosystem);
         for (uint32_t propertyId = startPropertyId; propertyId < lastPropertyId; propertyId++) {
-            for (it.Seek(PartialKey<CUpdatePropertyKey>(propertyId)); it; ++it) {
+            for (it.Seek(PartialKey<CUpdatePropertyKey>(CBasePropertyKey{propertyId})); it; ++it) {
                 auto key = it.Key<CUpdatePropertyKey>();
                 if (key.block < startBlock) break;
                 auto info = it.Value<Entry>();

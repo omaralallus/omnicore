@@ -31,17 +31,17 @@ COmniAddressDB::~COmniAddressDB()
 
 bool COmniAddressDB::WriteAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount>>& vect)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     for (auto it = vect.begin(); it != vect.end(); it++)
-        batch.Put(KeyToString(it->first), ValueToString(it->second));
+        batch.Write(it->first, it->second);
     return WriteBatch(batch);
 }
 
 bool COmniAddressDB::EraseAddressIndex(const std::vector<std::pair<CAddressIndexKey, CAmount>>& vect)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     for (auto it = vect.begin(); it != vect.end(); it++)
-        batch.Delete(KeyToString(it->first));
+        batch.Delete(it->first);
     return WriteBatch(batch);
 }
 
@@ -66,12 +66,12 @@ bool COmniAddressDB::ReadAddressIndex(const uint256& addressHash, unsigned int t
 
 bool COmniAddressDB::UpdateAddressUnspentIndex(const std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>>& vect)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     for (auto it = vect.begin(); it != vect.end(); it++) {
         if (it->second.IsNull()) {
-            batch.Delete(KeyToString(it->first));
+            batch.Delete(it->first);
         } else {
-            batch.Put(KeyToString(it->first), ValueToString(it->second));
+            batch.Write(it->first, it->second);
         }
     }
     return WriteBatch(batch);
@@ -136,12 +136,12 @@ bool COmniAddressDB::ReadSpentIndex(const CSpentIndexKey& key, CSpentIndexValue&
 
 bool COmniAddressDB::UpdateSpentIndex(const std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>>& vect)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     for (auto it = vect.begin(); it != vect.end(); it++) {
         if (it->second.IsNull()) {
-            batch.Delete(KeyToString(it->first));
+            batch.Delete(it->first);
         } else {
-            batch.Put(KeyToString(it->first), ValueToString(it->second));
+            batch.Write(it->first, it->second);
         }
     }
     return WriteBatch(batch);

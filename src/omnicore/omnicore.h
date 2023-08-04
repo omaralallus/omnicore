@@ -187,12 +187,8 @@ void NotifyTotalTokensChanged(uint32_t propertyId, int block);
 /** Process every new transaction */
 bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned int idx, const CBlockIndex* pBlockIndex);
 
-namespace Consensus {
-struct Params;
-}
-
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
-bool GetTransaction(const uint256& hash, CTransactionRef& tx, const Consensus::Params& params, int& blockHeight);
+bool GetTransaction(const uint256& hash, CTransactionRef& tx, int& blockHeight);
 
 class CCoinsViewCacheOnly : public CCoinsViewCache
 {

@@ -7,6 +7,7 @@
 #include <omnicore/omnicore.h>
 #include <omnicore/parsing.h>
 #include <omnicore/script.h>
+#include <omnicore/dbtransaction.h>
 #include <omnicore/walletutils.h>
 
 #include <consensus/amount.h>
@@ -40,6 +41,8 @@ using namespace wallet;
 #include <vector>
 
 using mastercore::AddressToPubKey;
+using mastercore::GetMempoolTransaction;
+using mastercore::pDbTransaction;
 using mastercore::UseEncodingClassC;
 
 /** Creates and sends a transaction with multiple receivers. */
@@ -421,17 +424,24 @@ int CreateFundedTransaction(
     int nHashType = SIGHASH_ALL;
 
     {
-        int blockHeight;
-        CTransactionRef txPrev;
         bool fCoinbase = false;
         for (size_t i = 0; i < tx.vin.size(); i++) {
             auto& txin = tx.vin[i];
+            CTxOut out;
+            bool outFound = false;
             const auto& outpoint = txin.prevout;
-            if (!GetTransaction(outpoint.hash, txPrev, Params().GetConsensus(), blockHeight) || outpoint.n >= txPrev->vout.size()) {
+            if (auto tx = GetMempoolTransaction(outpoint.hash)) {
+                if (tx->vout.size() > outpoint.n) {
+                    outFound = true;
+                    out = tx->vout[outpoint.n];
+                }
+            } else {
+                outFound = pDbTransaction->GetTransactionOut(outpoint, out);
+            }
+            if (!outFound) {
                 PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
                 continue;
             }
-            const auto& out = txPrev->vout[outpoint.n];
 
             SignatureData sigdata;
             if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, out.nValue, nHashType), out.scriptPubKey, sigdata)) {

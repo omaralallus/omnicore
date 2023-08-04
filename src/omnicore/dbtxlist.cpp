@@ -74,9 +74,9 @@ struct CMPTxList::CTxKey {
 
     SERIALIZE_METHODS(CTxKey, obj) {
         READWRITE(obj.txid);
-        READWRITE(obj.block);
+        READWRITE(Using<VarintSigned>(obj.block));
         READWRITE(obj.valid);
-        READWRITE(VARINT(obj.type));
+        READWRITE(Using<Varint>(obj.type));
     }
 
     bool operator==(const CTxKey& other) const {
@@ -119,7 +119,7 @@ struct CPaymentTxKey {
     SERIALIZE_METHODS(CPaymentTxKey, obj) {
         READWRITE(obj.txid);
         READWRITE(Using<BigEndian32Inv>(obj.payments));
-        READWRITE(obj.block);
+        READWRITE(Using<VarintSigned>(obj.block));
         READWRITE(obj.valid);
     }
 };
@@ -132,10 +132,10 @@ struct CPaymentTxValue {
     uint64_t amount;
 
     SERIALIZE_METHODS(CPaymentTxValue, obj) {
-        READWRITE(VARINT(obj.vout));
+        READWRITE(Using<Varint>(obj.vout));
         READWRITE(obj.buyer);
         READWRITE(obj.seller);
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<Varint>(obj.propertyId));
         READWRITE(obj.amount);
     }
 };
@@ -174,7 +174,7 @@ struct CDexCancelTxKey {
     SERIALIZE_METHODS(CDexCancelTxKey, obj) {
         READWRITE(obj.txid);
         READWRITE(Using<BigEndian32Inv>(obj.affected));
-        READWRITE(obj.block);
+        READWRITE(Using<VarintSigned>(obj.block));
         READWRITE(obj.valid);
     }
 };
@@ -184,7 +184,7 @@ struct CDexCancelTxValue {
     uint64_t amount;
 
     SERIALIZE_METHODS(CDexCancelTxValue, obj) {
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<Varint>(obj.propertyId));
         READWRITE(obj.amount);
     }
 };
@@ -238,7 +238,7 @@ struct CSendAllTxValue {
     int64_t amount;
 
     SERIALIZE_METHODS(CSendAllTxValue, obj) {
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<Varint>(obj.propertyId));
         READWRITE(obj.amount);
     }
 };
@@ -410,9 +410,16 @@ void CMPTxList::RecordNonFungibleGrant(const uint256& txid, int64_t start, int64
 bool CMPTxList::getTX(const uint256 &txid, CTxKey& key, int64_t& value)
 {
     CDBaseIterator it{NewIterator(), PartialKey<CTxKey>(txid)};
-    bool status = it.Valid() && (key = it.Key<CTxKey>(), true) && it.Value(value);
+    bool status = it.Valid() && it.Key(key) && it.Value(value);
     ++nRead;
     return status;
+}
+
+bool CMPTxList::existsMPTX(const uint256& txid)
+{
+    CDBaseIterator it{NewIterator()};
+    return (it.Seek(PartialKey<CTxKey>(txid)), it)
+        || (it.Seek(PartialKey<CPaymentTxKey>(txid)), it);
 }
 
 // call it like so (variable # of parameters):
@@ -427,14 +434,24 @@ bool CMPTxList::getValidMPTX(const uint256& txid, int* block, unsigned int* type
     if (msc_debug_txdb) PrintToLog("%s()\n", __func__);
 
     CTxKey key;
-    int64_t value;
-    if (!getTX(txid, key, value)) return false;
-
-    // parse the string returned, find the validity flag/bit & other parameters
-    bool validity = key.valid > 0;
-    block && (*block = key.block);
-    type && (*type = key.type);
-    nAmended && (*nAmended = value);
+    int64_t value = 0;
+    bool validity = false;
+    if (getTX(txid, key, value)) {
+        // parse the string returned, find the validity flag/bit & other parameters
+        validity = key.valid > 0;
+        block && (*block = key.block);
+        type && (*type = key.type);
+        nAmended && (*nAmended = value);
+    } else {
+        CPaymentTxKey key;
+        CDBaseIterator it{NewIterator(), PartialKey<CPaymentTxKey>(txid)};
+        if (it.Valid() && it.Key(key) && it.Value(value)) {
+            validity = key.valid > 0;
+            block && (*block = key.block);
+            type && (*type = 0);
+            nAmended && (*nAmended = value);
+        }
+    }
     if (msc_debug_txdb) printStats();
     return validity;
 }
@@ -461,7 +478,7 @@ static void ProcessActivations(const std::vector<activation>& activations, std::
         CTransactionRef wtx;
         CMPTransaction mp_obj;
 
-        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHeight)) {
+        if (!GetTransaction(hash, wtx, blockHeight)) {
             PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
             continue;
         }
@@ -651,7 +668,7 @@ void CMPTxList::printAll()
 }
 
 template<typename T>
-bool DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const uint256& txid)
+bool DeleteToBatch(CDBWriteBatch& batch, CDBaseIterator& it, const uint256& txid)
 {
     bool found = false;
     for (it.Seek(PartialKey<T>(txid)); it; ++it) {
@@ -663,7 +680,7 @@ bool DeleteToBatch(leveldb::WriteBatch& batch, CDBaseIterator& it, const uint256
 
 void CMPTxList::deleteTransactions(const std::set<uint256>& txs, int block)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     CDBaseIterator it{NewIterator()};
     std::set<uint256> cancelTxs;
     for (it.Seek(CBlockTxKey{}); it; ++it) {
@@ -672,14 +689,14 @@ void CMPTxList::deleteTransactions(const std::set<uint256>& txs, int block)
     }
     for (auto& txid : txs) {
         bool deleted = DeleteToBatch<CTxKey>(batch, it, txid) ||
-                       DeleteToBatch<CSendAllTxKey>(batch, it, txid) ||
                        DeleteToBatch<CPaymentTxKey>(batch, it, txid) ||
                        (DeleteToBatch<CDexCancelTxKey>(batch, it, txid) &&
                        cancelTxs.insert(txid).second);
+        deleted |= DeleteToBatch<CSendAllTxKey>(batch, it, txid);
+        deleted |= DeleteToBatch<CDexTxToCancelKey>(batch, it, txid);
         if (deleted) {
             PrintToLog("%s() DELETING: %s\n", __func__, txid.ToString());
         }
-        DeleteToBatch<CDexTxToCancelKey>(batch, it, txid);
     }
     for (it.Seek(CDexTxToCancelKey{{}}); it && !cancelTxs.empty(); ++it) {
         auto txid = it.Value<uint256>();

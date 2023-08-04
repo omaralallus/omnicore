@@ -53,6 +53,7 @@ public:
     int getDBVersion();
     int setDBVersion();
 
+    bool existsMPTX(const uint256& txid);
     bool getValidMPTX(const uint256& txid, int* block = nullptr, unsigned int* type = nullptr, uint64_t* nAmended = nullptr);
 
     std::set<int> GetSeedBlocks(int startHeight, int endHeight);

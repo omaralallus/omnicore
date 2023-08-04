@@ -42,7 +42,6 @@
 #include <base58.h>
 #include <chainparams.h>
 #include <init.h>
-#include <index/txindex.h>
 #include <interfaces/wallet.h>
 #include <node/context.h>
 #include <key_io.h>
@@ -787,7 +786,7 @@ static UniValue omni_getpayload(const JSONRPCRequest& request)
 
     CTransactionRef tx;
     int blockHeight;
-    if (!GetTransaction(txid, tx, Params().GetConsensus(), blockHeight)) {
+    if (!GetTransaction(txid, tx, blockHeight)) {
         PopulateFailure(MP_TX_NOT_FOUND);
     }
 
@@ -1552,7 +1551,7 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
 
     CTransactionRef tx;
     int blockHeight;
-    if (!GetTransaction(creationHash, tx, Params().GetConsensus(), blockHeight)) {
+    if (!GetTransaction(creationHash, tx, blockHeight)) {
         PopulateFailure(MP_TX_NOT_FOUND);
     }
 
@@ -1681,7 +1680,7 @@ static UniValue omni_getactivecrowdsales(const JSONRPCRequest& request)
 
         CTransactionRef tx;
         int blockHeight;
-        if (!GetTransaction(creationHash, tx, Params().GetConsensus(), blockHeight)) {
+        if (!GetTransaction(creationHash, tx, blockHeight)) {
             PopulateFailure(MP_TX_NOT_FOUND);
         }
 
@@ -2172,7 +2171,7 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
     // now we want to loop through each of the transactions in the block and run against CMPTxList::exists
     // those that return positive add to our response array
     for(const auto& tx : block.vtx) {
-        if (pDbTransactionList->getValidMPTX(tx->GetHash())) {
+        if (pDbTransactionList->existsMPTX(tx->GetHash())) {
             // later we can add a verbose flag to decode here, but for now callers can send returned txids into gettransaction_MP
             // add the txid into the response as it's an MP transaction
             response.push_back(tx->GetHash().GetHex());

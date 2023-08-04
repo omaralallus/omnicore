@@ -39,7 +39,7 @@ private:
 
     // Schema:
     //   txid -> amount invested, crowdsale deadline, user issued tokens, issuer issued tokens
-    std::map<uint256, std::vector<int64_t> > txFundraiserData;
+    std::map<uint256, std::vector<int64_t>> txFundraiserData;
 
 public:
     CMPCrowd();
@@ -57,7 +57,7 @@ public:
     int64_t getIssuerCreated() const { return i_created; }
 
     void insertDatabase(const uint256& txHash, const std::vector<int64_t>& txData);
-    std::map<uint256, std::vector<int64_t> > getDatabase() const { return txFundraiserData; }
+    const auto& getDatabase() const { return txFundraiserData; }
 
     std::string toString(const std::string& address) const;
     void print(const std::string& address, FILE* fp = stdout) const;

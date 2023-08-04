@@ -27,20 +27,17 @@ bool ShouldConsensusHashBlock(int block) {
         return true;
     }
 
-    if (!gArgs.IsArgSet("-omnishowblockconsensushash")) {
-        return false;
-    }
-
-    const std::vector<std::string>& vecBlocks = gArgs.GetArgs("-omnishowblockconsensushash");
-    for (std::vector<std::string>::const_iterator it = vecBlocks.begin(); it != vecBlocks.end(); ++it) {
-        int64_t paramBlock = StrToInt64(*it, false);
-        if (paramBlock < 1) continue; // ignore non numeric values
-        if (paramBlock == block) {
-            return true;
+    static const auto vecBlocks = []() {
+        std::set<int> vblocks;
+        for (auto& block : gArgs.GetArgs("-omnishowblockconsensushash")) {
+            auto paramBlock = StrToInt64(block, false);
+            if (paramBlock < 1) continue; // ignore non numeric values
+            vblocks.insert(paramBlock);
         }
-    }
+        return vblocks;
+    }();
 
-    return false;
+    return vecBlocks.count(block);
 }
 
 // Generates a consensus string for hashing based on a tally object

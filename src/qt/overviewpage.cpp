@@ -158,7 +158,7 @@ public:
             amount = 0;
             CTransactionRef wtx;
             int blockHeight;
-            if (GetTransaction(hash, wtx, Params().GetConsensus(), blockHeight)) {
+            if (GetTransaction(hash, wtx, blockHeight)) {
                 CMPTransaction mp_obj;
                 CCoinsViewCacheOnly view;
                 int parseRC = ParseTransaction(view, *wtx, blockHeight, 0, mp_obj);

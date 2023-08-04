@@ -129,7 +129,7 @@ static void check_outputs(uint256& hash, int expected_number) {
     bool tx_succeed = false;
     for (int i = 0; i < 100 && !tx_succeed; i++) {
         std::this_thread::sleep_for(1ms);
-        tx_succeed = GetTransaction(hash, tx, Params().GetConsensus(), blockHeight);
+        tx_succeed = GetTransaction(hash, tx, blockHeight);
     }
     BOOST_REQUIRE(tx_succeed);
     BOOST_CHECK_EQUAL(tx->vout.size(), expected_number);

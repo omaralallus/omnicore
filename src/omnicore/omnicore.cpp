@@ -46,7 +46,6 @@
 #include <core_io.h>
 #include <fs.h>
 #include <key_io.h>
-#include <index/txindex.h>
 #include <init.h>
 #include <validation.h>
 #include <primitives/block.h>
@@ -811,13 +810,9 @@ static bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
             continue;
         }
 
-        CTransactionRef txPrev;
-        int blockHeight;
         Coin newcoin;
-        if (GetTransaction(txIn.prevout.hash, txPrev, Params().GetConsensus(), blockHeight)) {
-            newcoin.out.scriptPubKey = txPrev->vout[nOut].scriptPubKey;
-            newcoin.out.nValue = txPrev->vout[nOut].nValue;
-            newcoin.nHeight = blockHeight;
+        if (pDbTransaction->GetTransactionOut(txIn.prevout, newcoin.out)) {
+            newcoin.nHeight = MEMPOOL_HEIGHT; // fake height
         } else {
             return false;
         }
@@ -837,14 +832,14 @@ static bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
 static int parseTransaction(bool bRPConly, CCoinsViewCache& view, const CTransaction& wtx, int nBlock, unsigned int idx, CMPTransaction& mp_tx, unsigned int nTime)
 {
     assert(bRPConly == mp_tx.isRpcOnly());
-    mp_tx.Set(wtx.GetHash(), nBlock, idx, nTime);
 
     // ### CLASS IDENTIFICATION AND MARKER CHECK ###
     int omniClass = GetEncodingClass(wtx, nBlock);
-
     if (omniClass == NO_MARKER) {
         return -1; // No Exodus/Omni marker, thus not a valid Omni transaction
     }
+
+    mp_tx.Set(wtx.GetHash(), nBlock, idx, nTime);
 
     if (!bRPConly || msc_debug_parser_readonly) {
         PrintToLog("____________________________________________________________________________________________________________________________________\n");
@@ -1619,6 +1614,7 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
     CMPTransaction mp_obj;
     mp_obj.unlockLogic();
     bool fFoundTx = false;
+    bool fStoredTx = false;
 
     int pop_ret = parseTransaction(false, view, tx, nBlock, idx, mp_obj, nBlockTime);
     if (pop_ret >= 0) {
@@ -1637,7 +1633,9 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
             assert(mp_obj.getEncodingClass() == OMNI_CLASS_A);
             assert(mp_obj.getPayload().empty() == true);
 
+            fStoredTx = true;
             fFoundTx |= HandleDExPayments(tx, nBlock, mp_obj.getSender());
+            pDbTransaction->RecordTransaction(tx, nBlock, idx, pop_ret);
         } else {
             int interp_ret = mp_obj.interpretPacket();
             if (interp_ret) PrintToLog("!!! interpretPacket() returned %d !!!\n", interp_ret);
@@ -1645,17 +1643,18 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
             // Only structurally valid transactions get recorded in levelDB
             // PKT_ERROR - 2 = interpret_Transaction failed, structurally invalid payload
             if (interp_ret != PKT_ERROR - 2) {
+                fStoredTx = true;
                 bool bValid = (0 <= interp_ret);
                 pDbTransactionList->recordTX(tx.GetHash(), bValid, nBlock, mp_obj.getType(), mp_obj.getNewAmount());
-                pop_ret = interp_ret;
+                pDbTransaction->RecordTransaction(tx, nBlock, idx, interp_ret);
             }
             fFoundTx |= (interp_ret == 0);
         }
-    } else {
-        pop_ret = MPRPCErrorCode::MP_TX_IS_NOT_OMNI_PROTOCOL;
     }
 
-    pDbTransaction->RecordTransaction(tx, nBlock, idx, pop_ret);
+    if (!fStoredTx) {
+        pDbTransaction->RecordTransactionOuts(tx);
+    }
 
     if (fFoundTx && msc_debug_consensus_hash_every_transaction) {
         uint256 consensusHash = GetConsensusHash();
@@ -1743,11 +1742,11 @@ const std::vector<unsigned char> GetOmMarker()
  * Return transaction in txOut, and if it was found inside a block, its hash is placed in hashBlock.
  * If blockIndex is provided, the transaction is fetched from the corresponding block.
  */
-bool GetTransaction(const uint256& hash, CTransactionRef& txOut, const Consensus::Params& consensusParams, int& blockHeight)
+bool GetTransaction(const uint256& hash, CTransactionRef& txOut, int& blockHeight)
 {
     blockHeight = 0;
     txOut = mastercore::GetMempoolTransaction(hash);
-    return txOut || pDbTransaction->GetTx(hash, txOut, blockHeight);
+    return txOut || pDbTransaction->GetTransaction(hash, txOut, blockHeight);
 }
 
 CCoinsView CCoinsViewCacheOnly::noBase;

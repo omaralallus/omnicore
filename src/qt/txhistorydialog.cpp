@@ -226,7 +226,7 @@ int TXHistoryDialog::PopulateHistoryMap()
 
         CTransactionRef wtx;
         int blockHeight;
-        if (!GetTransaction(txHash, wtx, Params().GetConsensus(), blockHeight)) continue;
+        if (!GetTransaction(txHash, wtx, blockHeight)) continue;
         if (blockHeight == 0) {
             // this transaction is unconfirmed, should be one of our pending transactions
             LOCK(cs_pending);

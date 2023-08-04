@@ -319,18 +319,14 @@ bool mastercore::isCrowdsalePurchase(const uint256& txid, const std::string& add
     // 2. loop those crowdsales for that address and check their participant txs in database
 
     // check for an active crowdsale to this address
-    CMPCrowd* pcrowdsale = getCrowd(address);
-    if (pcrowdsale) {
-        std::map<uint256, std::vector<int64_t> >::const_iterator it;
-        const std::map<uint256, std::vector<int64_t> >& database = pcrowdsale->getDatabase();
-        for (it = database.begin(); it != database.end(); it++) {
-            const uint256& tmpTxid = it->first;
-            if (tmpTxid == txid) {
-                *propertyId = pcrowdsale->getPropertyId();
-                *userTokens = it->second.at(2);
-                *issuerTokens = it->second.at(3);
-                return true;
-            }
+    if (CMPCrowd* pcrowdsale = getCrowd(address)) {
+        const auto& database = pcrowdsale->getDatabase();
+        auto it = database.find(txid);
+        if (it != database.end()) {
+            *propertyId = pcrowdsale->getPropertyId();
+            *userTokens = it->second.at(2);
+            *issuerTokens = it->second.at(3);
+            return true;
         }
     }
 
@@ -340,13 +336,12 @@ bool mastercore::isCrowdsalePurchase(const uint256& txid, const std::string& add
         for (uint32_t loopPropertyId = startPropertyId; loopPropertyId < pDbSpInfo->peekNextSPID(ecosystem); loopPropertyId++) {
             CMPSPInfo::Entry sp;
             if (!pDbSpInfo->getSP(loopPropertyId, sp)) continue;
-            for (std::map<uint256, std::vector<int64_t> >::const_iterator it = sp.historicalData.begin(); it != sp.historicalData.end(); it++) {
-                if (it->first == txid) {
-                    *propertyId = loopPropertyId;
-                    *userTokens = it->second.at(2);
-                    *issuerTokens = it->second.at(3);
-                    return true;
-                }
+            auto it = sp.historicalData.find(txid);
+            if (it != sp.historicalData.end()) {
+                *propertyId = loopPropertyId;
+                *userTokens = it->second.at(2);
+                *issuerTokens = it->second.at(3);
+                return true;
             }
         }
     }

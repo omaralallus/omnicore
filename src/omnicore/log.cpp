@@ -232,7 +232,7 @@ static void handleSIGUP(int)
 
 void InitDebugLogLevels()
 {
-    fOmniCoreConsoleLog = gArgs.GetBoolArg("-printtoconsole", !gArgs.GetBoolArg("-daemon", false));
+    fOmniCoreConsoleLog = gArgs.GetBoolArg("-printtoconsole", false);
 
 #ifndef WIN32
     // Reopen omnicore.log on SIGHUP

@@ -21,7 +21,6 @@
 #include <validation.h>
 #include <sync.h>
 #include <tinyformat.h>
-#include <index/txindex.h>
 #ifdef ENABLE_WALLET
 #include <omnicore/walletutils.h>
 #include <wallet/wallet.h>

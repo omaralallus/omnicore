@@ -47,8 +47,8 @@ struct CTxAddressKey {
     SERIALIZE_METHODS(CTxAddressKey, obj) {
         READWRITE(obj.hash);
         READWRITE(obj.address);
-        READWRITE(obj.block);
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<VarintSigned>(obj.block));
+        READWRITE(Using<Varint>(obj.propertyId));
     }
 };
 
@@ -97,13 +97,6 @@ struct CBlockTxKey {
     }
 };
 
-CPartialKey PartialTxId(const CBlockTxKey& key)
-{
-    std::string pkey;
-    CStringWriter{SER_DISK, CLIENT_VERSION, pkey} << CTxAddressKey::prefix << key.chash;
-    return CPartialKey{std::move(pkey)};
-}
-
 std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string& filterAddress, int startBlock, int endBlock, interfaces::Wallet &iWallet)
 {
     uint32_t block = endBlock;
@@ -112,7 +105,7 @@ std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string&
     for (CDBaseIterator it{NewIterator(), CBlockTxKey{block}}; it; ++it) {
         auto key = it.Key<CBlockTxKey>();
         if (key.block < startBlock) break;
-        for (tx_it.Seek(PartialTxId(key)); tx_it; ++tx_it) {
+        for (tx_it.Seek(PartialKey<CTxAddressKey>(key.chash)); tx_it; ++tx_it) {
             auto tx_key = tx_it.Key<CTxAddressKey>();
             if (tx_key.block != key.block) continue;
             if (!filterAddress.empty() && tx_key.address != filterAddress) continue;
@@ -131,7 +124,7 @@ std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string&
  */
 int CMPSTOList::deleteAboveBlock(int blockNum)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     unsigned int n_found = 0;
     std::vector<std::string> vecSTORecords;
     CDBaseIterator tx_it{NewIterator()};
@@ -139,7 +132,7 @@ int CMPSTOList::deleteAboveBlock(int blockNum)
         auto key = it.Key<CBlockTxKey>();
         if (key.block < blockNum) break;
         batch.Delete(it.Key());
-        for (tx_it.Seek(PartialTxId(key)); tx_it; ++tx_it) {
+        for (tx_it.Seek(PartialKey<CTxAddressKey>(key.chash)); tx_it; ++tx_it) {
             auto tx_key = tx_it.Key<CTxAddressKey>();
             if (tx_key.block != key.block) continue;
             ++n_found;

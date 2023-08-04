@@ -333,7 +333,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         // tx not in historyMap, retrieve the transaction object
         CTransactionRef wtx;
         int blockHeight;
-        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHeight)) continue;
+        if (!GetTransaction(hash, wtx, blockHeight)) continue;
 
         // setup some variables
         CMPTransaction mp_obj;

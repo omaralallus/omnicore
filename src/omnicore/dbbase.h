@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <iterator>
 #include <leveldb/db.h>
+#include <leveldb/write_batch.h>
 
 #include <clientversion.h>
 #include <fs.h>
@@ -44,19 +45,19 @@ public:
     size_t size() const { return data.size(); }
 };
 
-template<size_t N>
-struct BigEndianInvFormatter : private BigEndianFormatter<N>
+template<typename BaseFormatter>
+struct CustomUintInvFormatter : private BaseFormatter
 {
     template<typename Stream, typename T> void Ser(Stream &s, const T& v)
     {
         static_assert(std::is_unsigned_v<std::decay_t<T>>);
-        BigEndianFormatter<N>::Ser(s, ~v);
+        BaseFormatter::Ser(s, ~v);
     }
 
     template<typename Stream, typename T> void Unser(Stream& s, T& v)
     {
         static_assert(std::is_unsigned_v<std::decay_t<T>>);
-        BigEndianFormatter<N>::Unser(s, v);
+        BaseFormatter::Unser(s, v);
         v = ~v;
     }
 };
@@ -64,8 +65,11 @@ struct BigEndianInvFormatter : private BigEndianFormatter<N>
 using Enum8 = CustomUintFormatter<1>;
 using BigEndian32 = BigEndianFormatter<4>;
 using BigEndian64 = BigEndianFormatter<8>;
-using BigEndian32Inv = BigEndianInvFormatter<4>;
-using BigEndian64Inv = BigEndianInvFormatter<8>;
+using Varint = VarIntFormatter<VarIntMode::DEFAULT>;
+using VarintInv = CustomUintInvFormatter<Varint>;
+using BigEndian32Inv = CustomUintInvFormatter<BigEndian32>;
+using BigEndian64Inv = CustomUintInvFormatter<BigEndian64>;
+using VarintSigned = VarIntFormatter<VarIntMode::NONNEGATIVE_SIGNED>;
 
 template<typename T>
 bool StringToValue(const std::string_view& s, T& value)
@@ -126,6 +130,45 @@ bool StringToKey(const std::string_view& s, T& key)
     return prefix == T::prefix;
 }
 
+class CDBWriteBatch
+{
+    friend class CDBBase;
+    leveldb::WriteBatch batch;
+
+public:
+    CDBWriteBatch() = default;
+
+    template<typename K, typename V>
+    void Write(const K& key, const V& value)
+    {
+        auto skey = KeyToString(key);
+        auto svalue = ValueToString(value);
+        batch.Put({skey.data(), skey.size()}, {svalue.data(), svalue.size()});
+    }
+
+    template<typename K>
+    void Delete(const K& key)
+    {
+        auto skey = KeyToString(key);
+        batch.Delete({skey.data(), skey.size()});
+    }
+
+    void Write(const leveldb::Slice& key, const leveldb::Slice& value)
+    {
+        batch.Put(key, value);
+    }
+
+    void Delete(const leveldb::Slice& key)
+    {
+        batch.Delete(key);
+    }
+
+    size_t Size() const
+    {
+        return batch.ApproximateSize();
+    }
+};
+
 /** Base class for LevelDB based storage.
  */
 class CDBBase
@@ -155,17 +198,7 @@ protected:
     //! Number of entries written
     unsigned int nWritten = 0;
 
-    CDBBase()
-    {
-        options.paranoid_checks = true;
-        options.create_if_missing = true;
-        options.compression = leveldb::kNoCompression;
-        options.max_open_files = 64;
-        readoptions.verify_checksums = true;
-        iteroptions.verify_checksums = true;
-        iteroptions.fill_cache = false;
-        syncoptions.sync = true;
-    }
+    CDBBase();
 
     virtual ~CDBBase()
     {
@@ -228,10 +261,10 @@ protected:
         return pdb->Delete(writeoptions, {key.data(), key.size()}).ok();
     }
 
-    bool WriteBatch(leveldb::WriteBatch& batch)
+    bool WriteBatch(CDBWriteBatch& batch)
     {
         assert(pdb);
-        return pdb->Write(syncoptions, &batch).ok();
+        return pdb->Write(writeoptions, &batch.batch).ok();
     }
 
     /**
@@ -369,12 +402,19 @@ public:
     }
 
     template<typename T>
+    bool Key(T&& key) const
+    {
+        assert(Valid());
+        auto slKey = it->key();
+        return StringToKey({slKey.data(), slKey.size()}, key);
+    }
+
+    template<typename T>
     T Key() const
     {
         assert(Valid());
         T key;
-        auto slKey = it->key();
-        return StringToKey({slKey.data(), slKey.size()}, key) ? key : T{};
+        return Key(key) ? key : T{};
     }
 
     leveldb::Slice Value() const
@@ -419,17 +459,26 @@ public:
     CRef(const CRef&) = delete;
     CRef(CRef&&) = default;
 
+    T& get()
+    {
+        return std::get<ref>(value).get();
+    }
+
+    const T& get() const
+    {
+        return std::visit([](auto& v) -> const T& { return v.get(); }, value);
+    }
+
     template<typename Stream>
     void Serialize(Stream& s) const
     {
         std::visit([&](auto& v) { ::Serialize(s, v.get()); }, value);
     }
+
     template<typename Stream>
     void Unserialize(Stream& s)
     {
-        if (auto v = std::get_if<ref>(&value)) {
-            ::Unserialize(s, v->get());
-        }
+        ::Unserialize(s, std::get<ref>(value).get());
     }
 };
 

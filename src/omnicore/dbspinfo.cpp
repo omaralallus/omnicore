@@ -191,7 +191,7 @@ struct CBasePropertyKey {
     uint32_t propertyId = 0;
 
     SERIALIZE_METHODS(CBasePropertyKey, obj) {
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<Varint>(obj.propertyId));
     }
 };
 
@@ -300,7 +300,7 @@ uint32_t CMPSPInfo::findSPByTX(const uint256& txid) const
 
 void CMPSPInfo::deleteSPAboveBlock(int block)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     uint32_t startBlock = block;
     CDBaseIterator it{NewIterator()};
     for (uint8_t ecosystem = 1; ecosystem <= 2; ecosystem++) {
@@ -312,7 +312,7 @@ void CMPSPInfo::deleteSPAboveBlock(int block)
                 if (key.block < startBlock) break;
                 auto info = it.Value<Entry>();
                 if (info.creation_block == info.update_block) {
-                    batch.Delete(KeyToString(CLookupTxKey{info.txid}));
+                    batch.Delete(CLookupTxKey{info.txid});
                 }
                 batch.Delete(it.Key());
             }

@@ -80,16 +80,9 @@ void CMPTradeList::recordMatchedTrade(const uint256& txid1, const uint256& txid2
     if (msc_debug_tradedb) PrintToLog("%s: %s\n", __func__, status ? "OK" : "NOK");
 }
 
-struct CBaseTxKey {
-    uint256 txid;
-
-    SERIALIZE_METHODS(CBaseTxKey, obj) {
-        READWRITE(obj.txid);
-    }
-};
-
-struct CTxTradeKey : CBaseTxKey {
+struct CTxTradeKey {
     static constexpr uint8_t prefix = 't';
+    uint256 txid;
     std::string address;
     uint32_t propertyIdForSale = 0;
     uint32_t propertyIdDesired = 0;
@@ -97,12 +90,12 @@ struct CTxTradeKey : CBaseTxKey {
     uint32_t blockIndex = 0;
 
     SERIALIZE_METHODS(CTxTradeKey, obj) {
-        READWRITEAS(CBaseTxKey, obj);
+        READWRITE(obj.txid);
         READWRITE(obj.address);
-        READWRITE(VARINT(obj.propertyIdForSale));
-        READWRITE(VARINT(obj.propertyIdDesired));
-        READWRITE(obj.block);
-        READWRITE(VARINT(obj.blockIndex));
+        READWRITE(Using<Varint>(obj.propertyIdForSale));
+        READWRITE(Using<Varint>(obj.propertyIdDesired));
+        READWRITE(Using<VarintSigned>(obj.block));
+        READWRITE(Using<Varint>(obj.blockIndex));
     }
 };
 
@@ -120,13 +113,13 @@ void CMPTradeList::recordNewTrade(const uint256& txid, const std::string& addres
  */
 int CMPTradeList::deleteTransactions(const std::set<uint256>& txs, int block)
 {
+    CDBWriteBatch batch;
     unsigned int n_found = 0;
-    leveldb::WriteBatch batch;
     std::vector<std::string> vecSTORecords;
     CDBaseIterator it{NewIterator()};
     for (const auto& txid : txs) {
         auto found = n_found;
-        for (it.Seek(PartialKey<CTxTradeKey>(CBaseTxKey{txid})); it; ++it) {
+        for (it.Seek(PartialKey<CTxTradeKey>(txid)); it; ++it) {
             batch.Delete(it.Key());
             n_found++;
         }
@@ -174,7 +167,7 @@ bool CMPTradeList::getMatchingTrades(const uint256& txid, uint32_t propertyId, U
 {
     int count = 0;
     totalReceived = totalSold = 0;
-    CDBaseIterator tx_it{NewIterator(), PartialKey<CTxTradeKey>(CBaseTxKey{txid})};
+    CDBaseIterator tx_it{NewIterator(), PartialKey<CTxTradeKey>(txid)};
     if (!tx_it.Valid()) return false;
     auto tx1key = tx_it.Key<CTxTradeKey>();
     for (CDBaseIterator it{NewIterator(), CTradeMatchKey{}}; it; ++it) {
@@ -246,8 +239,8 @@ void CMPTradeList::getTradesForPair(uint32_t propertyIdSideA, uint32_t propertyI
     bool propertyIdSideBIsDivisible = isPropertyDivisible(propertyIdSideB);
     for (CDBaseIterator it{NewIterator(), CTradeMatchKey{}}; it; ++it) {
         auto key = it.Key<CTradeMatchKey>();
-        tx1_it.Seek(PartialKey<CTxTradeKey>(CBaseTxKey{key.txid1}));
-        tx2_it.Seek(PartialKey<CTxTradeKey>(CBaseTxKey{key.txid2}));
+        tx1_it.Seek(PartialKey<CTxTradeKey>(key.txid1));
+        tx2_it.Seek(PartialKey<CTxTradeKey>(key.txid2));
         if (!tx1_it || !tx2_it) continue;
         auto tx1_key = tx1_it.Key<CTxTradeKey>();
         auto tx2_key = tx2_it.Key<CTxTradeKey>();

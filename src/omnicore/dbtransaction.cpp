@@ -30,17 +30,32 @@ COmniTransactionDB::~COmniTransactionDB()
 
 struct CTxInfoKey {
     static constexpr uint8_t prefix = 't';
-    uint256 txid;
+    const uint256& txid;
 
     SERIALIZE_METHODS(CTxInfoKey, obj) {
         READWRITE(obj.txid);
     }
 };
 
+struct CTxOutKey {
+    static constexpr uint8_t prefix = 'c';
+    const uint256& txid;
+    uint32_t n;
+
+    SERIALIZE_METHODS(CTxOutKey, obj) {
+        READWRITE(obj.txid);
+        READWRITE(Using<Varint>(obj.n));
+    }
+};
+
+const auto CTxOutValue = [](auto&& txout) {
+    return Using<TxOutCompression>(txout);
+};
+
 struct COutPointCompression {
     FORMATTER_METHODS(COutPoint, obj) {
         READWRITE(obj.hash);
-        READWRITE(VARINT(obj.n));
+        READWRITE(Using<Varint>(obj.n));
     }
 };
 
@@ -49,12 +64,7 @@ struct TxInCompression {
     FORMATTER_METHODS(CTxIn, obj) {
         READWRITE(Using<COutPointCompression>(obj.prevout));
         READWRITE(Using<ScriptCompression>(obj.scriptSig));
-        if constexpr (ser_action.ForRead()) {
-            READWRITE(VARINT(obj.nSequence));
-            obj.nSequence = ~obj.nSequence;
-        } else {
-            READWRITE(VARINT(~obj.nSequence));
-        }
+        READWRITE(Using<VarintInv>(obj.nSequence));
     }
 };
 
@@ -62,8 +72,8 @@ struct CMutableTransactionCompression {
     FORMATTER_METHODS(CMutableTransaction, obj) {
         READWRITE(Using<VectorFormatter<TxInCompression>>(obj.vin));
         READWRITE(Using<VectorFormatter<TxOutCompression>>(obj.vout));
-        READWRITE(VARINT_MODE(obj.nVersion, VarIntMode::NONNEGATIVE_SIGNED));
-        READWRITE(VARINT(obj.nLockTime));
+        READWRITE(Using<VarintSigned>(obj.nVersion));
+        READWRITE(Using<Varint>(obj.nLockTime));
     }
 };
 
@@ -73,9 +83,9 @@ struct CTxBlockValue {
     uint32_t processResult;
 
     SERIALIZE_METHODS(CTxBlockValue, obj) {
-        READWRITE(VARINT_MODE(obj.blockHeight, VarIntMode::NONNEGATIVE_SIGNED));
-        READWRITE(VARINT(obj.posInBlock));
-        READWRITE(VARINT(obj.processResult));
+        READWRITE(Using<VarintSigned>(obj.blockHeight));
+        READWRITE(Using<Varint>(obj.posInBlock));
+        READWRITE(Using<Varint>(obj.processResult));
     }
 };
 
@@ -93,12 +103,27 @@ struct CTxInfoValue : CTxBlockValue {
  */
 void COmniTransactionDB::RecordTransaction(const CTransaction& tx, int block, uint32_t posInBlock, int processingResult)
 {
-    CTxInfoKey key{tx.GetHash()};
     // invert negative values to compressed it
     uint32_t processResult = processingResult < 0 ? -processingResult : 0;
     CTxInfoValue value{block, posInBlock, processResult, CMutableTransaction{tx}};
-    Write(key, value);
+    Write(CTxInfoKey{tx.GetHash()}, value);
     ++nWritten;
+}
+
+/**
+ * Store transaction outputs and delete inputs
+ */
+void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx)
+{
+    CDBWriteBatch batch;
+    for (auto& txin : tx.vin) {
+        auto& prevout = txin.prevout;
+        batch.Delete(CTxOutKey{prevout.hash, prevout.n});
+    }
+    for (auto i = 0u; i < tx.vout.size(); i++) {
+        batch.Write(CTxOutKey{tx.GetHash(), i}, CTxOutValue(tx.vout[i]));
+    }
+    WriteBatch(batch);
 }
 
 /**
@@ -106,9 +131,13 @@ void COmniTransactionDB::RecordTransaction(const CTransaction& tx, int block, ui
  */
 void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
+    CDBaseIterator it{NewIterator()};
     for (auto& txid : txs) {
-        batch.Delete(KeyToString(CTxInfoKey{txid}));
+        batch.Delete(CTxInfoKey{txid});
+        for (it.Seek(PartialKey<CTxOutKey>(txid)); it; ++it) {
+            batch.Delete(it.Key());
+        }
     }
     WriteBatch(batch);
 }
@@ -139,7 +168,7 @@ std::string COmniTransactionDB::FetchInvalidReason(const uint256& txid)
 /**
  *Returns transaction, block and blockTime.
  */
-bool COmniTransactionDB::GetTx(const uint256& txid, CTransactionRef& tx, int& blockHeight)
+bool COmniTransactionDB::GetTransaction(const uint256& txid, CTransactionRef& tx, int& blockHeight)
 {
     CTxInfoValue value;
     if (!Read(CTxInfoKey{txid}, value)) {
@@ -149,4 +178,20 @@ bool COmniTransactionDB::GetTx(const uint256& txid, CTransactionRef& tx, int& bl
     tx = MakeTransactionRef(std::move(value.tx));
     assert(txid == tx->GetHash());
     return true;
+}
+
+bool COmniTransactionDB::GetTransactionOut(const COutPoint& outpoint, CTxOut& out)
+{
+    if (Read(CTxOutKey{outpoint.hash, outpoint.n}, CTxOutValue(out))) {
+        return true;
+    }
+    int blockHeight;
+    CTransactionRef tx;
+    if (GetTransaction(outpoint.hash, tx, blockHeight)) {
+        if (tx->vout.size() > outpoint.n) {
+            out = tx->vout[outpoint.n];
+            return true;
+        }
+    }
+    return false;
 }

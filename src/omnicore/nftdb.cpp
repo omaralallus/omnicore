@@ -245,7 +245,7 @@ void CMPNonFungibleTokensDB::WriteBlockCache(int height, bool sanityCheck)
 
 void CMPNonFungibleTokensDB::RollBackAboveBlock(int height)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     std::unordered_map<std::string, CRollbackData> changes;
     CDBaseIterator it{NewIterator(), DBHeightKey{height}};
     for (; it; ++it) {
@@ -259,7 +259,7 @@ void CMPNonFungibleTokensDB::RollBackAboveBlock(int height)
         if (m_it->second.type == CRollbackData::DELETE_KEY) {
             batch.Delete(m_it->first);
         } else {
-            batch.Put(m_it->first, m_it->second.data);
+            batch.Write(m_it->first, m_it->second.data);
         }
     }
     WriteBatch(batch);

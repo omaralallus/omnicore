@@ -26,7 +26,6 @@
 #include <omnicore/walletutils.h>
 
 #include <chainparams.h>
-#include <index/txindex.h>
 #include <validation.h>
 #include <primitives/transaction.h>
 #include <sync.h>
@@ -55,7 +54,7 @@ int populateRPCTransactionObject(const uint256& txid, UniValue& txobj, const std
     // retrieve the transaction from the blockchain and obtain it's height/confs/time
     CTransactionRef tx;
     int blockHeight;
-    if (!GetTransaction(txid, tx, Params().GetConsensus(), blockHeight)) {
+    if (!GetTransaction(txid, tx, blockHeight)) {
         return MP_TX_NOT_FOUND;
     }
 

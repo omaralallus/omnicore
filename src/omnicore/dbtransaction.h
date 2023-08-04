@@ -20,11 +20,14 @@ public:
     COmniTransactionDB(const fs::path& path, bool fWipe);
     virtual ~COmniTransactionDB();
 
-    /** Stores block heiehg, position in block, block time and validation result for a transaction. */
+    /** Stores block height, position in block, block time and validation result for a transaction. */
     void RecordTransaction(const CTransaction& tx, int block, uint32_t posInBlock, int processingResult);
 
     /** Deletes transactions in case of rollback. */
     void DeleteTransactions(const std::set<uint256>& txs);
+
+    /** Stores transaction outputs. */
+    void RecordTransactionOuts(const CTransaction& tx);
 
     /** Returns the position of a transaction in a block. */
     uint32_t FetchTransactionPosition(const uint256& txid);
@@ -33,7 +36,10 @@ public:
     std::string FetchInvalidReason(const uint256& txid);
 
     /** Returns transaction, block and blockTime. */
-    bool GetTx(const uint256& txid, CTransactionRef& tx, int& block);
+    bool GetTransaction(const uint256& txid, CTransactionRef& tx, int& block);
+
+    /** Returns transaction out. */
+    bool GetTransactionOut(const COutPoint& outpoint, CTxOut& out);
 };
 
 namespace mastercore

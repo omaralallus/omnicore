@@ -39,7 +39,7 @@ struct CPropertyBaseKey {
     uint32_t propertyId = 0;
 
     SERIALIZE_METHODS(CPropertyBaseKey, obj) {
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<Varint>(obj.propertyId));
     }
 };
 
@@ -129,7 +129,7 @@ void COmniFeeCache::AddFee(const uint32_t &propertyId, int block, const int64_t 
 // Rolls back the cache to an earlier state (eg in event of a reorg) - block is *inclusive* (ie entries=block will get deleted)
 void COmniFeeCache::RollBackCache(int block)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     uint32_t startBlock = block;
     CDBaseIterator it{NewIterator()};
     for (uint8_t ecosystem = 1; ecosystem <= 2; ecosystem++) {
@@ -203,7 +203,7 @@ void COmniFeeCache::PruneCache(const uint32_t &propertyId, int block)
 {
     if (msc_debug_fees) PrintToLog("Starting PruneCache for prop %d block %d...\n", propertyId, block);
 
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     uint32_t pruneBlock = block - 1; // prune all lower than
     if (msc_debug_fees) PrintToLog("Removing entries prior to block %d...\n", pruneBlock);
     CDBaseIterator it{NewIterator(), CCacheAmountKey{propertyId, pruneBlock}};
@@ -213,7 +213,7 @@ void COmniFeeCache::PruneCache(const uint32_t &propertyId, int block)
         batch.Delete(it.Key());
         if (msc_debug_fees) PrintToLog("%s: delete entry block: %d\n", __func__, key.block);
     }
-    if (batch.ApproximateSize() == 0) {
+    if (batch.Size() == 0) {
         if (msc_debug_fees) PrintToLog("Ending PruneCache - no matured entries found.\n");
         return;
     }
@@ -278,7 +278,7 @@ struct CDistributionKey {
     SERIALIZE_METHODS(CDistributionKey, obj) {
         READWRITE(Using<BigEndian32Inv>(obj.id));
         READWRITE(Using<BigEndian32Inv>(obj.block));
-        READWRITE(VARINT(obj.propertyId));
+        READWRITE(Using<Varint>(obj.propertyId));
         READWRITE(obj.total);
     }
 };
@@ -289,7 +289,7 @@ struct CDistributionPropertyKey : CPropertyBaseKey {
 
     SERIALIZE_METHODS(CDistributionPropertyKey, obj) {
         READWRITEAS(CPropertyBaseKey, obj);
-        READWRITE(VARINT(obj.id));
+        READWRITE(Using<Varint>(obj.id));
     }
 };
 
@@ -311,14 +311,14 @@ void COmniFeeHistory::printAll()
 // Roll back history in event of reorg, block is inclusive
 void COmniFeeHistory::RollBackHistory(int block)
 {
-    leveldb::WriteBatch batch;
+    CDBWriteBatch batch;
     CDBaseIterator it{NewIterator(), CDistributionKey{}};
     for (; it; ++it) {
         auto key = it.Key<CDistributionKey>();
         if (key.block < block) break;
-        PrintToLog("%s() deleting from fee history DB: (%d, %d, %d)\n", __FUNCTION__, key.id, key.block, key.propertyId);
+        PrintToLog("%s() deleting from fee history DB: (%d, %d, %d)\n", __func__, key.id, key.block, key.propertyId);
         batch.Delete(it.Key());
-        batch.Delete(KeyToString(CDistributionPropertyKey{key.propertyId, key.id}));
+        batch.Delete(CDistributionPropertyKey{key.propertyId, key.id});
     }
     WriteBatch(batch);
 }

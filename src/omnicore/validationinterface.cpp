@@ -511,6 +511,8 @@ void COmniValidationInterface::BlockDisconnected(const std::shared_ptr<const CBl
     //! Omni Core: begin block disconnect notification
     PrintToLog("%s Omni Core handler: height: %d\n", __func__, pindex->nHeight);
 
+    LOCK(cs_tally);
+
     for (auto& tx : block->vtx) {
         txsToDelete.insert(tx->GetHash());
     }

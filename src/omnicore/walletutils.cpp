@@ -282,62 +282,7 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
 
 int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddress, CCoinControl& coinControl)
 {
-    // total output funds collected
-    int64_t nTotal = 0;
-    int nHeight = mastercore::GetHeight();
-
-    std::map<uint256, interfaces::WalletTxStatus> tx_status;
-    const std::vector<interfaces::WalletTx>& transactions = iWallet.getWalletTxsDetails(tx_status);
-
-    // iterate over the wallet
-    for (std::vector<interfaces::WalletTx>::const_iterator it = transactions.begin(); it != transactions.end(); ++it) {
-        const CTransactionRef tx = it->tx;
-        const uint256& txid = tx->GetHash();
-
-        auto status = tx_status.find(txid);
-        if (status != tx_status.end()) {
-            const auto& wtx = status->second;
-            if (!wtx.is_trusted) {
-                continue;
-            }
-            if (wtx.is_coinbase && wtx.blocks_to_maturity > 0) {
-                continue;
-            }
-        }
-
-        for (unsigned int n = 0; n < tx->vout.size(); n++) {
-            const CTxOut& txOut = tx->vout[n];
-
-            CTxDestination dest;
-            if (!CheckInput(txOut, nHeight, dest)) {
-                continue;
-            }
-            if (!iWallet.isSpendable(dest)) {
-                continue;
-            }
-            if (iWallet.isSpent(txid, n)) {
-                continue;
-            }
-            if (iWallet.isLockedCoin(COutPoint(txid, n))) {
-                continue;
-            }
-
-            std::string sAddress = EncodeDestination(dest);
-            if (msc_debug_tokens) {
-                PrintToLog("%s: sender: %s, outpoint: %s:%d, value: %d\n", __func__, sAddress, txid.GetHex(), n, txOut.nValue);
-            }
-
-            // only use funds from the sender's address
-            if (fromAddress == sAddress) {
-                COutPoint outpoint(txid, n);
-                coinControl.Select(outpoint);
-
-                nTotal += txOut.nValue;
-            }
-        }
-    }
-
-    return nTotal;
+    return SelectCoins(iWallet, fromAddress, coinControl, INT64_MAX);
 }
 #endif
 

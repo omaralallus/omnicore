@@ -32,11 +32,10 @@ struct CMempoolAddressDeltaKey
 };
 
 std::vector<uint256> ClearMempool();
-Coin GetMempoolCoin(const uint256& hash, size_t n);
 void MempoolQueryHashes(std::vector<uint256>& hashes);
 CTransactionRef GetMempoolTransaction(const uint256& hash);
-void AddTransactionToMempool(const CTransactionRef& tx, uint64_t);
-void RemoveTransactionFromMempool(const CTransactionRef& tx, uint64_t);
+void AddTransactionToMempool(const CTransactionRef& tx);
+void RemoveTransactionFromMempool(const CTransactionRef& tx);
 bool GetSpentIndexFromMempool(const CSpentIndexKey& key, CSpentIndexValue& value);
 bool GetAddressIndexFromMempool(const std::vector<std::pair<uint256, unsigned>>& addresses, std::vector<std::pair<CMempoolAddressDeltaKey, CMempoolAddressDelta>>& results);
 

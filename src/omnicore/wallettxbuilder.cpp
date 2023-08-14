@@ -41,8 +41,6 @@ using namespace wallet;
 #include <vector>
 
 using mastercore::AddressToPubKey;
-using mastercore::GetMempoolTransaction;
-using mastercore::pDbTransaction;
 using mastercore::UseEncodingClassC;
 
 /** Creates and sends a transaction with multiple receivers. */
@@ -428,17 +426,7 @@ int CreateFundedTransaction(
         for (size_t i = 0; i < tx.vin.size(); i++) {
             auto& txin = tx.vin[i];
             CTxOut out;
-            bool outFound = false;
-            const auto& outpoint = txin.prevout;
-            if (auto tx = GetMempoolTransaction(outpoint.hash)) {
-                if (tx->vout.size() > outpoint.n) {
-                    outFound = true;
-                    out = tx->vout[outpoint.n];
-                }
-            } else {
-                outFound = pDbTransaction->GetTransactionOut(outpoint, out);
-            }
-            if (!outFound) {
+            if (!GetTransactionOut(txin.prevout, out)) {
                 PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
                 continue;
             }

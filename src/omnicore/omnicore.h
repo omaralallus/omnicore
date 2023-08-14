@@ -187,8 +187,14 @@ void NotifyTotalTokensChanged(uint32_t propertyId, int block);
 /** Process every new transaction */
 bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned int idx, const CBlockIndex* pBlockIndex);
 
+/** Retrieve an tx out for a giving input */
+bool GetTransactionOut(const COutPoint& outpoint, CTxOut& out);
+
 /** Retrieve a transaction (from memory pool, or from disk, if possible) */
 bool GetTransaction(const uint256& hash, CTransactionRef& tx, int& blockHeight);
+
+/** Fill cache with transaction inputs */
+bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view);
 
 class CCoinsViewCacheOnly : public CCoinsViewCache
 {

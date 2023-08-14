@@ -56,29 +56,20 @@ mapSpentIndex mapSpent GUARDED_BY(cs_mempool);
 typedef std::map<uint256, std::vector<mapSpentIndex::iterator>> mapSpentIndexInserted;
 mapSpentIndexInserted mapSpentInserted GUARDED_BY(cs_mempool);
 
-Coin GetMempoolCoin(const uint256& hash, size_t n)
-{
-    auto ptx = GetMempoolTransaction(hash);
-    if (!ptx || n >= ptx->vout.size()) {
-        return {};
-    }
-    bool fCoinbase = false;
-    return {ptx->vout[n], MEMPOOL_HEIGHT, fCoinbase};
-}
-
-static void AddAddressIndexToMempool(CTransactionRef tx)
+static void AddAddressIndexToMempool(CTransactionRef tx, CCoinsViewCache& view)
 {
     LOCK(cs_mempool);
+    auto time = GetTime();
     std::vector<addressDeltaMap::iterator> inserted;
 
     const uint256& txhash = tx->GetHash();
     for (unsigned int j = 0; j < tx->vin.size(); j++) {
         const auto& prevout = tx->vin[j].prevout;
-        const auto coin = GetMempoolCoin(prevout.hash, prevout.n);
-        if (auto result = ScriptToUint(coin.out.scriptPubKey)) {
+        const auto& output = view.GetOutputFor(tx->vin[j]);
+        if (auto result = ScriptToUint(output.scriptPubKey)) {
             auto& [index, address] = *result;
             CMempoolAddressDeltaKey key{index, address, txhash, j, 1};
-            CMempoolAddressDelta delta{GetTime(), coin.out.nValue * -1, prevout.hash, prevout.n};
+            CMempoolAddressDelta delta{time, output.nValue * -1, prevout.hash, prevout.n};
             if (auto [it, ins] = mapAddress.emplace(key, delta); ins) {
                 inserted.push_back(it);
             }
@@ -90,7 +81,7 @@ static void AddAddressIndexToMempool(CTransactionRef tx)
         if (auto result = ScriptToUint(out.scriptPubKey)) {
             auto& [index, address] = *result;
             CMempoolAddressDeltaKey key{index, address, txhash, k};
-            CMempoolAddressDelta delta{GetTime(), out.nValue};
+            CMempoolAddressDelta delta{time, out.nValue};
             if (auto [it, ins] = mapAddress.emplace(key, delta); ins) {
                 inserted.push_back(it);
             }
@@ -112,7 +103,7 @@ static void RemoveAddressIndexFromMempool(const uint256& txhash)
     }
 }
 
-static void AddSpentIndexToMempool(CTransactionRef tx)
+static void AddSpentIndexToMempool(CTransactionRef tx, CCoinsViewCache& view)
 {
     LOCK(cs_mempool);
     std::vector<mapSpentIndex::iterator> inserted;
@@ -120,9 +111,9 @@ static void AddSpentIndexToMempool(CTransactionRef tx)
     const uint256& txhash = tx->GetHash();
     for (unsigned int j = 0; j < tx->vin.size(); j++) {
         const auto& prevout = tx->vin[j].prevout;
-        auto coin = GetMempoolCoin(prevout.hash, prevout.n);
-        const auto& outValue = coin.out.nValue;
-        const auto& scriptPubKey = coin.out.scriptPubKey;
+        const auto& output = view.GetOutputFor(tx->vin[j]);
+        const auto& outValue = output.nValue;
+        const auto& scriptPubKey = output.scriptPubKey;
         uint256 addressHash;
         int version;
         unsigned int addressType;
@@ -201,19 +192,19 @@ bool GetAddressIndexFromMempool(const std::vector<std::pair<uint256, unsigned>>&
     return true;
 }
 
-void AddTransactionToMempool(const CTransactionRef& tx, uint64_t)
+void AddTransactionToMempool(const CTransactionRef& tx)
 {
     LOCK(cs_mempool);
-    if (GetEncodingClass(*tx, MEMPOOL_HEIGHT) != NO_MARKER) {
-        mapMempool.insert_or_assign(tx->GetHash(), tx);
-    }
+    mapMempool.insert_or_assign(tx->GetHash(), tx);
     if (fAddressIndex) {
-        AddSpentIndexToMempool(tx);
-        AddAddressIndexToMempool(tx);
+        CCoinsViewCacheOnly view;
+        FillTxInputCache(*tx, view);
+        AddSpentIndexToMempool(tx, view);
+        AddAddressIndexToMempool(tx, view);
     }
 }
 
-void RemoveTransactionFromMempool(const CTransactionRef& tx, uint64_t)
+void RemoveTransactionFromMempool(const CTransactionRef& tx)
 {
     LOCK(cs_mempool);
     mapMempool.erase(tx->GetHash());

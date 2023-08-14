@@ -799,7 +799,7 @@ int mastercore::GetEncodingClass(const CTransaction& tx, int nBlock)
  * @param tx[in]  The transaction to fetch inputs for
  * @return True, if all inputs were successfully added to the cache
  */
-static bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
+bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
 {
     for (std::vector<CTxIn>::const_iterator it = tx.vin.begin(); it != tx.vin.end(); ++it) {
         const CTxIn& txIn = *it;
@@ -811,7 +811,7 @@ static bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
         }
 
         Coin newcoin;
-        if (pDbTransaction->GetTransactionOut(txIn.prevout, newcoin.out)) {
+        if (GetTransactionOut(txIn.prevout, newcoin.out)) {
             newcoin.nHeight = MEMPOOL_HEIGHT; // fake height
         } else {
             return false;
@@ -1653,7 +1653,7 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
     }
 
     if (!fStoredTx) {
-        pDbTransaction->RecordTransactionOuts(tx);
+        pDbTransaction->RecordTransactionOuts(tx, nBlock);
     }
 
     if (fFoundTx && msc_debug_consensus_hash_every_transaction) {
@@ -1747,6 +1747,22 @@ bool GetTransaction(const uint256& hash, CTransactionRef& txOut, int& blockHeigh
     blockHeight = 0;
     txOut = mastercore::GetMempoolTransaction(hash);
     return txOut || pDbTransaction->GetTransaction(hash, txOut, blockHeight);
+}
+
+bool GetTransactionOut(const COutPoint& outpoint, CTxOut& out)
+{
+    if (pDbTransaction->GetTransactionOut(outpoint, out)) {
+        return true;
+    }
+    int blockHeight;
+    CTransactionRef tx;
+    if (GetTransaction(outpoint.hash, tx, blockHeight)) {
+        if (tx->vout.size() > outpoint.n) {
+            out = tx->vout[outpoint.n];
+            return true;
+        }
+    }
+    return false;
 }
 
 CCoinsView CCoinsViewCacheOnly::noBase;

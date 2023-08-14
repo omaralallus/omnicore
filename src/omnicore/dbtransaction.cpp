@@ -39,12 +39,21 @@ struct CTxInfoKey {
 
 struct CTxOutKey {
     static constexpr uint8_t prefix = 'c';
-    const uint256& txid;
-    uint32_t n;
+    uint256 txid;
+    uint32_t n = 0;
 
     SERIALIZE_METHODS(CTxOutKey, obj) {
         READWRITE(obj.txid);
         READWRITE(Using<Varint>(obj.n));
+    }
+};
+
+struct CTxOutToDeleteKey : CTxOutKey {
+    uint32_t blockHeight = 0;
+
+    SERIALIZE_METHODS(CTxOutToDeleteKey, obj) {
+        READWRITE(Using<BigEndian32>(obj.blockHeight));
+        READWRITEAS(CTxOutKey, obj);
     }
 };
 
@@ -113,15 +122,24 @@ void COmniTransactionDB::RecordTransaction(const CTransaction& tx, int block, ui
 /**
  * Store transaction outputs and delete inputs
  */
-void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx)
+void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx, int block)
 {
     CDBWriteBatch batch;
+    uint32_t height = block;
     for (auto& txin : tx.vin) {
         auto& prevout = txin.prevout;
-        batch.Delete(CTxOutKey{prevout.hash, prevout.n});
+        batch.Write(CTxOutToDeleteKey{prevout.hash, prevout.n, height}, "");
     }
     for (auto i = 0u; i < tx.vout.size(); i++) {
         batch.Write(CTxOutKey{tx.GetHash(), i}, CTxOutValue(tx.vout[i]));
+    }
+    if (height % 1000 == 0) {
+        for (CDBaseIterator it{NewIterator(), CTxOutToDeleteKey{}}; it; ++it) {
+            auto key = it.Key<CTxOutToDeleteKey>();
+            if (height - key.blockHeight < STORE_EVERY_N_BLOCK) break;
+            batch.Delete(it.Key());
+            batch.Delete(CTxOutKey{key});
+        }
     }
     WriteBatch(batch);
 }
@@ -129,7 +147,7 @@ void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx)
 /**
  * Deletes transactions in case of rollback.
  */
-void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs)
+void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs, int block)
 {
     CDBWriteBatch batch;
     CDBaseIterator it{NewIterator()};
@@ -138,6 +156,11 @@ void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs)
         for (it.Seek(PartialKey<CTxOutKey>(txid)); it; ++it) {
             batch.Delete(it.Key());
         }
+    }
+    for (it.Seek(CTxOutToDeleteKey{}); it; ++it) {
+        auto key = it.Key<CTxOutToDeleteKey>();
+        if (key.blockHeight < block) continue;
+        batch.Delete(it.Key());
     }
     WriteBatch(batch);
 }
@@ -182,16 +205,5 @@ bool COmniTransactionDB::GetTransaction(const uint256& txid, CTransactionRef& tx
 
 bool COmniTransactionDB::GetTransactionOut(const COutPoint& outpoint, CTxOut& out)
 {
-    if (Read(CTxOutKey{outpoint.hash, outpoint.n}, CTxOutValue(out))) {
-        return true;
-    }
-    int blockHeight;
-    CTransactionRef tx;
-    if (GetTransaction(outpoint.hash, tx, blockHeight)) {
-        if (tx->vout.size() > outpoint.n) {
-            out = tx->vout[outpoint.n];
-            return true;
-        }
-    }
-    return false;
+    return Read(CTxOutKey{outpoint.hash, outpoint.n}, CTxOutValue(out));
 }

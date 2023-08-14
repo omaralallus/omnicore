@@ -24,10 +24,10 @@ public:
     void RecordTransaction(const CTransaction& tx, int block, uint32_t posInBlock, int processingResult);
 
     /** Deletes transactions in case of rollback. */
-    void DeleteTransactions(const std::set<uint256>& txs);
+    void DeleteTransactions(const std::set<uint256>& txs, int block);
 
     /** Stores transaction outputs. */
-    void RecordTransactionOuts(const CTransaction& tx);
+    void RecordTransactionOuts(const CTransaction& tx, int block);
 
     /** Returns the position of a transaction in a block. */
     uint32_t FetchTransactionPosition(const uint256& txid);

@@ -5,6 +5,7 @@
 #include <key_io.h>
 #include <node/interface_ui.h>
 #include <shutdown.h>
+#include <undo.h>
 #include <validation.h>
 
 #include <omnicore/activation.h>
@@ -175,8 +176,8 @@ void COmniValidationInterface::RewindDBsState(int nHeight)
         pDbFeeCache->RollBackCache(block);
         pDbFeeHistory->RollBackHistory(block);
         pDbNFT->RollBackAboveBlock(block);
-        pDbTransaction->DeleteTransactions(txsToDelete);
         pDbTradeList->deleteTransactions(txsToDelete, block);
+        pDbTransaction->DeleteTransactions(txsToDelete, block);
         pDbTransactionList->deleteTransactions(txsToDelete, block);
         if (fAddressIndex) {
             pDbAddress->UpdateSpentIndex(spentIndexToUdpdate);
@@ -399,12 +400,12 @@ void COmniValidationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, con
 
 void COmniValidationInterface::TransactionAddedToMempool(const CTransactionRef& tx, uint64_t mempool_sequence)
 {
-    AddTransactionToMempool(tx, mempool_sequence);
+    AddTransactionToMempool(tx);
 }
 
 void COmniValidationInterface::TransactionRemovedFromMempool(const CTransactionRef& tx, MemPoolRemovalReason reason, uint64_t mempool_sequence)
 {
-    RemoveTransactionFromMempool(tx, mempool_sequence);
+    RemoveTransactionFromMempool(tx);
 }
 
 void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex *pindex)
@@ -503,7 +504,7 @@ void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock
     }
 
     for (auto& tx : block->vtx)
-        RemoveTransactionFromMempool(tx, 0);
+        RemoveTransactionFromMempool(tx);
 }
 
 void COmniValidationInterface::BlockDisconnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex)

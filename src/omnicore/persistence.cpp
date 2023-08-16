@@ -497,7 +497,7 @@ static void prune_state_files(const CBlockIndex* topIndex)
  */
 static int GetWrapModeHeight()
 {
-    static const int nSkipBlocksUntil = gArgs.GetIntArg("-omniskipstoringstate", DONT_STORE_MAINNET_STATE_UNTIL);
+    static const int nSkipBlocksUntil = gArgs.GetIntArg("-omniskipstoringstate", MainNet() ? DONT_STORE_MAINNET_STATE_UNTIL : 0);
     return nSkipBlocksUntil;
 }
 
@@ -506,11 +506,6 @@ static int GetWrapModeHeight()
  */
 bool IsPersistenceEnabled(int blockHeight)
 {
-    // do not store on any network different from main
-    if (!MainNet()) {
-        return false;
-    }
-
     int nMinHeight = GetWrapModeHeight();
     int nStoreEveryBlock = IsInitialBlockDownload() ?
                             STORE_EVERY_N_BLOCK_IDB : STORE_EVERY_N_BLOCK;

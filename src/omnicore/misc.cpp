@@ -15,6 +15,7 @@
 #include <omnicore/dbaddress.h>
 #include <omnicore/mempool.h>
 #include <omnicore/omnicore.h>
+#include <omnicore/rpc.h>
 #include <omnicore/script.h>
 #include <omnicore/utilsbitcoin.h>
 
@@ -156,6 +157,7 @@ UniValue getaddressdeltas(const JSONRPCRequest& request)
         }
     }
 
+    EnsureNotProcessingBlock();
     std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
@@ -253,6 +255,7 @@ UniValue getaddressbalance(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
+    EnsureNotProcessingBlock();
     std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
@@ -340,6 +343,7 @@ UniValue getaddressutxos(const JSONRPCRequest& request)
         }
     }
 
+    EnsureNotProcessingBlock();
     std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
@@ -424,6 +428,7 @@ UniValue getaddressmempool(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
+    EnsureNotProcessingBlock();
     std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {
@@ -513,6 +518,7 @@ UniValue getblockhashes(const JSONRPCRequest& request)
         }
     }
 
+    EnsureNotProcessingBlock();
     std::vector<std::pair<uint256, unsigned int> > blockHashes;
 
     if (!pDbAddress->ReadTimestampIndex(high, low, fActiveOnly, blockHashes)) {
@@ -623,6 +629,7 @@ UniValue getaddresstxids(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_MISC_ERROR, "Address index not enabled");
     }
 
+    EnsureNotProcessingBlock();
     std::vector<std::pair<uint256, unsigned>> addresses;
 
     if (!getAddressesFromParams(request.params, addresses)) {

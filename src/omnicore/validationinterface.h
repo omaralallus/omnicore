@@ -49,7 +49,7 @@ class COmniValidationInterface : public CValidationInterface {
     CChainIndex chain;
     std::set<uint256> txsToDelete;
     bool disconnectInitiated = false;
-    std::atomic_bool initialBlockDownload;
+    std::atomic_bool initialBlockDownload = false, processingBlock = false;
     std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexToDelete;
     std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>> spentIndexToUdpdate;
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> addressUnspentIndexToUpdate;
@@ -140,6 +140,11 @@ public:
      * Returns whether node is in initial block download
      */
     bool IsInitialBlockDownload() const;
+
+    /**
+     * Returns whether interface is processing a block
+     */
+    bool IsProcessingBlock() const;
 };
 
 extern std::shared_ptr<COmniValidationInterface> omniValidationInterface;

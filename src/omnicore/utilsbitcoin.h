@@ -18,6 +18,8 @@ int GetHeight();
 uint32_t GetLatestBlockTime();
 /** Used to inform the node is in initial block download. */
 bool IsInitialBlockDownload();
+/** Used to inform the node is in processing a block. */
+bool IsProcessingBlock();
 /** Returns the active chain. */
 const CChainIndex& GetActiveChain();
 /** Abort the node. */

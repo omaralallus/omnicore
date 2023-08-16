@@ -48,6 +48,11 @@ bool IsInitialBlockDownload()
     return EnsureValidationInterface().IsInitialBlockDownload();
 }
 
+bool IsProcessingBlock()
+{
+    return EnsureValidationInterface().IsProcessingBlock();
+}
+
 void MayAbortNode(const std::string& message)
 {
     if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {

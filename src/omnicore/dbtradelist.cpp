@@ -123,12 +123,12 @@ int CMPTradeList::deleteTransactions(const std::set<uint256>& txs, int block)
             batch.Delete(it.Key());
             n_found++;
         }
-        for (it.Seek(CTradeMatchKey{}); it; ++it) {
-            auto key = it.Key<CTradeMatchKey>();
-            if (key.block < block) break;
-            batch.Delete(it.Key());
-            n_found++;
-        }
+    }
+    for (it.Seek(CTradeMatchKey{}); it; ++it) {
+        auto key = it.Key<CTradeMatchKey>();
+        if (key.block < block) break;
+        batch.Delete(it.Key());
+        n_found++;
     }
     WriteBatch(batch);
     PrintToLog("%s: tradedb n_found= %d\n", __func__, n_found);

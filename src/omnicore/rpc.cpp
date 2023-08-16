@@ -66,6 +66,7 @@ using namespace wallet;
 #include <map>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <tuple>
 
 #include <boost/algorithm/string.hpp> // boost::split
@@ -102,6 +103,15 @@ void PopulateFailure(int error)
 
     }
     throw JSONRPCError(RPC_INTERNAL_ERROR, "Generic transaction population failure");
+}
+
+/**
+ * Lock isn't held, rpc method should do it on demand
+ */
+void EnsureNotProcessingBlock()
+{
+    while (IsProcessingBlock())
+        std::this_thread::yield();
 }
 
 void PropertyToJSON(const CMPSPInfo::Entry& sProperty, UniValue& property_obj)
@@ -210,6 +220,7 @@ UniValue omni_getnonfungibletokens(const JSONRPCRequest& request)
        }
     }.Check(request);
 
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_NFTS, GetHeight())) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "NFTs not activated");
     }
@@ -276,6 +287,7 @@ UniValue omni_getnonfungibletokendata(const JSONRPCRequest& request)
        }
     }.Check(request);
 
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_NFTS, GetHeight())) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "NFTs not activated");
     }
@@ -368,6 +380,7 @@ UniValue omni_getnonfungibletokenranges(const JSONRPCRequest& request)
        }
     }.Check(request);
 
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_NFTS, GetHeight())) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "NFTs not activated");
     }
@@ -436,8 +449,9 @@ static UniValue omni_getfeedistribution(const JSONRPCRequest& request)
     uint32_t propertyId = 0;
     int64_t total = 0;
 
-    UniValue response(UniValue::VOBJ);
+    EnsureNotProcessingBlock();
 
+    UniValue response(UniValue::VOBJ);
     bool found = pDbFeeHistory->GetDistributionData(id, &propertyId, &block, &total);
     if (!found) {
         throw JSONRPCError(RPC_INTERNAL_ERROR, "Fee distribution ID does not exist");
@@ -497,6 +511,7 @@ static UniValue omni_getfeedistributions(const JSONRPCRequest& request)
        }
     }.Check(request);
 
+    EnsureNotProcessingBlock();
     uint32_t prop = ParsePropertyId(request.params[0]);
     RequireExistingProperty(prop);
 
@@ -565,6 +580,7 @@ static UniValue omni_getfeetrigger(const JSONRPCRequest& request)
         propertyId = ParsePropertyId(request.params[0]);
     }
 
+    EnsureNotProcessingBlock();
     if (propertyId > 0) {
         RequireExistingProperty(propertyId);
     }
@@ -636,6 +652,8 @@ static UniValue omni_getfeeshare(const JSONRPCRequest& request)
     UniValue response(UniValue::VARR);
     bool addObj = false;
 
+    EnsureNotProcessingBlock();
+
     OwnerAddrType receiversSet;
     if (ecosystem == 1) {
         receiversSet = STO_GetReceivers("FEEDISTRIBUTION", OMNI_PROPERTY_MSC, COIN);
@@ -698,6 +716,8 @@ static UniValue omni_getfeecache(const JSONRPCRequest& request)
         propertyId = ParsePropertyId(request.params[0]);
     }
 
+    EnsureNotProcessingBlock();
+
     if (propertyId > 0) {
         RequireExistingProperty(propertyId);
     }
@@ -749,6 +769,7 @@ static UniValue omni_getseedblocks(const JSONRPCRequest& request)
     int startHeight = request.params[0].getInt<int>();
     int endHeight = request.params[1].getInt<int>();
 
+    EnsureNotProcessingBlock();
     RequireHeightInChain(startHeight);
     RequireHeightInChain(endHeight);
 
@@ -783,6 +804,8 @@ static UniValue omni_getpayload(const JSONRPCRequest& request)
     }.Check(request);
 
     uint256 txid = ParseHashV(request.params[0], "txid");
+
+    EnsureNotProcessingBlock();
 
     CTransactionRef tx;
     int blockHeight;
@@ -1021,6 +1044,7 @@ static UniValue omni_getbalance(const JSONRPCRequest& request)
     std::string address = ParseAddress(request.params[0]);
     uint32_t propertyId = ParsePropertyId(request.params[1]);
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
 
     UniValue balanceObj(UniValue::VOBJ);
@@ -1056,6 +1080,7 @@ static UniValue omni_getallbalancesforid(const JSONRPCRequest& request)
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
 
     UniValue response(UniValue::VARR);
@@ -1407,6 +1432,7 @@ static UniValue omni_getproperty(const JSONRPCRequest& request)
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
 
     CMPSPInfo::Entry sp;
@@ -1460,32 +1486,22 @@ static UniValue omni_listproperties(const JSONRPCRequest& request)
        }
     }.Check(request);
 
+    EnsureNotProcessingBlock();
+
     UniValue response(UniValue::VARR);
-
-    uint32_t nextSPID = pDbSpInfo->peekNextSPID(1);
-    for (uint32_t propertyId = 1; propertyId < nextSPID; propertyId++) {
-        CMPSPInfo::Entry sp;
-        if (pDbSpInfo->getSP(propertyId, sp)) {
-            UniValue propertyObj(UniValue::VOBJ);
-            propertyObj.pushKV("propertyid", (uint64_t) propertyId);
-            PropertyToJSON(sp, propertyObj); // name, category, subcategory, ...
-
-            response.push_back(propertyObj);
+    for (uint8_t ecosystem = 1; ecosystem <= 2; ecosystem++) {
+        uint32_t propertyId = (ecosystem == 1) ? 1 : TEST_ECO_PROPERTY_1;
+        auto nextSPID = pDbSpInfo->peekNextSPID(ecosystem);
+        for (; propertyId < nextSPID; propertyId++) {
+            CMPSPInfo::Entry sp;
+            if (pDbSpInfo->getSP(propertyId, sp)) {
+                UniValue propertyObj(UniValue::VOBJ);
+                propertyObj.pushKV("propertyid", (uint64_t) propertyId);
+                PropertyToJSON(sp, propertyObj); // name, category, subcategory, ...
+                response.push_back(propertyObj);
+            }
         }
     }
-
-    uint32_t nextTestSPID = pDbSpInfo->peekNextSPID(2);
-    for (uint32_t propertyId = TEST_ECO_PROPERTY_1; propertyId < nextTestSPID; propertyId++) {
-        CMPSPInfo::Entry sp;
-        if (pDbSpInfo->getSP(propertyId, sp)) {
-            UniValue propertyObj(UniValue::VOBJ);
-            propertyObj.pushKV("propertyid", (uint64_t) propertyId);
-            PropertyToJSON(sp, propertyObj); // name, category, subcategory, ...
-
-            response.push_back(propertyObj);
-        }
-    }
-
     return response;
 }
 
@@ -1539,6 +1555,7 @@ static UniValue omni_getcrowdsale(const JSONRPCRequest& request)
     uint32_t propertyId = ParsePropertyId(request.params[0]);
     bool showVerbose = (request.params.size() > 1) ? request.params[1].get_bool() : false;
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireCrowdsale(propertyId);
 
@@ -1743,6 +1760,7 @@ static UniValue omni_getgrants(const JSONRPCRequest& request)
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
 
@@ -1828,6 +1846,7 @@ static UniValue omni_getorderbook(const JSONRPCRequest& request)
     uint32_t propertyIdForSale = ParsePropertyId(request.params[0]);
     uint32_t propertyIdDesired = 0;
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyIdForSale);
 
     if (filterDesired) {
@@ -1925,6 +1944,7 @@ static UniValue omni_gettradehistoryforaddress(const JSONRPCRequest& request)
     uint64_t count = (request.params.size() > 1) ? request.params[1].getInt<int64_t>() : 10;
     uint32_t propertyId = 0;
 
+    EnsureNotProcessingBlock();
     if (request.params.size() > 2) {
         propertyId = ParsePropertyId(request.params[2]);
         RequireExistingProperty(propertyId);
@@ -1994,6 +2014,7 @@ static UniValue omni_gettradehistoryforpair(const JSONRPCRequest& request)
     uint32_t propertyIdSideB = ParsePropertyId(request.params[1]);
     uint64_t count = (request.params.size() > 2) ? request.params[2].getInt<int64_t>() : 10;
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyIdSideA);
     RequireExistingProperty(propertyIdSideB);
     RequireSameEcosystem(propertyIdSideA, propertyIdSideB);
@@ -2155,6 +2176,7 @@ static UniValue omni_listblocktransactions(const JSONRPCRequest& request)
 
     int blockHeight = request.params[0].getInt<int>();
 
+    EnsureNotProcessingBlock();
     RequireHeightInChain(blockHeight);
 
     // next let's obtain the block for this height
@@ -2452,6 +2474,7 @@ static UniValue omni_getinfo(const JSONRPCRequest& request)
     infoResponse.pushKV("bitcoincoreversion", BitcoinCoreVersion());
 
     // provide the current block details
+    EnsureNotProcessingBlock();
     int block = GetHeight();
     int64_t blockTime = GetLatestBlockTime();
 
@@ -2533,6 +2556,7 @@ static UniValue omni_getactivations(const JSONRPCRequest& request)
 
     UniValue response(UniValue::VOBJ);
 
+    LOCK(cs_tally);
     UniValue arrayPendingActivations(UniValue::VARR);
     std::vector<FeatureActivation> vecPendingActivations = GetPendingActivations();
     for (std::vector<FeatureActivation>::iterator it = vecPendingActivations.begin(); it != vecPendingActivations.end(); ++it) {
@@ -2753,6 +2777,7 @@ static UniValue omni_getmetadexhash(const JSONRPCRequest& request)
     }.Check(request);
 
     uint32_t propertyId = 0;
+    EnsureNotProcessingBlock();
     if (request.params.size() > 0) {
         propertyId = ParsePropertyId(request.params[0]);
         RequireExistingProperty(propertyId);
@@ -2794,6 +2819,7 @@ static UniValue omni_getbalanceshash(const JSONRPCRequest& request)
     }.Check(request);
 
     uint32_t propertyId = ParsePropertyId(request.params[0]);
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
 
     auto* pblockindex = GetActiveChain().Tip();

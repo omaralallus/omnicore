@@ -17,4 +17,7 @@
 /** Throws a JSONRPCError, depending on error code. */
 void PopulateFailure(int error);
 
+/** Ensures interface isn't in the middle of block processing. */
+void EnsureNotProcessingBlock();
+
 #endif // BITCOIN_OMNICORE_RPC_H

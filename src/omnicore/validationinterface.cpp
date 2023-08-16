@@ -395,7 +395,7 @@ static CScript GetScriptFromIndex(size_t type, const uint256 &hash)
 void COmniValidationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *, bool fInitialDownload)
 {
     chain.SetTip(pindexNew);
-    initialBlockDownload.store(fInitialDownload, std::memory_order_consume);
+    initialBlockDownload.store(fInitialDownload, std::memory_order_release);
 }
 
 void COmniValidationInterface::TransactionAddedToMempool(const CTransactionRef& tx, uint64_t mempool_sequence)
@@ -410,35 +410,35 @@ void COmniValidationInterface::TransactionRemovedFromMempool(const CTransactionR
 
 void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex *pindex)
 {
+    LOCK(cs_tally);
+
+    processingBlock.store(true, std::memory_order_release);
+
+    BeginProcessTx(pindex);
+
+    chain.SetTip(pindex);
+
+    //! transaction position within the block
+    unsigned int nTxIdx = 0;
+
+    //! number of meta transactions found
+    unsigned int nNumMetaTxs = 0;
+
     CCoinsViewCacheOnly view;
-    {
-        LOCK(cs_tally);
-
-        BeginProcessTx(pindex);
-
-        chain.SetTip(pindex);
-
-        //! transaction position within the block
-        unsigned int nTxIdx = 0;
-
-        //! number of meta transactions found
-        unsigned int nNumMetaTxs = 0;
-
-        for (auto& tx : block->vtx) {
-            //! Omni Core: new confirmed transaction notification
-            if (ProcessTransaction(view, *tx, nTxIdx, pindex)) {
-                PrintToLog("%s: new confirmed transaction [height: %d, idx: %u]\n", __func__, pindex->nHeight, nTxIdx);
-                ++nNumMetaTxs;
-            }
-            ++nTxIdx;
+    for (auto& tx : block->vtx) {
+        //! Omni Core: new confirmed transaction notification
+        if (ProcessTransaction(view, *tx, nTxIdx, pindex)) {
+            PrintToLog("%s: new confirmed transaction [height: %d, idx: %u]\n", __func__, pindex->nHeight, nTxIdx);
+            ++nNumMetaTxs;
         }
-
-        //! Omni Core: end of block connect notification
-        if (nNumMetaTxs)
-            PrintToLog("%s: block connect end [new height: %d, found: %u txs]\n", __func__, pindex->nHeight, nNumMetaTxs);
-
-        EndProcessTx(pindex, nNumMetaTxs);
+        ++nTxIdx;
     }
+
+    //! Omni Core: end of block connect notification
+    if (nNumMetaTxs)
+        PrintToLog("%s: block connect end [new height: %d, found: %u txs]\n", __func__, pindex->nHeight, nNumMetaTxs);
+
+    EndProcessTx(pindex, nNumMetaTxs);
 
     if (fAddressIndex) {
         std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndex;
@@ -502,6 +502,8 @@ void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock
         if (!pDbAddress->WriteTimestampBlockIndex(pindex->GetBlockHash(), logicalTS))
             PrintToLog("%s: Failed to write blockhash index\n", __func__);
     }
+
+    processingBlock.store(false, std::memory_order_release);
 
     for (auto& tx : block->vtx)
         RemoveTransactionFromMempool(tx);
@@ -572,6 +574,11 @@ const CChainIndex& COmniValidationInterface::GetActiveChain() const
 bool COmniValidationInterface::IsInitialBlockDownload() const
 {
     return initialBlockDownload.load(std::memory_order_relaxed);
+}
+
+bool COmniValidationInterface::IsProcessingBlock() const
+{
+    return processingBlock.load(std::memory_order_relaxed);
 }
 
 std::shared_ptr<COmniValidationInterface> omniValidationInterface;

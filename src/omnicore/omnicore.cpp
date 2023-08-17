@@ -1516,10 +1516,7 @@ int mastercore_init(node::NodeContext& node)
 
     PrintToConsole("Omni Core initialization completed\n");
 
-#ifdef ENABLE_WALLET
-    extern interfaces::WalletLoader *g_wallet_loader;
-    g_wallet_loader = node.wallet_loader;
-#endif
+    InitWallets(node);
 
     CheckWalletUpdate();
 

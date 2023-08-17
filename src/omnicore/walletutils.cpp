@@ -147,15 +147,31 @@ int IsMyAddress(const std::string& address, interfaces::Wallet* iWallet)
     return 0;
 }
 
+#if ENABLE_WALLET
+static std::function<std::vector<std::shared_ptr<wallet::CWallet>>()> GetWallets;
+#endif
+
+void InitWallets(node::NodeContext& node)
+{
+#if ENABLE_WALLET
+    if (auto loader = node.wallet_loader) {
+        if (auto context = loader->context()) {
+            GetWallets = std::bind(wallet::GetWallets, std::ref(*context));
+        }
+    }
+#endif
+}
+
 /**
  * IsMine wrapper to determine whether the address is in the wallet.
  */
 bool IsMyAddressAllWallets(const std::string& address)
 {
 #ifdef ENABLE_WALLET
+    if (!GetWallets) return false;
     CTxDestination destination = DecodeDestination(address);
     for(auto& wallet : GetWallets())
-        if (wallet->isSpendable(destination))
+        if (wallet->IsMine(destination))
             return true;
 #endif
     return false;
@@ -287,17 +303,3 @@ int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddre
 #endif
 
 } // namespace mastercore
-
-#ifdef ENABLE_WALLET
-interfaces::WalletLoader *g_wallet_loader = nullptr;
-#endif
-
-std::vector<std::unique_ptr<interfaces::Wallet>> GetWallets()
-{
-#ifdef ENABLE_WALLET
-    if (auto wallet_loader = g_wallet_loader) {
-        return wallet_loader->getWallets();
-    }
-#endif
-    return {};
-}

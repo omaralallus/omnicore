@@ -7,15 +7,17 @@ namespace interfaces {
 class Wallet;
 } // namespace interfaces
 
-#include <wallet/ismine.h>             // For isminefilter, isminetype
 #include <script/standard.h>
 
-#include <stdint.h>
 #include <string>
 
 namespace wallet {
 class CWallet;
 class CCoinControl;
+}
+
+namespace node {
+class NodeContext;
 }
 
 namespace mastercore
@@ -42,6 +44,9 @@ CAmount GetEstimatedFeePerKb(interfaces::Wallet& iWallet);
 * require more fees to pay than the output is worth. */
 int64_t GetEconomicThreshold(interfaces::Wallet& iWallet, const CTxOut& txOut);
 
+/** Init wallets based on node context */
+void InitWallets(node::NodeContext& node);
+
 #ifdef ENABLE_WALLET
 /** Selects spendable outputs to create a transaction. */
 int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress, wallet::CCoinControl& coinControl, int64_t amountRequired = 0);
@@ -50,7 +55,5 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
 int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddress, wallet::CCoinControl& coinControl);
 #endif
 }
-
-std::vector<std::unique_ptr<interfaces::Wallet>> GetWallets();
 
 #endif // BITCOIN_OMNICORE_WALLETUTILS_H

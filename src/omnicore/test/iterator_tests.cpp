@@ -1,5 +1,4 @@
 
-#include <boost/test/tools/old/interface.hpp>
 #include <cstdint>
 #include <omnicore/dbbase.h>
 

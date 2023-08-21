@@ -70,22 +70,11 @@ bool msc_debug_fees               = 1;
 bool msc_debug_nftdb              = 0;
 
 /**
- * LogPrintf has been broken a couple of times now
- * by well-meaning people adding mutexes in the most straightforward way.
- * It breaks because it may be called by global destructors during shutdown.
- * Since the order of destruction of static/global objects is undefined,
- * defining a mutex as a global object doesn't work (the mutex gets
- * destroyed, and then some later destructor calls OutputDebugStringF,
- * maybe indirectly, and you get a core dump at shutdown trying to lock
- * the mutex).
- */
-static std::once_flag debugLogInitFlag;
-/**
  * We use std::call_once() to make sure these are initialized
  * in a thread-safe manner the first time called:
  */
 static FILE* fileout = nullptr;
-static std::optional<std::recursive_mutex> mutexDebugLog;
+std::recursive_mutex mutexDebugLog;
 
 /** Flag to indicate, whether the Omni Core log file should be reopened. */
 std::atomic<bool> fReopenOmniCoreLog{false};
@@ -95,7 +84,7 @@ std::atomic<bool> fOmniCoreConsoleLog{false};
 
 void CloseLogFile()
 {
-    std::lock_guard lock(*mutexDebugLog);
+    std::lock_guard lock(mutexDebugLog);
     if (fileout) {
         fclose(fileout);
         fileout = nullptr;
@@ -129,8 +118,8 @@ static fs::path GetLogPath()
  */
 static void DebugLogInit()
 {
+    std::lock_guard lock(mutexDebugLog);
     assert(fileout == nullptr);
-    assert(mutexDebugLog == std::nullopt);
 
     fs::path pathDebug = GetLogPath();
     fileout = fopen(pathDebug.string().c_str(), "a");
@@ -140,8 +129,6 @@ static void DebugLogInit()
     } else {
         PrintToConsole("Failed to open debug log file: %s\n", pathDebug.string());
     }
-
-    mutexDebugLog.emplace();
 }
 
 /**
@@ -180,16 +167,11 @@ int LogFilePrint(const std::string& str)
         return ret;
     }
 
-    std::call_once(debugLogInitFlag, &DebugLogInit);
-
-    std::lock_guard lock(*mutexDebugLog);
+    std::lock_guard lock(mutexDebugLog);
     // Reopen the log file, if requested
     if (fReopenOmniCoreLog) {
         CloseLogFile();
-        fs::path pathDebug = GetLogPath();
-        if (freopen(pathDebug.string().c_str(), "a", fileout) != nullptr) {
-            setbuf(fileout, nullptr); // Unbuffered
-        }
+        DebugLogInit();
     }
     return fileout ? LogWriteLine(str, fileout) : 0;
 }
@@ -233,6 +215,9 @@ static void handleSIGUP(int)
 void InitDebugLogLevels()
 {
     fOmniCoreConsoleLog = gArgs.GetBoolArg("-printtoconsole", false);
+    if (!fOmniCoreConsoleLog) {
+        DebugLogInit();
+    }
 
 #ifndef WIN32
     // Reopen omnicore.log on SIGHUP

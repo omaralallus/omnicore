@@ -801,9 +801,7 @@ int mastercore::GetEncodingClass(const CTransaction& tx, int nBlock)
  */
 bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
 {
-    for (std::vector<CTxIn>::const_iterator it = tx.vin.begin(); it != tx.vin.end(); ++it) {
-        const CTxIn& txIn = *it;
-        unsigned int nOut = txIn.prevout.n;
+    for (auto& txIn : tx.vin) {
         const Coin& coin = view.AccessCoin(txIn.prevout);
 
         if (!coin.IsSpent()) {

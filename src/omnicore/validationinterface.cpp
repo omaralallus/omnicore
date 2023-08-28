@@ -177,8 +177,8 @@ void COmniValidationInterface::RewindDBsState(int nHeight)
         pDbFeeHistory->RollBackHistory(block);
         pDbNFT->RollBackAboveBlock(block);
         pDbTradeList->deleteTransactions(txsToDelete, block);
-        pDbTransaction->DeleteTransactions(txsToDelete, block);
         pDbTransactionList->deleteTransactions(txsToDelete, block);
+        pDbTransaction->DeleteTransactions(txsToDelete, inputsToRestore, block);
         if (fAddressIndex) {
             pDbAddress->UpdateSpentIndex(spentIndexToUdpdate);
             pDbAddress->EraseAddressIndex(addressIndexToDelete);
@@ -187,6 +187,7 @@ void COmniValidationInterface::RewindDBsState(int nHeight)
     }
 
     txsToDelete.clear();
+    inputsToRestore.clear();
     spentIndexToUdpdate.clear();
     addressIndexToDelete.clear();
     addressUnspentIndexToUpdate.clear();
@@ -518,6 +519,17 @@ void COmniValidationInterface::BlockDisconnected(const std::shared_ptr<const CBl
 
     for (auto& tx : block->vtx) {
         txsToDelete.insert(tx->GetHash());
+    }
+
+    CBlockUndo blockUndo;
+    if (node::UndoReadFromDisk(blockUndo, pindex)) {
+        for (auto i = 1u; i < block->vtx.size(); i++) {
+            const CTransaction &tx = *(block->vtx[i]);
+            CTxUndo &txundo = blockUndo.vtxundo.at(i - 1);
+            for (auto j = tx.vin.size(); j-- > 0;) {
+                inputsToRestore.emplace(tx.vin[j].prevout, txundo.vprevout.at(j).out);
+            }
+        }
     }
 
     disconnectInitiated = true;

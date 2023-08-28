@@ -24,7 +24,7 @@ public:
     void RecordTransaction(const CTransaction& tx, int block, uint32_t posInBlock, int processingResult);
 
     /** Deletes transactions in case of rollback. */
-    void DeleteTransactions(const std::set<uint256>& txs, int block);
+    void DeleteTransactions(const std::set<uint256>& txs, const std::map<COutPoint, CTxOut>& inputsToRestore, int block);
 
     /** Stores transaction outputs. */
     void RecordTransactionOuts(const CTransaction& tx, int block);

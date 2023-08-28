@@ -48,15 +48,6 @@ struct CTxOutKey {
     }
 };
 
-struct CTxOutToDeleteKey : CTxOutKey {
-    uint32_t blockHeight = 0;
-
-    SERIALIZE_METHODS(CTxOutToDeleteKey, obj) {
-        READWRITE(Using<BigEndian32>(obj.blockHeight));
-        READWRITEAS(CTxOutKey, obj);
-    }
-};
-
 const auto CTxOutValue = [](auto&& txout) {
     return Using<TxOutCompression>(txout);
 };
@@ -128,18 +119,10 @@ void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx, int block
     uint32_t height = block;
     for (auto& txin : tx.vin) {
         auto& prevout = txin.prevout;
-        batch.Write(CTxOutToDeleteKey{prevout.hash, prevout.n, height}, "");
+        batch.Delete(CTxOutKey{prevout.hash, prevout.n});
     }
     for (auto i = 0u; i < tx.vout.size(); i++) {
         batch.Write(CTxOutKey{tx.GetHash(), i}, CTxOutValue(tx.vout[i]));
-    }
-    if (height % 1000 == 0) {
-        for (CDBaseIterator it{NewIterator(), CTxOutToDeleteKey{}}; it; ++it) {
-            auto key = it.Key<CTxOutToDeleteKey>();
-            if (height - key.blockHeight < STORE_EVERY_N_BLOCK) break;
-            batch.Delete(it.Key());
-            batch.Delete(CTxOutKey{key});
-        }
     }
     WriteBatch(batch);
 }
@@ -147,7 +130,7 @@ void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx, int block
 /**
  * Deletes transactions in case of rollback.
  */
-void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs, int block)
+void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs, const std::map<COutPoint, CTxOut>& inputsToRestore, int block)
 {
     CDBWriteBatch batch;
     CDBaseIterator it{NewIterator()};
@@ -157,10 +140,8 @@ void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs, int bl
             batch.Delete(it.Key());
         }
     }
-    for (it.Seek(CTxOutToDeleteKey{}); it; ++it) {
-        auto key = it.Key<CTxOutToDeleteKey>();
-        if (key.blockHeight < block) continue;
-        batch.Delete(it.Key());
+    for (const auto& [outpoint, out] : inputsToRestore) {
+        batch.Write(CTxOutKey{outpoint.hash, outpoint.n}, CTxOutValue(out));
     }
     WriteBatch(batch);
 }

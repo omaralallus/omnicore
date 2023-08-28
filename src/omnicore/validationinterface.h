@@ -49,6 +49,7 @@ class COmniValidationInterface : public CValidationInterface {
     CChainIndex chain;
     std::set<uint256> txsToDelete;
     bool disconnectInitiated = false;
+    std::map<COutPoint, CTxOut> inputsToRestore;
     std::atomic_bool initialBlockDownload = false, processingBlock = false;
     std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexToDelete;
     std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>> spentIndexToUdpdate;

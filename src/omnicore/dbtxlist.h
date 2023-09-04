@@ -57,9 +57,7 @@ public:
     bool getValidMPTX(const uint256& txid, int* block = nullptr, unsigned int* type = nullptr, uint64_t* nAmended = nullptr);
 
     std::set<int> GetSeedBlocks(int startHeight, int endHeight);
-    void LoadAlerts(int blockHeight);
-    void LoadActivations(int blockHeight);
-    bool LoadFreezeState(int blockHeight);
+    std::map<uint256, int> LoadValidTxs(int blockHeight, const std::set<int>& txtypes = {});
     bool CheckForFreezeTxs(int blockHeight);
 
     void printStats();

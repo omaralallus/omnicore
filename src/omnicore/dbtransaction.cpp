@@ -39,7 +39,7 @@ struct CTxInfoKey {
 
 struct CTxOutKey {
     static constexpr uint8_t prefix = 'c';
-    uint256 txid;
+    const uint256& txid;
     uint32_t n = 0;
 
     SERIALIZE_METHODS(CTxOutKey, obj) {

@@ -86,12 +86,12 @@ void CMPSTOList::getRecipients(const uint256& txid, const std::string& filterAdd
     }
 }
 
-struct CBlockTxKey {
+struct CBlockCHashKey {
     static constexpr uint8_t prefix = 'b';
     uint32_t block = ~0u;
     uint8_t chash[4];
 
-    SERIALIZE_METHODS(CBlockTxKey, obj) {
+    SERIALIZE_METHODS(CBlockCHashKey, obj) {
         READWRITE(Using<BigEndian32Inv>(obj.block));
         READWRITE(obj.chash);
     }
@@ -102,8 +102,8 @@ std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string&
     uint32_t block = endBlock;
     CDBaseIterator tx_it{NewIterator()};
     std::unordered_map<int, uint256> mySTOReceipts;
-    for (CDBaseIterator it{NewIterator(), CBlockTxKey{block}}; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
+    for (CDBaseIterator it{NewIterator(), CBlockCHashKey{block}}; it; ++it) {
+        auto key = it.Key<CBlockCHashKey>();
         if (key.block < startBlock) break;
         for (tx_it.Seek(PartialKey<CTxAddressKey>(key.chash)); tx_it; ++tx_it) {
             auto tx_key = tx_it.Key<CTxAddressKey>();
@@ -128,8 +128,8 @@ int CMPSTOList::deleteAboveBlock(int blockNum)
     unsigned int n_found = 0;
     std::vector<std::string> vecSTORecords;
     CDBaseIterator tx_it{NewIterator()};
-    for (CDBaseIterator it{NewIterator(), CBlockTxKey{}}; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
+    for (CDBaseIterator it{NewIterator(), CBlockCHashKey{}}; it; ++it) {
+        auto key = it.Key<CBlockCHashKey>();
         if (key.block < blockNum) break;
         batch.Delete(it.Key());
         for (tx_it.Seek(PartialKey<CTxAddressKey>(key.chash)); tx_it; ++tx_it) {
@@ -163,7 +163,7 @@ void CMPSTOList::printAll()
 
 void CMPSTOList::recordSTOReceive(const std::string& address, const uint256 &txid, int nBlock, uint32_t propertyId, uint64_t amount)
 {
-    CBlockTxKey key{uint32_t(nBlock)};
+    CBlockCHashKey key{uint32_t(nBlock)};
     std::copy(txid.begin(), txid.begin() + sizeof(key.chash), key.chash);
     bool status = Write(key, "") && Write(CTxAddressKey{txid, address, nBlock, propertyId}, amount);
     PrintToLog("%s(%d): add record: (%s) \n", __func__, nBlock, status ? "OK" : "NOK");

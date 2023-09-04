@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <iterator>
 #include <leveldb/db.h>
+#include <leveldb/slice.h>
 #include <leveldb/write_batch.h>
 
 #include <clientversion.h>
@@ -18,32 +19,6 @@
 #include <string_view>
 #include <type_traits>
 #include <variant>
-
-class CStringWriter
-{
-    const int nType;
-    const int nVersion;
-    std::string& data;
-
-public:
-    CStringWriter(int nType_, int nVersion_, std::string& s) : nType(nType_), nVersion(nVersion_), data(s) {}
-
-    template<typename T>
-    CStringWriter& operator<<(const T& obj)
-    {
-        ::Serialize(*this, obj);
-        return *this;
-    }
-
-    void write(Span<const std::byte> src)
-    {
-        data.append((const char*)src.data(), src.size());
-    }
-
-    int GetVersion() const { return nVersion; }
-    int GetType() const { return nType; }
-    size_t size() const { return data.size(); }
-};
 
 template<typename BaseFormatter>
 struct CustomUintInvFormatter : private BaseFormatter
@@ -71,12 +46,84 @@ using BigEndian32Inv = CustomUintInvFormatter<BigEndian32>;
 using BigEndian64Inv = CustomUintInvFormatter<BigEndian64>;
 using VarintSigned = VarIntFormatter<VarIntMode::NONNEGATIVE_SIGNED>;
 
+class CStringWriter
+{
+    const int m_type;
+    const int m_version;
+    std::string& m_data;
+
+public:
+    CStringWriter(int type, int version, std::string& s)
+        : m_type(type), m_version(version), m_data(s) {}
+
+    template<typename T>
+    CStringWriter& operator<<(const T& obj)
+    {
+        ::Serialize(*this, obj);
+        return *this;
+    }
+
+    void write(Span<const std::byte> src)
+    {
+        m_data.append((const char*)src.data(), src.size());
+    }
+
+    int GetVersion() const { return m_version; }
+    int GetType() const { return m_version; }
+    size_t size() const { return m_data.size(); }
+};
+
+class CStringReader
+{
+    const int m_type;
+    const int m_version;
+    Span<const char> m_data;
+
+public:
+    CStringReader(int type, int version, Span<const char> data)
+        : m_type(type), m_version(version), m_data(data) {}
+
+    template<typename T>
+    CStringReader& operator>>(T&& obj)
+    {
+        ::Unserialize(*this, obj);
+        return (*this);
+    }
+
+    void read(Span<std::byte> dst)
+    {
+        if (dst.size() == 0) {
+            return;
+        }
+        if (dst.size() > m_data.size()) {
+            throw std::ios_base::failure("CStringReader::read(): end of data");
+        }
+        memcpy(dst.data(), m_data.data(), dst.size());
+        m_data = m_data.subspan(dst.size());
+    }
+
+    void ignore(int num_ignore)
+    {
+        if (num_ignore <= 0) {
+            return;
+        }
+        if (num_ignore > m_data.size()) {
+            throw std::ios_base::failure("CStringReader::ignore(): end of data");
+        }
+        m_data = m_data.subspan(num_ignore);
+    }
+
+    int GetVersion() const { return m_version; }
+    int GetType() const { return m_type; }
+    size_t size() const { return m_data.size(); }
+    bool empty() const { return m_data.empty(); }
+};
+
 template<typename T>
 bool StringToValue(const std::string_view& s, T& value)
 {
     try {
-        CDataStream ssValue(s.data(), s.data() + s.size(), SER_DISK, CLIENT_VERSION);
-        ssValue >> value;
+        CStringReader{SER_DISK, CLIENT_VERSION, s} >> value;
     } catch (const std::exception&) {
         return false;
     }
@@ -84,35 +131,28 @@ bool StringToValue(const std::string_view& s, T& value)
 }
 
 template<typename T>
-constexpr bool convertibleToSV = std::is_convertible<std::decay_t<T>, std::string_view>::value;
-
-template<typename T, std::enable_if_t<!convertibleToSV<T>, int> = 0>
 std::string ValueToString(const T& value)
 {
-    std::string s;
-    CStringWriter writer(SER_DISK, CLIENT_VERSION, s);
-    writer << value;
-    return s;
+    if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+        return value;
+    } else {
+        std::string s;
+        CStringWriter{SER_DISK, CLIENT_VERSION, s} << value;
+        return s;
+    }
 }
 
-inline std::string_view ValueToString(std::string_view value)
-{
-    return value;
-}
-
-template<typename T, std::enable_if_t<!convertibleToSV<T>, int> = 0>
+template<typename T>
 std::string KeyToString(const T& key)
 {
-    std::string s;
-    static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
-    CStringWriter writer(SER_DISK, CLIENT_VERSION, s);
-    writer << T::prefix << key;
-    return s;
-}
-
-inline std::string_view KeyToString(std::string_view key)
-{
-    return key;
+    if constexpr (std::is_same_v<std::decay_t<T>, std::string>) {
+        return key;
+    } else {
+        std::string s;
+        static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
+        CStringWriter{SER_DISK, CLIENT_VERSION, s} << T::prefix << key;
+        return s;
+    }
 }
 
 template<typename T>
@@ -121,9 +161,7 @@ bool StringToKey(const std::string_view& s, T& key)
     auto prefix = T::prefix;
     static_assert(sizeof(T::prefix) == 1, "Prefix needs to be 1 byte");
     try {
-        Span v((const uint8_t *)s.data(), s.size());
-        SpanReader reader(SER_DISK, CLIENT_VERSION, v);
-        reader >> prefix >> key;
+        CStringReader{SER_DISK, CLIENT_VERSION, s} >> prefix >> key;
     } catch (const std::exception&) {
         return false;
     }
@@ -141,16 +179,13 @@ public:
     template<typename K, typename V>
     void Write(const K& key, const V& value)
     {
-        auto skey = KeyToString(key);
-        auto svalue = ValueToString(value);
-        batch.Put({skey.data(), skey.size()}, {svalue.data(), svalue.size()});
+        batch.Put(KeyToString(key), ValueToString(value));
     }
 
     template<typename K>
     void Delete(const K& key)
     {
-        auto skey = KeyToString(key);
-        batch.Delete({skey.data(), skey.size()});
+        batch.Delete(KeyToString(key));
     }
 
     void Write(const leveldb::Slice& key, const leveldb::Slice& value)
@@ -222,17 +257,20 @@ protected:
     template<typename K, typename V>
     bool Write(const K& key, const V& value)
     {
-        return Write(KeyToString(key), ValueToString(value));
+        auto skey = KeyToString(key);
+        auto svalue = ValueToString(value);
+        return Write(leveldb::Slice{skey}, leveldb::Slice{svalue});
     }
 
     template<typename K, typename V>
     bool Read(const K& key, V&& value) const
     {
+        auto skey = KeyToString(key);
         if constexpr (std::is_same_v<std::string, std::decay_t<V>>) {
-            return Read(KeyToString(key), value);
+            return Read(leveldb::Slice{skey}, value);
         } else {
             std::string strValue;
-            return Read(KeyToString(key), strValue)
+            return Read(leveldb::Slice{skey}, strValue)
                 && StringToValue(strValue, value);
         }
     }
@@ -240,25 +278,26 @@ protected:
     template<typename K>
     bool Delete(const K& key)
     {
-        return Delete(KeyToString(key));
+        auto skey = KeyToString(key);
+        return Delete(leveldb::Slice{skey});
     }
 
-    bool Write(const std::string_view& key, const std::string_view& value)
+    bool Write(const leveldb::Slice& key, const leveldb::Slice& value)
     {
         assert(pdb);
-        return pdb->Put(writeoptions, {key.data(), key.size()}, {value.data(), value.size()}).ok();
+        return pdb->Put(writeoptions, key, value).ok();
     }
 
-    bool Read(const std::string_view& key, std::string& value) const
+    bool Read(const leveldb::Slice& key, std::string& value) const
     {
         assert(pdb);
-        return pdb->Get(readoptions, {key.data(), key.size()}, &value).ok();
+        return pdb->Get(readoptions, key, &value).ok();
     }
 
-    bool Delete(const std::string_view& key)
+    bool Delete(const leveldb::Slice& key)
     {
         assert(pdb);
-        return pdb->Delete(writeoptions, {key.data(), key.size()}).ok();
+        return pdb->Delete(writeoptions, key).ok();
     }
 
     bool WriteBatch(CDBWriteBatch& batch)
@@ -307,8 +346,7 @@ template<typename T, typename S>
 CPartialKey PartialKey(S&& subkey)
 {
     std::string s;
-    CStringWriter writer(SER_DISK, CLIENT_VERSION, s);
-    writer << T::prefix << std::forward<S>(subkey);
+    CStringWriter{SER_DISK, CLIENT_VERSION, s} << T::prefix << std::forward<S>(subkey);
     return CPartialKey{std::move(s)};
 }
 
@@ -472,13 +510,13 @@ public:
     template<typename Stream>
     void Serialize(Stream& s) const
     {
-        std::visit([&](auto& v) { ::Serialize(s, v.get()); }, value);
+        ::Serialize(s, get());
     }
 
     template<typename Stream>
     void Unserialize(Stream& s)
     {
-        ::Unserialize(s, std::get<ref>(value).get());
+        ::Unserialize(s, get());
     }
 };
 

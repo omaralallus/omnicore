@@ -321,7 +321,10 @@ void CMPSPInfo::deleteSPAboveBlock(int block)
     WriteBatch(batch);
 }
 
-static constexpr std::string_view wprefix = "B";
+struct CWattermarkKey {
+    static constexpr uint8_t prefix = 'B';
+    SERIALIZE_METHODS(CWattermarkKey, obj) {}
+};
 
 struct CWattermarkValue {
     CRef<uint256> blockHash;
@@ -335,12 +338,12 @@ struct CWattermarkValue {
 
 void CMPSPInfo::setWatermark(const uint256& watermark, int block)
 {
-    Write(wprefix, CWattermarkValue{watermark, block});
+    Write(CWattermarkKey{}, CWattermarkValue{watermark, block});
 }
 
 bool CMPSPInfo::getWatermark(uint256& watermark, int& block) const
 {
-    return Read(wprefix, CWattermarkValue{watermark, block});
+    return Read(CWattermarkKey{}, CWattermarkValue{watermark, block});
 }
 
 void CMPSPInfo::printAll() const

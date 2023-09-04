@@ -3,7 +3,6 @@
 #include <omnicore/activation.h>
 #include <omnicore/convert.h>
 #include <omnicore/dbtxlist.h>
-#include <omnicore/dbtransaction.h>
 #include <omnicore/dex.h>
 #include <omnicore/log.h>
 #include <omnicore/notifications.h>
@@ -33,15 +32,6 @@
 #include <string_view>
 #include <utility>
 #include <vector>
-
-using mastercore::AddAlert;
-using mastercore::CheckAlertAuthorization;
-using mastercore::CheckExpiredAlerts;
-using mastercore::CheckLiveActivations;
-using mastercore::DeleteAlerts;
-using mastercore::GetActiveChain;
-using mastercore::isNonMainNet;
-using mastercore::pDbTransaction;
 
 CMPTxList::CMPTxList(const fs::path& path, bool fWipe)
 {
@@ -361,6 +351,11 @@ int CMPTxList::GetOmniTxsInBlockRange(int blockFirst, int blockLast, std::set<ui
     return retTxs.size();
 }
 
+struct CDBVersionKey {
+    static constexpr uint8_t prefix = 'D';
+    SERIALIZE_METHODS(CDBVersionKey, obj) {}
+};
+
 /*
  * Gets the DB version from txlistdb
  *
@@ -369,7 +364,7 @@ int CMPTxList::GetOmniTxsInBlockRange(int blockFirst, int blockLast, std::set<ui
 int CMPTxList::getDBVersion()
 {
     uint8_t version;
-    bool status = Read("D", version);
+    bool status = Read(CDBVersionKey{}, version);
     if (msc_debug_txdb) PrintToLog("%s(): dbversion %d status %s\n", __func__, version, status ? "OK" : "NOK");
     return status ? version : 0;
 }
@@ -381,7 +376,7 @@ int CMPTxList::getDBVersion()
  */
 int CMPTxList::setDBVersion()
 {
-    bool status = Write("D", uint8_t(DB_VERSION));
+    bool status = Write(CDBVersionKey{}, uint8_t(DB_VERSION));
     if (msc_debug_txdb) PrintToLog("%s(): dbversion %d status %s\n", __func__, DB_VERSION, status ? "OK" : "NOK");
     return getDBVersion();
 }
@@ -407,7 +402,7 @@ void CMPTxList::RecordNonFungibleGrant(const uint256& txid, int64_t start, int64
     PrintToLog("%s(): Writing Non-Fungible Grant range %s:%d-%d (%s)\n", __FUNCTION__, txid.ToString(), start, end, status ? "OK" : "NOK");
 }
 
-bool CMPTxList::getTX(const uint256 &txid, CTxKey& key, int64_t& value)
+bool CMPTxList::getTX(const uint256& txid, CTxKey& key, int64_t& value)
 {
     CDBaseIterator it{NewIterator(), PartialKey<CTxKey>(txid)};
     bool status = it.Valid() && it.Key(key) && it.Value(value);
@@ -468,111 +463,9 @@ std::set<int> CMPTxList::GetSeedBlocks(int startHeight, int endHeight)
     return setSeedBlocks;
 }
 
-using activation = std::pair<std::pair<int, uint32_t>, uint256>;
-
-static void ProcessActivations(const std::vector<activation>& activations, std::function<void(CMPTransaction&)> callback)
+std::map<uint256, int> CMPTxList::LoadValidTxs(int blockHeight, const std::set<int>& txtypes)
 {
-    CCoinsViewCacheOnly view;
-    for (const auto& [hidx, hash] : activations) {
-        int blockHeight;
-        CTransactionRef wtx;
-        CMPTransaction mp_obj;
-
-        if (!GetTransaction(hash, wtx, blockHeight)) {
-            PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
-            continue;
-        }
-        if (0 != ParseTransaction(view, *wtx, hidx.first, 0, mp_obj)) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed ParseTransaction.\n", hash.GetHex());
-            continue;
-        }
-        if (!mp_obj.interpret_Transaction()) {
-            PrintToLog("ERROR: While loading activation transaction %s: failed interpret_Transaction.\n", hash.GetHex());
-            continue;
-        }
-        callback(mp_obj);
-    }
-}
-
-void CMPTxList::LoadAlerts(int blockHeight)
-{
-    std::vector<activation> loadOrder;
-    CDBaseIterator tx_it{NewIterator()};
-    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
-    for (; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
-        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
-        auto txkey = tx_it.Key<CTxKey>();
-        if (txkey.type != OMNICORE_MESSAGE_TYPE_ALERT || !txkey.valid) continue; // not a valid alert
-        loadOrder.emplace_back(std::make_pair(key.block, 0), key.txid);
-    }
-
-    std::sort(loadOrder.begin(), loadOrder.end());
-
-    ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
-        if (OMNICORE_MESSAGE_TYPE_ALERT != mp_obj.getType()) {
-            PrintToLog("ERROR: While loading alert %s: levelDB type mismatch, not an alert.\n", mp_obj.getHash().GetHex());
-            return;
-        }
-        if (!CheckAlertAuthorization(mp_obj.getSender())) {
-            PrintToLog("ERROR: While loading alert %s: sender is not authorized to send alerts.\n", mp_obj.getHash().GetHex());
-            return;
-        }
-        if (mp_obj.getAlertType() == 65535) { // set alert type to FFFF to clear previously sent alerts
-            DeleteAlerts(mp_obj.getSender());
-        } else {
-            AddAlert(mp_obj.getSender(), mp_obj.getAlertType(), mp_obj.getAlertExpiry(), mp_obj.getAlertMessage());
-        }
-    });
-
-    if (auto pBlockIndex = GetActiveChain()[blockHeight - 1]) {
-        CheckExpiredAlerts(blockHeight, pBlockIndex->GetBlockTime());
-    }
-}
-
-void CMPTxList::LoadActivations(int blockHeight)
-{
-    PrintToLog("Loading feature activations from levelDB\n");
-
-    std::vector<activation> loadOrder;
-    CDBaseIterator tx_it{NewIterator()};
-    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
-    for (; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
-        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
-        auto txkey = tx_it.Key<CTxKey>();
-        if (txkey.type != OMNICORE_MESSAGE_TYPE_ACTIVATION || !txkey.valid) continue; // not a valid alert
-        loadOrder.emplace_back(std::make_pair(key.block, 0), key.txid);
-    }
-
-    std::sort(loadOrder.begin(), loadOrder.end());
-
-    ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
-        if (OMNICORE_MESSAGE_TYPE_ACTIVATION != mp_obj.getType()) {
-            PrintToLog("ERROR: While loading activation transaction %s: levelDB type mismatch, not an activation.\n", mp_obj.getHash().GetHex());
-            return;
-        }
-        mp_obj.unlockLogic();
-        if (0 != mp_obj.interpretPacket()) {
-            PrintToLog("ERROR: While loading activation transaction %s: non-zero return from interpretPacket\n", mp_obj.getHash().GetHex());
-            return;
-        }
-    });
-
-    CheckLiveActivations(blockHeight);
-
-    // This alert never expires as long as custom activations are used
-    if (gArgs.IsArgSet("-omniactivationallowsender") || gArgs.IsArgSet("-omniactivationignoresender")) {
-        AddAlert("omnicore", ALERT_CLIENT_VERSION_EXPIRY, std::numeric_limits<uint32_t>::max(),
-                "Authorization for feature activation has been modified.  Data provided by this client should not be trusted.");
-    }
-}
-
-bool CMPTxList::LoadFreezeState(int blockHeight)
-{
-    PrintToLog("Loading freeze state from levelDB\n");
-
-    std::vector<activation> loadOrder;
+    std::map<uint256, int> txs;
     CDBaseIterator tx_it{NewIterator()};
     CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
     for (; it; ++it) {
@@ -580,33 +473,10 @@ bool CMPTxList::LoadFreezeState(int blockHeight)
         if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
         auto txkey = tx_it.Key<CTxKey>();
         if (!txkey.valid) continue;
-        if (txkey.type != MSC_TYPE_FREEZE_PROPERTY_TOKENS && txkey.type != MSC_TYPE_UNFREEZE_PROPERTY_TOKENS
-        && txkey.type != MSC_TYPE_ENABLE_FREEZING && txkey.type != MSC_TYPE_DISABLE_FREEZING) continue;
-        int txPosition = pDbTransaction->FetchTransactionPosition(key.txid);
-        loadOrder.emplace_back(std::make_pair(key.block, txPosition), key.txid);
+        if (!txtypes.empty() && !txtypes.count(txkey.type)) continue;
+        txs.emplace(key.txid, key.block);
     }
-
-    std::sort(loadOrder.begin(), loadOrder.end());
-
-    int txnsLoaded = 0;
-    ProcessActivations(loadOrder, [&](CMPTransaction& mp_obj) {
-        if (MSC_TYPE_FREEZE_PROPERTY_TOKENS != mp_obj.getType() && MSC_TYPE_UNFREEZE_PROPERTY_TOKENS != mp_obj.getType() &&
-                MSC_TYPE_ENABLE_FREEZING != mp_obj.getType() && MSC_TYPE_DISABLE_FREEZING != mp_obj.getType()) {
-            PrintToLog("ERROR: While loading freeze transaction %s: levelDB type mismatch, not a freeze transaction.\n", mp_obj.getHash().GetHex());
-            return;
-        }
-        mp_obj.unlockLogic();
-        if (0 != mp_obj.interpretPacket()) {
-            PrintToLog("ERROR: While loading freeze transaction %s: non-zero return from interpretPacket\n", mp_obj.getHash().GetHex());
-            return;
-        }
-        txnsLoaded++;
-    });
-
-    if (blockHeight > 497000 && !isNonMainNet()) {
-        assert(txnsLoaded >= 2); // sanity check against a failure to properly load the freeze state
-    }
-    return true;
+    return txs;
 }
 
 bool CMPTxList::CheckForFreezeTxs(int blockHeight)

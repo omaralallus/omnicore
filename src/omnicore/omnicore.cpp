@@ -1359,6 +1359,82 @@ void clear_all_state()
     exodus_prev = 0;
 }
 
+using activation = std::pair<std::pair<int, uint32_t>, uint256>;
+
+static void ProcessActivations(int blockHeight, const std::vector<activation>& activations)
+{
+    int txnsLoaded = 0;
+    CCoinsViewCacheOnly view;
+    for (const auto& [_, hash] : activations) {
+        int wtxBlock;
+        CTransactionRef wtx;
+        CMPTransaction mp_obj;
+
+        if (!GetTransaction(hash, wtx, wtxBlock)) {
+            PrintToLog("ERROR: While loading activation transaction %s: tx in levelDB but does not exist.\n", hash.GetHex());
+            continue;
+        }
+        if (wtxBlock > blockHeight) {
+            continue;
+        }
+        if (0 != ParseTransaction(view, *wtx, wtxBlock, 0, mp_obj)) {
+            PrintToLog("ERROR: While loading activation transaction %s: failed ParseTransaction.\n", hash.GetHex());
+            continue;
+        }
+        if (!mp_obj.interpret_Transaction()) {
+            PrintToLog("ERROR: While loading activation transaction %s: failed interpret_Transaction.\n", hash.GetHex());
+            continue;
+        }
+        // alert
+        if (OMNICORE_MESSAGE_TYPE_ALERT == mp_obj.getType()) {
+            if (!CheckAlertAuthorization(mp_obj.getSender())) {
+                PrintToLog("ERROR: While loading alert %s: sender is not authorized to send alerts.\n", mp_obj.getHash().GetHex());
+                continue;
+            }
+            if (mp_obj.getAlertType() == 65535) { // set alert type to FFFF to clear previously sent alerts
+                DeleteAlerts(mp_obj.getSender());
+            } else {
+                AddAlert(mp_obj.getSender(), mp_obj.getAlertType(), mp_obj.getAlertExpiry(), mp_obj.getAlertMessage());
+            }
+            continue;
+        }
+        // activations
+        if (OMNICORE_MESSAGE_TYPE_ACTIVATION == mp_obj.getType()) {
+            mp_obj.unlockLogic();
+            if (0 != mp_obj.interpretPacket()) {
+                PrintToLog("ERROR: While loading activation transaction %s: non-zero return from interpretPacket\n", mp_obj.getHash().GetHex());
+            }
+            continue;
+        }
+        //freezes
+        if (MSC_TYPE_FREEZE_PROPERTY_TOKENS == mp_obj.getType() || MSC_TYPE_UNFREEZE_PROPERTY_TOKENS == mp_obj.getType()
+        || MSC_TYPE_ENABLE_FREEZING == mp_obj.getType() || MSC_TYPE_DISABLE_FREEZING == mp_obj.getType()) {
+            mp_obj.unlockLogic();
+            if (0 != mp_obj.interpretPacket()) {
+                PrintToLog("ERROR: While loading freeze transaction %s: non-zero return from interpretPacket\n", mp_obj.getHash().GetHex());
+            } else {
+                txnsLoaded++;
+            }
+        }
+    }
+
+    if (auto pBlockIndex = GetActiveChain()[blockHeight - 1]) {
+        CheckExpiredAlerts(blockHeight, pBlockIndex->GetBlockTime());
+    }
+
+    CheckLiveActivations(blockHeight);
+
+    // This alert never expires as long as custom activations are used
+    if (gArgs.IsArgSet("-omniactivationallowsender") || gArgs.IsArgSet("-omniactivationignoresender")) {
+        AddAlert("omnicore", ALERT_CLIENT_VERSION_EXPIRY, std::numeric_limits<uint32_t>::max(),
+                 "Authorization for feature activation has been modified.  Data provided by this client should not be trusted.");
+    }
+
+    if (blockHeight > 497000 && !isNonMainNet()) {
+        assert(txnsLoaded >= 2); // sanity check against a failure to properly load the freeze state
+    }
+}
+
 /**
  * Global handler to initialize Omni Core.
  *
@@ -1491,17 +1567,21 @@ int mastercore_init(node::NodeContext& node)
         }
 
         // load feature activation messages from txlistdb and process them accordingly
-        pDbTransactionList->LoadActivations(nWaterlineBlock);
-
-        // load all alerts from levelDB (and immediately expire old ones)
-        pDbTransactionList->LoadAlerts(nWaterlineBlock);
-
-        // load the state of any freeable properties and frozen addresses from levelDB
-        if (!pDbTransactionList->LoadFreezeState(nWaterlineBlock)) {
-            std::string strShutdownReason = "Failed to load freeze state from levelDB.  It is unsafe to continue.\n";
-            PrintToLog(strShutdownReason);
-            MayAbortNode(strShutdownReason);
+        // load allerts and freeable properties
+        std::vector<activation> activations;
+        auto txs = pDbTransactionList->LoadValidTxs(nWaterlineBlock, {
+                                                    MSC_TYPE_ENABLE_FREEZING,
+                                                    MSC_TYPE_DISABLE_FREEZING,
+                                                    MSC_TYPE_FREEZE_PROPERTY_TOKENS,
+                                                    MSC_TYPE_UNFREEZE_PROPERTY_TOKENS,
+                                                    OMNICORE_MESSAGE_TYPE_ACTIVATION,
+                                                    OMNICORE_MESSAGE_TYPE_ALERT});
+        for (auto& [txid, block] : txs) {
+            auto txpos = pDbTransaction->FetchTransactionPosition(txid);
+            activations.emplace_back(std::make_pair(block, txpos), txid);
         }
+        std::sort(activations.begin(), activations.end());
+        ProcessActivations(nWaterlineBlock, activations);
 
         // display Exodus balance
         int64_t exodus_balance = GetTokenBalance(exodus_address, OMNI_PROPERTY_MSC, BALANCE);

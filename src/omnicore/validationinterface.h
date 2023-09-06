@@ -56,7 +56,7 @@ class COmniValidationInterface : public CValidationInterface {
     std::vector<std::pair<CAddressUnspentKey, CAddressUnspentValue>> addressUnspentIndexToUpdate;
 
     void SyncToTip(int loadedBlock);
-    void RewindDBsState(int nHeight);
+    void RewindDBsState(const CBlockIndex* pindex);
     void BeginProcessTx(const CBlockIndex* pindex);
     void EndProcessTx(const CBlockIndex* pindex, unsigned int countMP);
 

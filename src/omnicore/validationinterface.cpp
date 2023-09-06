@@ -154,9 +154,10 @@ public:
     }
 };
 
-void COmniValidationInterface::RewindDBsState(int nHeight)
+void COmniValidationInterface::RewindDBsState(const CBlockIndex* pindex)
 {
     // Check if any freeze related transactions would be rolled back - if so wipe the state and startclean
+    auto nHeight = pindex->nHeight - 1;
     bool reorgContainsFreeze = pDbTransactionList->CheckForFreezeTxs(nHeight);
     if (reorgContainsFreeze) {
         PrintToConsole("Reorganization containing freeze related transactions detected, forcing a rescan...\n");
@@ -171,6 +172,16 @@ void COmniValidationInterface::RewindDBsState(int nHeight)
         best_state_block = -1; // start from genesis block
     } else {
         auto block = best_state_block + 1; // revert to block inclusive
+        auto pblock = std::make_shared<CBlock>();
+        // sync txsToDelete to best_state_block
+        while (pindex && pindex->nHeight >= block) {
+            if (!node::ReadBlockFromDisk(*pblock, pindex, Params().GetConsensus())) {
+                throw std::runtime_error("RewindDBsState: Cannot read block to rewind");
+            }
+            BlockDisconnected(pblock, pindex);
+            disconnectInitiated = false;
+            pindex = pindex->pprev;
+        }
         pDbStoList->deleteAboveBlock(block);
         pDbSpInfo->deleteSPAboveBlock(block);
         pDbFeeCache->RollBackCache(block);
@@ -300,7 +311,7 @@ void COmniValidationInterface::BeginProcessTx(const CBlockIndex* pindex)
     if (disconnectInitiated) {
         chain.SetTip(pindex->pprev);
         disconnectInitiated = false;
-        RewindDBsState(pindex->nHeight - 1);
+        RewindDBsState(pindex);
     }
 
     // handle any features that go live with this block

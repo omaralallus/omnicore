@@ -18,6 +18,7 @@ class CChainIndex
 {
     mutable RecursiveMutex cs_chain;
     std::vector<const CBlockIndex*> vChain;
+    std::atomic<const CBlockIndex*> aTip;
 
 public:
     CChainIndex() = default;

@@ -41,8 +41,7 @@ const CBlockIndex* CChainIndex::Genesis() const
 
 const CBlockIndex* CChainIndex::Tip() const
 {
-    LOCK(cs_chain);
-    return !vChain.empty() ? vChain.back() : nullptr;
+    return aTip.load(std::memory_order_relaxed);
 }
 
 const CBlockIndex* CChainIndex::operator[](int nHeight) const
@@ -73,6 +72,7 @@ void CChainIndex::SetTip(const CBlockIndex* pindex)
 {
     LOCK(cs_chain);
     vChain.resize(pindex->nHeight + 1);
+    aTip.store(pindex, std::memory_order_release);
     while (pindex && !Contains(pindex)) {
         vChain[pindex->nHeight] = pindex;
         pindex = pindex->pprev;

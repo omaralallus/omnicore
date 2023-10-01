@@ -9,6 +9,7 @@
 #include <validation.h>
 
 #include <omnicore/activation.h>
+#include <omnicore/coinscache.h>
 #include <omnicore/consensushash.h>
 #include <omnicore/convert.h>
 #include <omnicore/dbaddress.h>
@@ -64,8 +65,8 @@ const CBlockIndex* CChainIndex::Next(const CBlockIndex* pindex) const
 
 int CChainIndex::Height() const
 {
-    LOCK(cs_chain);
-    return int(vChain.size()) - 1;
+    auto tip = Tip();
+    return tip ? tip->nHeight : 0;
 }
 
 void CChainIndex::SetTip(const CBlockIndex* pindex)
@@ -187,9 +188,9 @@ void COmniValidationInterface::RewindDBsState(const CBlockIndex* pindex)
         pDbFeeCache->RollBackCache(block);
         pDbFeeHistory->RollBackHistory(block);
         pDbNFT->RollBackAboveBlock(block);
+        pDbTransaction->DeleteTransactions(txsToDelete);
         pDbTradeList->deleteTransactions(txsToDelete, block);
         pDbTransactionList->deleteTransactions(txsToDelete, block);
-        pDbTransaction->DeleteTransactions(txsToDelete, inputsToRestore, block);
         if (fAddressIndex) {
             pDbAddress->UpdateSpentIndex(spentIndexToUdpdate);
             pDbAddress->EraseAddressIndex(addressIndexToDelete);
@@ -198,7 +199,6 @@ void COmniValidationInterface::RewindDBsState(const CBlockIndex* pindex)
     }
 
     txsToDelete.clear();
-    inputsToRestore.clear();
     spentIndexToUdpdate.clear();
     addressIndexToDelete.clear();
     addressUnspentIndexToUpdate.clear();
@@ -301,6 +301,7 @@ void COmniValidationInterface::SyncToTip(int loadedBlock)
  */
 void COmniValidationInterface::Init(const CBlockIndex* pindex, int loadedBlock)
 {
+    chain.SetTip(pindex);
     disconnectInitiated = false;
     UpdatedBlockTip(pindex, nullptr, true);
     SyncToTip(loadedBlock);
@@ -404,9 +405,8 @@ static CScript GetScriptFromIndex(size_t type, const uint256 &hash)
     return {};
 }
 
-void COmniValidationInterface::UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *, bool fInitialDownload)
+void COmniValidationInterface::UpdatedBlockTip(const CBlockIndex* , const CBlockIndex*, bool fInitialDownload)
 {
-    chain.SetTip(pindexNew);
     initialBlockDownload.store(fInitialDownload, std::memory_order_release);
 }
 
@@ -420,7 +420,7 @@ void COmniValidationInterface::TransactionRemovedFromMempool(const CTransactionR
     RemoveTransactionFromMempool(tx);
 }
 
-void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex *pindex)
+void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex)
 {
     LOCK(cs_tally);
 
@@ -517,6 +517,8 @@ void COmniValidationInterface::BlockConnected(const std::shared_ptr<const CBlock
 
     processingBlock.store(false, std::memory_order_release);
 
+    pCoinsCache->BlockCached(pindex);
+
     for (auto& tx : block->vtx)
         RemoveTransactionFromMempool(tx);
 }
@@ -528,8 +530,10 @@ void COmniValidationInterface::BlockDisconnected(const std::shared_ptr<const CBl
 
     LOCK(cs_tally);
 
-    for (auto& tx : block->vtx) {
+    for (auto i = 0u; i < block->vtx.size(); ++i) {
+        auto& tx = block->vtx[i];
         txsToDelete.insert(tx->GetHash());
+        pCoinsCache->Uncache({tx->GetHash(), i});
     }
 
     CBlockUndo blockUndo;
@@ -538,7 +542,7 @@ void COmniValidationInterface::BlockDisconnected(const std::shared_ptr<const CBl
             const CTransaction &tx = *(block->vtx[i]);
             CTxUndo &txundo = blockUndo.vtxundo.at(i - 1);
             for (auto j = tx.vin.size(); j-- > 0;) {
-                inputsToRestore.emplace(tx.vin[j].prevout, txundo.vprevout.at(j).out);
+                pCoinsCache->AddCoin(tx.vin[j].prevout, std::move(txundo.vprevout.at(j)));
             }
         }
     }

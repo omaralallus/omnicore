@@ -425,11 +425,13 @@ int CreateFundedTransaction(
         bool fCoinbase = false;
         for (size_t i = 0; i < tx.vin.size(); i++) {
             auto& txin = tx.vin[i];
-            CTxOut out;
-            if (!GetTransactionOut(txin.prevout, out)) {
+            Coin coin;
+            if (!GetCoin(txin.prevout, coin)) {
                 PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
                 continue;
             }
+
+            const auto& out = coin.out;
 
             SignatureData sigdata;
             if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, out.nValue, nHashType), out.scriptPubKey, sigdata)) {

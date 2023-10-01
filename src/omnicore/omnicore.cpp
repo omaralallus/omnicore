@@ -10,6 +10,7 @@
 #include <omnicore/omnicore.h>
 
 #include <omnicore/activation.h>
+#include <omnicore/coinscache.h>
 #include <omnicore/consensushash.h>
 #include <omnicore/convert.h>
 #include <omnicore/dbaddress.h>
@@ -72,8 +73,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include <functional>
-#include <optional>
 #include <set>
 #include <string>
 #include <unordered_map>
@@ -138,6 +137,8 @@ COmniFeeHistory* mastercore::pDbFeeHistory;
 CMPNonFungibleTokensDB* mastercore::pDbNFT;
 //! LevelDB based storage fo experimental btc addresses
 COmniAddressDB* mastercore::pDbAddress;
+//! LevelDB snapshot based storage for coins cache
+COmniCoinsCache* mastercore::pCoinsCache;
 
 //! In-memory collection of DEx offers
 OfferMap mastercore::my_offers;
@@ -809,9 +810,7 @@ bool FillTxInputCache(const CTransaction& tx, CCoinsViewCache& view)
         }
 
         Coin newcoin;
-        if (GetTransactionOut(txIn.prevout, newcoin.out)) {
-            newcoin.nHeight = MEMPOOL_HEIGHT; // fake height
-        } else {
+        if (!GetCoin(txIn.prevout, newcoin)) {
             return false;
         }
 
@@ -1355,6 +1354,7 @@ void clear_all_state()
     pDbFeeHistory->Clear();
     pDbNFT->Clear();
     pDbAddress->Clear();
+    pCoinsCache->Clear();
     assert(pDbTransactionList->setDBVersion() == DB_VERSION); // new set of databases, set DB version
     exodus_prev = 0;
 }
@@ -1505,7 +1505,7 @@ int mastercore_init(node::NodeContext& node)
         assert(pDbTransactionList->setDBVersion() == DB_VERSION); // new set of databases, set DB version
     }
 
-    auto wrongDBVersion = pDbTransactionList->setDBVersion() != DB_VERSION;
+    auto wrongDBVersion = pDbTransactionList->getDBVersion() != DB_VERSION;
     int nWaterlineBlock = wrongDBVersion ? -1 : LoadMostRelevantInMemoryState();
     bool noPreviousState = (nWaterlineBlock <= 0);
 
@@ -1537,22 +1537,26 @@ int mastercore_init(node::NodeContext& node)
         DoWarning({strAlert, strAlert});
     }
 
-    if (nWaterlineBlock < 0) {
-        // persistence says we reparse!, nuke some stuff in case the partial loads left stale bits
-        clear_all_state();
-    }
+    {
+        LOCK(node.chainman->GetMutex());
+        auto& activeChain = node.chainman->ActiveChainstate();
+        pCoinsCache = new COmniCoinsCache(activeChain.CoinsDB(), data_dir / "OMNI_coinscache", fWipe);
+        omniValidationInterface = std::make_shared<COmniValidationInterface>();
 
-    auto tip = node.chainman->ActiveChainstate().m_chain.Tip();
-    omniValidationInterface = std::make_shared<COmniValidationInterface>();
+        // empty blockchain or prior last record
+        auto tip = activeChain.m_chain.Tip();
+        if (!tip || tip->nHeight < nWaterlineBlock) {
+            nWaterlineBlock = -1;
+        }
 
-    // empty blockchain or prior last record
-    if (!tip || tip->nHeight < nWaterlineBlock) {
-        clear_all_state();
-        nWaterlineBlock = -1;
-    }
+        if (nWaterlineBlock < 0) {
+            // persistence says we reparse!, nuke some stuff in case the partial loads left stale bits
+            clear_all_state();
+        }
 
-    if (tip) {
-        omniValidationInterface->Init(tip, nWaterlineBlock);
+        if (tip) {
+            omniValidationInterface->Init(tip, nWaterlineBlock);
+        }
     }
 
     if (nWaterlineBlock >= ConsensusParams().GENESIS_BLOCK - 1) {
@@ -1654,6 +1658,10 @@ int mastercore_shutdown()
         delete pDbAddress;
         pDbAddress = nullptr;
     }
+    if (pCoinsCache) {
+        delete pCoinsCache;
+        pCoinsCache = nullptr;
+    }
 
     PrintToLog("\nOmni Core shutdown completed\n");
     PrintToLog("Shutdown time: %s\n", FormatISO8601DateTime(GetTime()));
@@ -1689,12 +1697,9 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
     CMPTransaction mp_obj;
     mp_obj.unlockLogic();
     bool fFoundTx = false;
-    bool fStoredTx = false;
 
     int pop_ret = parseTransaction(false, view, tx, nBlock, idx, mp_obj, nBlockTime);
     if (pop_ret >= 0) {
-        LOCK(cs_tally);
-
         assert(mp_obj.getEncodingClass() != NO_MARKER);
         assert(mp_obj.getSender().empty() == false);
 
@@ -1708,7 +1713,7 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
             assert(mp_obj.getEncodingClass() == OMNI_CLASS_A);
             assert(mp_obj.getPayload().empty() == true);
 
-            fStoredTx = true;
+            pCoinsCache->AddInputs(tx.vin);
             fFoundTx |= HandleDExPayments(tx, nBlock, mp_obj.getSender());
             pDbTransaction->RecordTransaction(tx, nBlock, idx, pop_ret);
         } else {
@@ -1718,7 +1723,7 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
             // Only structurally valid transactions get recorded in levelDB
             // PKT_ERROR - 2 = interpret_Transaction failed, structurally invalid payload
             if (interp_ret != PKT_ERROR - 2) {
-                fStoredTx = true;
+                pCoinsCache->AddInputs(tx.vin);
                 bool bValid = (0 <= interp_ret);
                 pDbTransactionList->recordTX(tx.GetHash(), bValid, nBlock, mp_obj.getType(), mp_obj.getNewAmount());
                 pDbTransaction->RecordTransaction(tx, nBlock, idx, interp_ret);
@@ -1727,9 +1732,7 @@ bool ProcessTransaction(CCoinsViewCache& view, const CTransaction& tx, unsigned 
         }
     }
 
-    if (!fStoredTx) {
-        pDbTransaction->RecordTransactionOuts(tx, nBlock);
-    }
+    pCoinsCache->AddCoins(tx, nBlock);
 
     if (fFoundTx && msc_debug_consensus_hash_every_transaction) {
         uint256 consensusHash = GetConsensusHash();
@@ -1824,16 +1827,17 @@ bool GetTransaction(const uint256& hash, CTransactionRef& txOut, int& blockHeigh
     return txOut || pDbTransaction->GetTransaction(hash, txOut, blockHeight);
 }
 
-bool GetTransactionOut(const COutPoint& outpoint, CTxOut& out)
+bool GetCoin(const COutPoint& outpoint, Coin& coin)
 {
-    if (pDbTransaction->GetTransactionOut(outpoint, out)) {
+    if (WITH_LOCK(cs_tally, return pCoinsCache->GetCoin(outpoint, coin))) {
         return true;
     }
     int blockHeight;
     CTransactionRef tx;
     if (GetTransaction(outpoint.hash, tx, blockHeight)) {
         if (tx->vout.size() > outpoint.n) {
-            out = tx->vout[outpoint.n];
+            coin = Coin{tx->vout[outpoint.n], blockHeight, false};
+            coin.nHeight == 0 && (coin.nHeight = MEMPOOL_HEIGHT);
             return true;
         }
     }

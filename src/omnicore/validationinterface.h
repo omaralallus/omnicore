@@ -50,7 +50,6 @@ class COmniValidationInterface : public CValidationInterface {
     CChainIndex chain;
     std::set<uint256> txsToDelete;
     bool disconnectInitiated = false;
-    std::map<COutPoint, CTxOut> inputsToRestore;
     std::atomic_bool initialBlockDownload = false, processingBlock = false;
     std::vector<std::pair<CAddressIndexKey, CAmount>> addressIndexToDelete;
     std::vector<std::pair<CSpentIndexKey, CSpentIndexValue>> spentIndexToUdpdate;
@@ -75,7 +74,7 @@ public:
      *
      * Called on a background thread.
      */
-    void UpdatedBlockTip(const CBlockIndex *pindexNew, const CBlockIndex *, bool fInitialDownload) override;
+    void UpdatedBlockTip(const CBlockIndex*, const CBlockIndex*, bool fInitialDownload) override;
     /**
      * Notifies listeners of a transaction having been added to mempool.
      *
@@ -98,31 +97,13 @@ public:
      * Notifies listeners of a block being connected.
      * Called on a background thread.
      */
-    void BlockConnected(const std::shared_ptr<const CBlock> &block, const CBlockIndex *pindex) override;
+    void BlockConnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
     /**
      * Notifies listeners of a block being disconnected
      *
      * Called on a background thread.
      */
     void BlockDisconnected(const std::shared_ptr<const CBlock>& block, const CBlockIndex* pindex) override;
-    /**
-     * Notifies listeners of the new active block chain on-disk.
-     *
-     * Called on a background thread.
-     */
-    void ChainStateFlushed(const CBlockLocator&) override {}
-    /**
-     * Notifies listeners of a block validation result.
-     * If the provided BlockValidationState IsValid, the provided block
-     * is guaranteed to be the current best block at the time the
-     * callback was generated (not necessarily now)
-     */
-    void BlockChecked(const CBlock&, const BlockValidationState&) override {}
-    /**
-     * Notifies listeners that a block which builds directly on our current tip
-     * has been received and connected to the headers tree, though not validated yet */
-    void NewPoWValidBlock(const CBlockIndex*, const std::shared_ptr<const CBlock>&) override {}
-
     /**
      * Returns tip height
      */

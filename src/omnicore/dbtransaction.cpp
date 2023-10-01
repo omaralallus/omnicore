@@ -37,21 +37,6 @@ struct CTxInfoKey {
     }
 };
 
-struct CTxOutKey {
-    static constexpr uint8_t prefix = 'c';
-    const uint256& txid;
-    uint32_t n = 0;
-
-    SERIALIZE_METHODS(CTxOutKey, obj) {
-        READWRITE(obj.txid);
-        READWRITE(Using<Varint>(obj.n));
-    }
-};
-
-const auto CTxOutValue = [](auto&& txout) {
-    return Using<TxOutCompression>(txout);
-};
-
 struct COutPointCompression {
     FORMATTER_METHODS(COutPoint, obj) {
         READWRITE(obj.hash);
@@ -111,37 +96,14 @@ void COmniTransactionDB::RecordTransaction(const CTransaction& tx, int block, ui
 }
 
 /**
- * Store transaction outputs and delete inputs
- */
-void COmniTransactionDB::RecordTransactionOuts(const CTransaction& tx, int block)
-{
-    CDBWriteBatch batch;
-    uint32_t height = block;
-    for (auto& txin : tx.vin) {
-        auto& prevout = txin.prevout;
-        batch.Delete(CTxOutKey{prevout.hash, prevout.n});
-    }
-    for (auto i = 0u; i < tx.vout.size(); i++) {
-        batch.Write(CTxOutKey{tx.GetHash(), i}, CTxOutValue(tx.vout[i]));
-    }
-    WriteBatch(batch);
-}
-
-/**
  * Deletes transactions in case of rollback.
  */
-void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs, const std::map<COutPoint, CTxOut>& inputsToRestore, int block)
+void COmniTransactionDB::DeleteTransactions(const std::set<uint256>& txs)
 {
     CDBWriteBatch batch;
     CDBaseIterator it{NewIterator()};
     for (auto& txid : txs) {
         batch.Delete(CTxInfoKey{txid});
-        for (it.Seek(PartialKey<CTxOutKey>(txid)); it; ++it) {
-            batch.Delete(it.Key());
-        }
-    }
-    for (const auto& [outpoint, out] : inputsToRestore) {
-        batch.Write(CTxOutKey{outpoint.hash, outpoint.n}, CTxOutValue(out));
     }
     WriteBatch(batch);
 }
@@ -182,9 +144,4 @@ bool COmniTransactionDB::GetTransaction(const uint256& txid, CTransactionRef& tx
     tx = MakeTransactionRef(std::move(value.tx));
     assert(txid == tx->GetHash());
     return true;
-}
-
-bool COmniTransactionDB::GetTransactionOut(const COutPoint& outpoint, CTxOut& out)
-{
-    return Read(CTxOutKey{outpoint.hash, outpoint.n}, CTxOutValue(out));
 }

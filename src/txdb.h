@@ -50,6 +50,7 @@ extern RecursiveMutex cs_main;
 /** CCoinsView backed by the coin database (chainstate/) */
 class CCoinsViewDB final : public CCoinsView
 {
+    friend class COmniCoinsCache;
 protected:
     std::unique_ptr<CDBWrapper> m_db;
     fs::path m_ldb_path;

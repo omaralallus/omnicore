@@ -24,10 +24,7 @@ public:
     void RecordTransaction(const CTransaction& tx, int block, uint32_t posInBlock, int processingResult);
 
     /** Deletes transactions in case of rollback. */
-    void DeleteTransactions(const std::set<uint256>& txs, const std::map<COutPoint, CTxOut>& inputsToRestore, int block);
-
-    /** Stores transaction outputs. */
-    void RecordTransactionOuts(const CTransaction& tx, int block);
+    void DeleteTransactions(const std::set<uint256>& txs);
 
     /** Returns the position of a transaction in a block. */
     uint32_t FetchTransactionPosition(const uint256& txid);
@@ -37,9 +34,6 @@ public:
 
     /** Returns transaction, block and blockTime. */
     bool GetTransaction(const uint256& txid, CTransactionRef& tx, int& block);
-
-    /** Returns transaction out. */
-    bool GetTransactionOut(const COutPoint& outpoint, CTxOut& out);
 };
 
 namespace mastercore

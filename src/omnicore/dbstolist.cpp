@@ -86,33 +86,16 @@ void CMPSTOList::getRecipients(const uint256& txid, const std::string& filterAdd
     }
 }
 
-struct CBlockCHashKey {
-    static constexpr uint8_t prefix = 'b';
-    uint32_t block = ~0u;
-    uint8_t chash[4];
-
-    SERIALIZE_METHODS(CBlockCHashKey, obj) {
-        READWRITE(Using<BigEndian32Inv>(obj.block));
-        READWRITE(obj.chash);
-    }
-};
-
 std::unordered_map<int, uint256> CMPSTOList::getMySTOReceipts(const std::string& filterAddress, int startBlock, int endBlock, interfaces::Wallet &iWallet)
 {
-    uint32_t block = endBlock;
-    CDBaseIterator tx_it{NewIterator()};
     std::unordered_map<int, uint256> mySTOReceipts;
-    for (CDBaseIterator it{NewIterator(), CBlockCHashKey{block}}; it; ++it) {
-        auto key = it.Key<CBlockCHashKey>();
-        if (key.block < startBlock) break;
-        for (tx_it.Seek(PartialKey<CTxAddressKey>(key.chash)); tx_it; ++tx_it) {
-            auto tx_key = tx_it.Key<CTxAddressKey>();
-            if (tx_key.block != key.block) continue;
-            if (!filterAddress.empty() && tx_key.address != filterAddress) continue;
-            if (!IsMyAddress(tx_key.address, &iWallet)) continue;
-            mySTOReceipts.emplace(key.block, tx_key.hash);
-            break;
-        }
+    for (CDBaseIterator it{NewIterator(), CTxAddressKey{}}; it; ++it) {
+        auto key = it.Key<CTxAddressKey>();
+        if (key.block > endBlock) continue;
+        if (key.block < startBlock) continue;
+        if (!filterAddress.empty() && key.address != filterAddress) continue;
+        if (!IsMyAddress(key.address, &iWallet)) continue;
+        mySTOReceipts.emplace(key.block, key.hash);
     }
     return mySTOReceipts;
 }
@@ -127,17 +110,11 @@ int CMPSTOList::deleteAboveBlock(int blockNum)
     CDBWriteBatch batch;
     unsigned int n_found = 0;
     std::vector<std::string> vecSTORecords;
-    CDBaseIterator tx_it{NewIterator()};
-    for (CDBaseIterator it{NewIterator(), CBlockCHashKey{}}; it; ++it) {
-        auto key = it.Key<CBlockCHashKey>();
-        if (key.block < blockNum) break;
+    for (CDBaseIterator it{NewIterator(), CTxAddressKey{}}; it; ++it) {
+        auto key = it.Key<CTxAddressKey>();
+        if (key.block < blockNum) continue;
+        ++n_found;
         batch.Delete(it.Key());
-        for (tx_it.Seek(PartialKey<CTxAddressKey>(key.chash)); tx_it; ++tx_it) {
-            auto tx_key = tx_it.Key<CTxAddressKey>();
-            if (tx_key.block != key.block) continue;
-            ++n_found;
-            batch.Delete(tx_it.Key());
-        }
     }
     WriteBatch(batch);
     PrintToLog("%s(%d); stodb updated records= %d\n", __func__, blockNum, n_found);
@@ -163,8 +140,6 @@ void CMPSTOList::printAll()
 
 void CMPSTOList::recordSTOReceive(const std::string& address, const uint256 &txid, int nBlock, uint32_t propertyId, uint64_t amount)
 {
-    CBlockCHashKey key{uint32_t(nBlock)};
-    std::copy(txid.begin(), txid.begin() + sizeof(key.chash), key.chash);
-    bool status = Write(key, "") && Write(CTxAddressKey{txid, address, nBlock, propertyId}, amount);
+    bool status = Write(CTxAddressKey{txid, address, nBlock, propertyId}, amount);
     PrintToLog("%s(%d): add record: (%s) \n", __func__, nBlock, status ? "OK" : "NOK");
 }

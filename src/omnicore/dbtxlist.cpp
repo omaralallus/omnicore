@@ -466,14 +466,11 @@ std::set<int> CMPTxList::GetSeedBlocks(int startHeight, int endHeight)
 std::map<uint256, int> CMPTxList::LoadValidTxs(int blockHeight, const std::set<int>& txtypes)
 {
     std::map<uint256, int> txs;
-    CDBaseIterator tx_it{NewIterator()};
-    CDBaseIterator it{NewIterator(), CBlockTxKey{uint32_t(blockHeight)}};
-    for (; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
-        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
-        auto txkey = tx_it.Key<CTxKey>();
-        if (!txkey.valid) continue;
-        if (!txtypes.empty() && !txtypes.count(txkey.type)) continue;
+    for (CDBaseIterator it{NewIterator(), CTxKey{}}; it; ++it) {
+        auto key = it.Key<CTxKey>();
+        if (!key.valid) continue;
+        if (key.block > blockHeight) continue;
+        if (!txtypes.empty() && !txtypes.count(key.type)) continue;
         txs.emplace(key.txid, key.block);
     }
     return txs;
@@ -481,12 +478,10 @@ std::map<uint256, int> CMPTxList::LoadValidTxs(int blockHeight, const std::set<i
 
 bool CMPTxList::CheckForFreezeTxs(int blockHeight)
 {
-    CDBaseIterator tx_it{NewIterator()};
-    for (CDBaseIterator it{NewIterator(), CBlockTxKey{}}; it; ++it) {
-        auto key = it.Key<CBlockTxKey>();
-        if (key.block < blockHeight) break;
-        if (tx_it.Seek(PartialKey<CTxKey>(key.txid)); !tx_it) continue;
-        auto txtype = tx_it.Key<CTxKey>().type;
+    for (CDBaseIterator it{NewIterator(), CTxKey{}}; it; ++it) {
+        auto key = it.Key<CTxKey>();
+        if (key.block < blockHeight) continue;
+        auto txtype = key.type;
         if (txtype == MSC_TYPE_FREEZE_PROPERTY_TOKENS || txtype == MSC_TYPE_UNFREEZE_PROPERTY_TOKENS ||
             txtype == MSC_TYPE_ENABLE_FREEZING || txtype == MSC_TYPE_DISABLE_FREEZING) {
             return true;

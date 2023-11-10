@@ -20,7 +20,7 @@
 
 #include <boost/test/unit_test.hpp>
 
-extern int mastercore_init();
+extern int mastercore_init(node::NodeContext&);
 using node::SnapshotMetadata;
 
 BOOST_FIXTURE_TEST_SUITE(validation_chainstatemanager_tests, ChainTestingSetup)
@@ -76,9 +76,9 @@ BOOST_AUTO_TEST_CASE(chainstatemanager)
     // Unlike c1, which doesn't have any blocks. Gets us different tip, height.
     c2.LoadGenesisBlock();
     BlockValidationState _;
-    // call mastercore init efore ActivateBestChain
-    mastercore_init();
     BOOST_CHECK(c2.ActivateBestChain(_, nullptr));
+    // call mastercore init efore ActivateBestChain
+    mastercore_init(m_node);
 
     BOOST_CHECK(manager.IsSnapshotActive());
     BOOST_CHECK(WITH_LOCK(::cs_main, return !manager.IsSnapshotValidated()));

@@ -8,9 +8,6 @@
 #include <util/system.h>
 #include <node/interface_ui.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
 #include <stdint.h>
 #include <string>
 #include <vector>

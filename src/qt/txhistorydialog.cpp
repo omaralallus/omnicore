@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <cstdint>
 #include <qt/txhistorydialog.h>
 #include <qt/forms/ui_txhistorydialog.h>
 
@@ -195,6 +196,7 @@ int TXHistoryDialog::PopulateHistoryMap()
     if (walletModel)
         walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetIntArg("-omniuiwalletscope", 65535L));
 
+    CCoinsViewCacheOnly view;
     // reverse iterate over (now ordered) transactions and populate history map for each one
     for (std::map<std::string,uint256>::reverse_iterator it = walletTransactions.rbegin(); it != walletTransactions.rend(); it++) {
         uint256 txHash = it->second;
@@ -223,9 +225,9 @@ int TXHistoryDialog::PopulateHistoryMap()
         }
 
         CTransactionRef wtx;
-        uint256 blockHash;
-        if (!GetTransaction(txHash, wtx, Params().GetConsensus(), blockHash)) continue;
-        if (blockHash.IsNull() || nullptr == GetBlockIndex(blockHash)) {
+        int blockHeight;
+        if (!GetTransaction(txHash, wtx, blockHeight)) continue;
+        if (blockHeight == 0) {
             // this transaction is unconfirmed, should be one of our pending transactions
             LOCK(cs_pending);
             PendingMap::iterator pending_it = my_pending.find(txHash);
@@ -248,12 +250,8 @@ int TXHistoryDialog::PopulateHistoryMap()
             continue;
         }
 
-        // parse the transaction and setup the new history object
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
-        if (nullptr == pBlockIndex) continue;
-        int blockHeight = pBlockIndex->nHeight;
         CMPTransaction mp_obj;
-        int parseRC = ParseTransaction(*wtx, blockHeight, 0, mp_obj);
+        int parseRC = ParseTransaction(view, *wtx, blockHeight, 0, mp_obj);
         HistoryTXObject htxo;
         if (it->first.length() == 16) {
             htxo.blockHeight = atoi(it->first.substr(0,6));
@@ -403,7 +401,7 @@ void TXHistoryDialog::UpdateHistory()
                 QTableWidgetItem *dateCell = new QTableWidgetItem;
                 if (htxo.blockHeight>0) {
                     LOCK(cs_main);
-                    CBlockIndex* pBlkIdx = ::ChainActive()[htxo.blockHeight];
+                    auto* pBlkIdx = GetActiveChain()[htxo.blockHeight];
                     if (nullptr != pBlkIdx) txTime.setTime_t(pBlkIdx->GetBlockTime());
                     dateCell->setData(Qt::DisplayRole, txTime);
                 } else {

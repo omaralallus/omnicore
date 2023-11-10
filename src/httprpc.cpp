@@ -13,8 +13,6 @@
 #include <util/system.h>
 #include <walletinitinterface.h>
 
-#include <omnicore/rpcmbstring.h> // SanitizeInvalidUTF8
-
 #include <algorithm>
 #include <iterator>
 #include <map>
@@ -22,9 +20,6 @@
 #include <set>
 #include <string>
 #include <vector>
-
-/** Sanitize UTF-8 encoded strings in RPC responses */
-static bool fSanitizeResponse = true;
 
 /** WWW-Authenticate to present with 401 Unauthorized response */
 static const char* WWW_AUTH_HEADER_DATA = "Basic realm=\"jsonrpc\"";
@@ -148,6 +143,10 @@ static bool RPCAuthorized(const std::string& strAuth, std::string& strAuthUserna
     return multiUserAuthorized(strUserPass);
 }
 
+namespace mastercore {
+    extern std::string SanitizeInvalidUTF8(const std::string&);
+}
+
 static bool HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
 {
     // JSONRPC handles only POST
@@ -207,10 +206,6 @@ static bool HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
 
             // Send reply
             strReply = JSONRPCReply(result, NullUniValue, jreq.id);
-            if (fSanitizeResponse) {
-                strReply = mastercore::SanitizeInvalidUTF8(strReply);
-            }
-
         // array of requests
         } else if (valRequest.isArray()) {
             if (user_has_whitelist) {
@@ -235,7 +230,7 @@ static bool HTTPReq_JSONRPC(const std::any& context, HTTPRequest* req)
             throw JSONRPCError(RPC_PARSE_ERROR, "Top-level object parse error");
 
         req->WriteHeader("Content-Type", "application/json");
-        req->WriteReply(HTTP_OK, strReply);
+        req->WriteReply(HTTP_OK, mastercore::SanitizeInvalidUTF8(strReply));
     } catch (const UniValue& objError) {
         JSONErrorReply(req, objError, jreq.id);
         return false;

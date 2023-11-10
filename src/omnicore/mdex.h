@@ -5,7 +5,6 @@
 
 #include <uint256.h>
 
-#include <boost/lexical_cast.hpp>
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/rational.hpp>
@@ -68,8 +67,6 @@ public:
     int getBlock() const { return block; }
     unsigned int getIdx() const { return idx; }
 
-    int64_t getBlockTime() const;
-
     CMPMetaDEx()
       : block(0), idx(0), property(0), amount_forsale(0), desired_property(0), amount_desired(0),
         amount_remaining(0), subaction(0) {}
@@ -111,7 +108,7 @@ struct MetaDEx_compare
 
 // ---------------
 //! Set of objects sorted by block+idx
-typedef std::set<CMPMetaDEx, MetaDEx_compare> md_Set; 
+typedef std::set<CMPMetaDEx, MetaDEx_compare> md_Set;
 //! Map of prices; there is a set of sorted objects for each price
 typedef std::map<rational_t, md_Set> md_PricesMap;
 //! Map of properties; there is a map of prices for each property

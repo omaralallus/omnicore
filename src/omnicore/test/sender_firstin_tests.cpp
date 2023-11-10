@@ -26,7 +26,7 @@ using namespace mastercore;
 BOOST_FIXTURE_TEST_SUITE(omnicore_sender_firstin_tests, TestingSetup)
 
 /** Creates a dummy class C transaction with the given inputs. */
-static CTransaction TxClassC(const std::vector<CTxOut>& txInputs)
+static CTransaction TxClassC(CCoinsViewCache& view, const std::vector<CTxOut>& txInputs)
 {
     CMutableTransaction mutableTx;
 
@@ -75,9 +75,10 @@ static bool GetFirstSender(const std::vector<CTxOut>& txInputs, std::string& str
     int nBlock = std::numeric_limits<int>::max();
 
     CMPTransaction metaTx;
-    CTransaction dummyTx = TxClassC(txInputs);
+    CCoinsViewCacheOnly view;
+    CTransaction dummyTx = TxClassC(view, txInputs);
 
-    if (ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0) {
+    if (ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0) {
         strSender = metaTx.getSender();
         return true;
     }

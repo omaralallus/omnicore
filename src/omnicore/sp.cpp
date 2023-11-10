@@ -13,9 +13,6 @@
 #include <uint256.h>
 #include <util/time.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
 #include <stdint.h>
 
 #include <map>
@@ -152,7 +149,6 @@ std::string mastercore::GetDelegate(uint32_t propertyId)
 
 bool mastercore::isPropertyDivisible(uint32_t propertyId)
 {
-    // TODO: is a lock here needed
     CMPSPInfo::Entry sp;
 
     if (pDbSpInfo->getSP(propertyId, sp)) return sp.isDivisible();
@@ -323,18 +319,14 @@ bool mastercore::isCrowdsalePurchase(const uint256& txid, const std::string& add
     // 2. loop those crowdsales for that address and check their participant txs in database
 
     // check for an active crowdsale to this address
-    CMPCrowd* pcrowdsale = getCrowd(address);
-    if (pcrowdsale) {
-        std::map<uint256, std::vector<int64_t> >::const_iterator it;
-        const std::map<uint256, std::vector<int64_t> >& database = pcrowdsale->getDatabase();
-        for (it = database.begin(); it != database.end(); it++) {
-            const uint256& tmpTxid = it->first;
-            if (tmpTxid == txid) {
-                *propertyId = pcrowdsale->getPropertyId();
-                *userTokens = it->second.at(2);
-                *issuerTokens = it->second.at(3);
-                return true;
-            }
+    if (CMPCrowd* pcrowdsale = getCrowd(address)) {
+        const auto& database = pcrowdsale->getDatabase();
+        auto it = database.find(txid);
+        if (it != database.end()) {
+            *propertyId = pcrowdsale->getPropertyId();
+            *userTokens = it->second.at(2);
+            *issuerTokens = it->second.at(3);
+            return true;
         }
     }
 
@@ -344,13 +336,12 @@ bool mastercore::isCrowdsalePurchase(const uint256& txid, const std::string& add
         for (uint32_t loopPropertyId = startPropertyId; loopPropertyId < pDbSpInfo->peekNextSPID(ecosystem); loopPropertyId++) {
             CMPSPInfo::Entry sp;
             if (!pDbSpInfo->getSP(loopPropertyId, sp)) continue;
-            for (std::map<uint256, std::vector<int64_t> >::const_iterator it = sp.historicalData.begin(); it != sp.historicalData.end(); it++) {
-                if (it->first == txid) {
-                    *propertyId = loopPropertyId;
-                    *userTokens = it->second.at(2);
-                    *issuerTokens = it->second.at(3);
-                    return true;
-                }
+            auto it = sp.historicalData.find(txid);
+            if (it != sp.historicalData.end()) {
+                *propertyId = loopPropertyId;
+                *userTokens = it->second.at(2);
+                *issuerTokens = it->second.at(3);
+                return true;
             }
         }
     }
@@ -359,7 +350,7 @@ bool mastercore::isCrowdsalePurchase(const uint256& txid, const std::string& add
     return false;
 }
 
-void mastercore::eraseMaxedCrowdsale(const std::string& address, int64_t blockTime, int block, uint256& blockHash)
+void mastercore::eraseMaxedCrowdsale(const std::string& address, int64_t blockTime, int block, const uint256& blockHash)
 {
     CrowdMap::iterator it = my_crowds.find(address);
 
@@ -385,7 +376,7 @@ void mastercore::eraseMaxedCrowdsale(const std::string& address, int64_t blockTi
         sp.timeclosed = blockTime;
         sp.update_block = blockHash;
 
-        assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp));
+        assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp, block));
 
         // no calculate fractional calls here, no more tokens (at MAX)
         my_crowds.erase(it);
@@ -427,7 +418,7 @@ unsigned int mastercore::eraseExpiredCrowdsale(const CBlockIndex* pBlockIndex)
 
             // update SP with this data
             sp.update_block = pBlockIndex->GetBlockHash();
-            assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp));
+            assert(pDbSpInfo->updateSP(crowdsale.getPropertyId(), sp, blockHeight));
 
             // update values
             if (missedTokens > 0) {

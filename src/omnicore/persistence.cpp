@@ -38,7 +38,7 @@
 using namespace mastercore;
 
 //! Number of "Dev Omni" of the last processed block (needed to save global state)
-extern int64_t exodus_prev;
+extern std::atomic<int64_t> exodus_prev;
 
 //! Path for file based persistence
 extern fs::path pathStateFiles;
@@ -457,7 +457,7 @@ static void prune_state_files(const CBlockIndex* topIndex)
     fs::directory_iterator endIter;
     for (; dIter != endIter; ++dIter) {
         std::string fName = dIter->path().empty() ? "<invalid>" : (*--dIter->path().end()).string();
-        if (false == fs::is_regular_file(dIter->status())) {
+        if (!fs::is_regular_file(dIter->status())) {
             // skip funny business
             PrintToLog("Non-regular file found in persistence directory : %s\n", fName);
             continue;
@@ -465,9 +465,7 @@ static void prune_state_files(const CBlockIndex* topIndex)
 
         std::vector<std::string> vstr;
         boost::split(vstr, fName, boost::is_any_of("-."), boost::token_compress_on);
-        if (vstr.size() == 3 &&
-                is_state_prefix(vstr[0]) &&
-                boost::equals(vstr[2], "dat")) {
+        if (vstr.size() == 3 && is_state_prefix(vstr[0]) && boost::equals(vstr[2], "dat")) {
             uint256 blockHash;
             blockHash.SetHex(vstr[1]);
             statefulBlockHashes.insert(blockHash);
@@ -477,23 +475,14 @@ static void prune_state_files(const CBlockIndex* topIndex)
     }
 
     // for each blockHash in the set, determine the distance from the given block
-    std::set<uint256>::const_iterator iter;
-    for (iter = statefulBlockHashes.begin(); iter != statefulBlockHashes.end(); ++iter) {
-        // look up the CBlockIndex for height info
-        CBlockIndex const *curIndex = GetBlockIndex(*iter);
-
+    for (const auto& blockHash : statefulBlockHashes) {
         // if we have nothing int the index, or this block is too old..
-        if (nullptr == curIndex || topIndex->nHeight > curIndex->nHeight) {
+        if (topIndex->GetBlockHash() != blockHash) {
             if (msc_debug_persistence) {
-                if (curIndex) {
-                    PrintToLog("State from Block:%s is no longer need, removing files (age-from-tip: %d)\n", (*iter).ToString(), topIndex->nHeight - curIndex->nHeight);
-                } else {
-                    PrintToLog("State from Block:%s is no longer need, removing files (not in index)\n", (*iter).ToString());
-                }
+                PrintToLog("State from Block:%s is no longer need, removing files (not in index)\n", blockHash.ToString());
             }
-
             // destroy the associated files!
-            std::string strBlockHash = iter->ToString();
+            std::string strBlockHash = blockHash.ToString();
             for (int i = 0; i < NUM_FILETYPES; ++i) {
                 auto fileName = strprintf("%s-%s.dat", statePrefix[i], strBlockHash);
                 fs::path path = pathStateFiles / fileName.c_str();
@@ -508,7 +497,7 @@ static void prune_state_files(const CBlockIndex* topIndex)
  */
 static int GetWrapModeHeight()
 {
-    static const int nSkipBlocksUntil = gArgs.GetIntArg("-omniskipstoringstate", DONT_STORE_MAINNET_STATE_UNTIL);
+    static const int nSkipBlocksUntil = gArgs.GetIntArg("-omniskipstoringstate", MainNet() ? DONT_STORE_MAINNET_STATE_UNTIL : 0);
     return nSkipBlocksUntil;
 }
 
@@ -517,13 +506,8 @@ static int GetWrapModeHeight()
  */
 bool IsPersistenceEnabled(int blockHeight)
 {
-    // do not store on any network different from main
-    if (!MainNet()) {
-        return false;
-    }
-
     int nMinHeight = GetWrapModeHeight();
-    int nStoreEveryBlock = ::ChainstateActive().IsInitialBlockDownload() ?
+    int nStoreEveryBlock = IsInitialBlockDownload() ?
                             STORE_EVERY_N_BLOCK_IDB : STORE_EVERY_N_BLOCK;
     // if too far away from the top -- do not write
     return blockHeight > nMinHeight && (blockHeight % nStoreEveryBlock == 0);
@@ -545,7 +529,7 @@ int PersistInMemoryState(const CBlockIndex* pBlockIndex)
     // clean-up the directory
     prune_state_files(pBlockIndex);
 
-    pDbSpInfo->setWatermark(pBlockIndex->GetBlockHash());
+    pDbSpInfo->setWatermark(pBlockIndex->GetBlockHash(), pBlockIndex->nHeight);
 
     return 0;
 }
@@ -666,171 +650,26 @@ int RestoreInMemoryState(const std::string& filename, int what, bool verifyHash)
  */
 int LoadMostRelevantInMemoryState()
 {
-    int res = -1;
+    int block = -1;
     uint256 spWatermark;
-    {
-        LOCK(cs_tally);
-        PrintToLog("Trying to load most relevant state into memory..\n");
-        // check the SP database and roll it back to its latest valid state
-        // according to the active chain
-        if (!pDbSpInfo->getWatermark(spWatermark)) {
-            // trigger a full reparse, if the SP database has no watermark
-            PrintToLog("Failed to load historical state: SP database has no watermark\n");
-            return -1;
-        }
-
-    }
-
-    // Try and get watermark block
-    CBlockIndex const *spBlockIndex = GetBlockIndex(spWatermark);
-
-    // Watermark block not found.
-    if (nullptr == spBlockIndex)
-    {
-        PrintToLog("spWatermark not found: %s\n", spWatermark.ToString());
-
-        // Try and load an historical state
-        fs::directory_iterator dIter(pathStateFiles);
-        fs::directory_iterator endIter;
-        std::map<int, const CBlockIndex*> foundBlocks;
-
-        for (; dIter != endIter; ++dIter) {
-            if (false == fs::is_regular_file(dIter->status()) || dIter->path().empty()) {
-                // skip funny business
-                continue;
-            }
-
-            std::string fName = (*--dIter->path().end()).string();
-            std::vector<std::string> vstr;
-            boost::split(vstr, fName, boost::is_any_of("-."), boost::token_compress_on);
-            if (vstr.size() == 3 && boost::equals(vstr[2], "dat")) {
-                uint256 blockHash;
-                blockHash.SetHex(vstr[1]);
-                CBlockIndex *pBlockIndex = GetBlockIndex(blockHash);
-                if (pBlockIndex == nullptr) {
-                    continue;
-                }
-
-                // Add to found blocks
-                foundBlocks.emplace(pBlockIndex->nHeight, pBlockIndex);
-            }
-        }
-
-        // Was unable to find valid previous state, full reparse required.
-        if (foundBlocks.empty()) {
-            PrintToLog("Failed to load historical state: watermark isn't a real block\n");
-            return -1;
-        }
-
-        spBlockIndex = foundBlocks.rbegin()->second;
-        pDbSpInfo->setWatermark(spBlockIndex->GetBlockHash());
-
-        PrintToLog("Watermark not found. New one set from state files: %s\n", spBlockIndex->GetBlockHash().ToString());
-    }
-
-    std::set<uint256> persistedBlocks;
-    {
-        LOCK2(cs_main, cs_tally);
-
-        PrintToLog("Rolling back blocks to active chain.\n");
-
-        while (nullptr != spBlockIndex && false == ::ChainActive().Contains(spBlockIndex)) {
-            int remainingSPs = pDbSpInfo->popBlock(spBlockIndex->GetBlockHash());
-            if (remainingSPs < 0) {
-                // trigger a full reparse, if the levelDB cannot roll back
-                PrintToLog("Failed to load historical state: no valid state found after rolling back SP database\n");
-                return -1;
-            }
-
-            spBlockIndex = spBlockIndex->pprev;
-            if (spBlockIndex != nullptr) {
-                pDbSpInfo->setWatermark(spBlockIndex->GetBlockHash());
-            }
-        }
-
-        // prepare a set of available files by block hash pruning any that are
-        // not in the active chain
-        fs::directory_iterator dIter(pathStateFiles);
-        fs::directory_iterator endIter;
-        for (; dIter != endIter; ++dIter) {
-            if (false == fs::is_regular_file(dIter->status()) || dIter->path().empty()) {
-                // skip funny business
-                continue;
-            }
-
-            std::string fName = (*--dIter->path().end()).string();
-            std::vector<std::string> vstr;
-            boost::split(vstr, fName, boost::is_any_of("-."), boost::token_compress_on);
-            if (vstr.size() == 3 &&
-                    boost::equals(vstr[2], "dat")) {
-                uint256 blockHash;
-                blockHash.SetHex(vstr[1]);
-                CBlockIndex *pBlockIndex = GetBlockIndex(blockHash);
-                if (pBlockIndex == nullptr || false == ::ChainActive().Contains(pBlockIndex)) {
-                    continue;
-                }
-
-                // this is a valid block in the active chain, store it
-                persistedBlocks.insert(blockHash);
-            }
-        }
-    }
-
-    {
-        LOCK(cs_tally);
-        // using the SP's watermark after its fixed-up as the tip
-        // walk backwards until we find a valid and full set of persisted state files
-        // for each block we discard, roll back the SP database
-        CBlockIndex const *curTip = spBlockIndex;
-        int abortRollBackBlock = 9999999;
-        if (curTip != nullptr) {
-            abortRollBackBlock = ConsensusParams().GENESIS_BLOCK - 1;
-        }
-        while (nullptr != curTip && persistedBlocks.size() > 0 && curTip->nHeight > abortRollBackBlock ) {
-            if (persistedBlocks.find(curTip->GetBlockHash()) != persistedBlocks.end()) {
-                int success = -1;
-                for (int i = 0; i < NUM_FILETYPES; ++i) {
-                    auto fileName = strprintf("%s-%s.dat", statePrefix[i], curTip->GetBlockHash().ToString());
-                    fs::path path = pathStateFiles / fileName.c_str();
-                    const std::string strFile = path.string();
-                    success = RestoreInMemoryState(strFile, i, true);
-                    if (success < 0) {
-                        PrintToConsole("Found a state inconsistency at block height %d. "
-                                "Reverting up to %d blocks.. this may take a few minutes.\n",
-                                curTip->nHeight, (curTip->nHeight - abortRollBackBlock - 1));
-                        break;
-                    }
-                }
-
-                if (success >= 0) {
-                    res = curTip->nHeight;
-                    break;
-                }
-
-                // remove this from the persistedBlock Set
-                persistedBlocks.erase(spBlockIndex->GetBlockHash());
-            }
-
-            // go to the previous block
-            if (pDbSpInfo->popBlock(curTip->GetBlockHash()) <= 0) {
-                // trigger a full reparse, if the levelDB cannot roll back
-                PrintToLog("Failed to load historical state: no valid state found after rolling back SP database (2)\n");
-                return -1;
-            }
-            curTip = curTip->pprev;
-            spBlockIndex = curTip;
-            if (curTip != nullptr) {
-                pDbSpInfo->setWatermark(curTip->GetBlockHash());
-            }
-        }
-    }
-
-    if (persistedBlocks.size() == 0) {
-        // trigger a reparse if we exhausted the persistence files without success
-        PrintToLog("Failed to load historical state: no valid state found after exhausting persistence files\n");
+    PrintToLog("Trying to load most relevant state into memory..\n");
+    // check the SP database and roll it back to its latest valid state
+    // according to the active chain
+    if (!pDbSpInfo->getWatermark(spWatermark, block)) {
+        // trigger a full reparse, if the SP database has no watermark
+        PrintToLog("Failed to load historical state: SP database has no watermark\n");
         return -1;
     }
 
+    for (int i = 0; i < NUM_FILETYPES; ++i) {
+        auto fileName = strprintf("%s-%s.dat", statePrefix[i], spWatermark.ToString());
+        fs::path path = pathStateFiles / fileName.c_str();
+        if (RestoreInMemoryState(path.string(), i, true) < 0) {
+            PrintToConsole("Found a state inconsistency, reindex is needed...\n");
+            return -1;
+        }
+    }
+
     // return the height of the block we settled at
-    return res;
+    return block;
 }

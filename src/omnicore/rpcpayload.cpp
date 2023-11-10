@@ -14,7 +14,6 @@
 
 #include <stdint.h>
 
-using std::runtime_error;
 using namespace mastercore;
 
 static UniValue omni_createpayload_simplesend(const JSONRPCRequest& request)

@@ -343,15 +343,4 @@ public:
  */
 std::optional<std::vector<std::tuple<int, CScript, int>>> InferTaprootTree(const TaprootSpendData& spenddata, const XOnlyPubKey& output);
 
-struct DataVisitor
-{
-    std::vector<unsigned char> operator()(const CNoDestination& noDest) const;
-    std::vector<unsigned char> operator()(const PKHash& hash) const;
-    std::vector<unsigned char> operator()(const ScriptHash& scriptHash) const;
-    std::vector<unsigned char> operator()(const WitnessV0ScriptHash& witnessScriptHash) const;
-    std::vector<unsigned char> operator()(const WitnessV0KeyHash& witnessKeyHash) const;
-    std::vector<unsigned char> operator()(const WitnessV1Taproot& witnessTaproot) const;
-    std::vector<unsigned char> operator()(const WitnessUnknown& witnessUnknown) const;
-};
-
 #endif // BITCOIN_SCRIPT_STANDARD_H

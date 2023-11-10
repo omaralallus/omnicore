@@ -1,6 +1,7 @@
 #ifndef BITCOIN_OMNICORE_DBTXLIST_H
 #define BITCOIN_OMNICORE_DBTXLIST_H
 
+#include <cstdint>
 #include <omnicore/dbbase.h>
 #include <omnicore/nftdb.h>
 
@@ -16,24 +17,29 @@
  */
 class CMPTxList : public CDBBase
 {
+    struct CTxKey;
+    bool getTX(const uint256& txid, CTxKey& key, int64_t& value);
 public:
     CMPTxList(const fs::path& path, bool fWipe);
     virtual ~CMPTxList();
 
     void recordTX(const uint256& txid, bool fValid, int nBlock, unsigned int type, uint64_t nValue);
-    void recordPaymentTX(const uint256& txid, bool fValid, int nBlock, unsigned int vout, unsigned int propertyId, uint64_t nValue, std::string buyer, std::string seller);
+    void recordPaymentTX(const uint256& txid, bool fValid, int nBlock, unsigned int vout, unsigned int propertyId, uint64_t nValue, const std::string& buyer, const std::string& seller);
     void recordMetaDExCancelTX(const uint256 &txidMaster, const uint256& txidSub, bool fValid, int nBlock, unsigned int propertyId, uint64_t nValue);
     /** Records a "send all" sub record. */
-    void recordSendAllSubRecord(const uint256& txid, int subRecordNumber, uint32_t propertyId, int64_t nvalue);
+    void recordSendAllSubRecord(const uint256& txid, int nBlock, int subRecordNumber, uint32_t propertyId, int64_t nvalue);
     /** Records the range awarded in a grant applied to a non-fungible property. */
     void RecordNonFungibleGrant(const uint256 &txid, int64_t start, int64_t end);
 
-    std::string getKeyValue(std::string key);
-    uint256 findMetaDExCancel(const uint256 txid);
+    void deleteTransactions(const std::set<uint256>& txs, int block);
+
+    uint256 findMetaDExCancel(const uint256& txid);
     /** Returns the number of sub records. */
     int getNumberOfSubRecords(const uint256& txid);
-    int getNumberOfMetaDExCancels(const uint256 txid);
-    bool getPurchaseDetails(const uint256 txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t *propertyId, uint64_t* nValue);
+    int getNumberOfMetaDExCancels(const uint256& txid);
+    bool getPurchaseDetails(const uint256& txid, int purchaseNumber, std::string* buyer, std::string* seller, uint64_t* vout, uint64_t *propertyId, uint64_t* nValue);
+    /** Retrieves details about a "metadex cancel" record. */
+    bool getMetaDExCancelDetails(const uint256& txid, int subSend, uint32_t& propertyId, int64_t& amount);
     /** Retrieves details about a "send all" record. */
     bool getSendAllDetails(const uint256& txid, int subSend, uint32_t& propertyId, int64_t& amount);
     /** Retrieves details about the range awarded in a grant to a non-fungible property. */
@@ -47,20 +53,17 @@ public:
     int getDBVersion();
     int setDBVersion();
 
-    bool exists(const uint256& txid);
-    bool getTX(const uint256& txid, std::string& value);
+    bool existsMPTX(const uint256& txid);
     bool getValidMPTX(const uint256& txid, int* block = nullptr, unsigned int* type = nullptr, uint64_t* nAmended = nullptr);
 
     std::set<int> GetSeedBlocks(int startHeight, int endHeight);
-    void LoadAlerts(int blockHeight);
-    void LoadActivations(int blockHeight);
-    bool LoadFreezeState(int blockHeight);
+    std::map<uint256, int> LoadValidTxs(int blockHeight, const std::set<int>& txtypes = {});
     bool CheckForFreezeTxs(int blockHeight);
 
     void printStats();
     void printAll();
 
-    bool isMPinBlockRange(int, int, bool);
+    bool isMPinBlockRange(int, int);
 };
 
 namespace mastercore

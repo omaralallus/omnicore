@@ -182,6 +182,7 @@ public:
 
 class CDBWrapper
 {
+    friend class COmniCoinsCache;
     friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapper &w);
 private:
     //! custom environment this database is using (may be nullptr in case of default environment)
@@ -235,15 +236,18 @@ public:
     CDBWrapper& operator=(const CDBWrapper&) = delete;
 
     template <typename K, typename V>
-    bool Read(const K& key, V& value) const
+    bool Read(const K& key, V& value, const leveldb::Snapshot* snapshot = nullptr) const
     {
         CDataStream ssKey(SER_DISK, CLIENT_VERSION);
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
         leveldb::Slice slKey((const char*)ssKey.data(), ssKey.size());
 
+        auto options = readoptions;
+        options.snapshot = snapshot;
+
         std::string strValue;
-        leveldb::Status status = pdb->Get(readoptions, slKey, &strValue);
+        leveldb::Status status = pdb->Get(options, slKey, &strValue);
         if (!status.ok()) {
             if (status.IsNotFound())
                 return false;

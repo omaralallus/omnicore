@@ -698,12 +698,3 @@ std::vector<std::tuple<uint8_t, uint8_t, CScript>> TaprootBuilder::GetTreeTuples
     }
     return tuples;
 }
-
-
-valtype DataVisitor::operator()(const CNoDestination& noDest) const { return valtype(); }
-valtype DataVisitor::operator()(const PKHash& hash) const { return valtype(hash.begin(), hash.end()); }
-valtype DataVisitor::operator()(const ScriptHash& scriptHash) const { return valtype(scriptHash.begin(), scriptHash.end()); }
-valtype DataVisitor::operator()(const WitnessV0ScriptHash& witnessScriptHash) const { return valtype(witnessScriptHash.begin(), witnessScriptHash.end()); }
-valtype DataVisitor::operator()(const WitnessV0KeyHash& witnessKeyHash) const { return valtype(witnessKeyHash.begin(), witnessKeyHash.end()); }
-valtype DataVisitor::operator()(const WitnessV1Taproot& witnessTaproot) const { return valtype(witnessTaproot.begin(), witnessTaproot.end()); }
-valtype DataVisitor::operator()(const WitnessUnknown&) const { return valtype(); }

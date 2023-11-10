@@ -11,6 +11,7 @@
 #include <omnicore/nftdb.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/pending.h>
+#include <omnicore/rpc.h>
 #include <omnicore/rpcrequirements.h>
 #include <omnicore/rpcvalues.h>
 #include <omnicore/rules.h>
@@ -91,6 +92,7 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
     std::string feeAddress = ParseOmniAddress(request.params[4]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireBalance(fromAddress, propertyId, amount);
 
@@ -103,7 +105,7 @@ static UniValue omni_funded_send(const JSONRPCRequest& request)
 
     // create the raw transaction
     uint256 retTxid;
-    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), g_context->get());
+    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get());
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
     }
@@ -148,7 +150,7 @@ static UniValue omni_funded_sendall(const JSONRPCRequest& request)
 
     // create the raw transaction
     uint256 retTxid;
-    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get(), g_context->get());
+    int result = CreateFundedTransaction(fromAddress, toAddress, feeAddress, payload, retTxid, pwallet.get());
     if (result != 0) {
         throw JSONRPCError(result, error_str(result));
     }
@@ -237,6 +239,7 @@ static UniValue omni_send(const JSONRPCRequest& request)
     int64_t referenceAmount = (request.params.size() > 5) ? ParseAmount(request.params[5], true): 0;
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireBalance(fromAddress, propertyId, amount);
     RequireSaneReferenceAmount(referenceAmount);
@@ -296,6 +299,7 @@ static UniValue omni_sendall(const JSONRPCRequest& request)
     int64_t referenceAmount = (request.params.size() > 4) ? ParseAmount(request.params[4], true): 0;
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireSaneReferenceAmount(referenceAmount);
 
     // create a payload for the transaction
@@ -361,6 +365,7 @@ static UniValue omni_sendnonfungible(const JSONRPCRequest& request)
     int64_t referenceAmount = (request.params.size() > 6) ? ParseAmount(request.params[6], true): 0;
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireBalance(fromAddress, propertyId, uniqueTokenAmount);
     RequireNonFungibleTokenOwner(fromAddress, propertyId, tokenStart, tokenEnd);
@@ -426,6 +431,7 @@ static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
     bool issuer = request.params[3].isNum() ? (request.params[3].getInt<int>() != 0) : request.params[3].get_bool();
     std::string data = ParseText(request.params[4]);
 
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireNonFungibleProperty(propertyId);
     RequireSaneNonFungibleRange(tokenStart, tokenEnd);
@@ -438,13 +444,10 @@ static UniValue omni_setnonfungibledata(const JSONRPCRequest& request)
 
     if (issuer) {
         CMPSPInfo::Entry sp;
-        {
-            LOCK(cs_tally);
-            if (!pDbSpInfo->getSP(propertyId, sp)) {
-                throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
-            }
-            fromAddress = sp.issuer;
+        if (!pDbSpInfo->getSP(propertyId, sp)) {
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
         }
+        fromAddress = sp.issuer;
     }
 
     // create a payload for the transaction
@@ -544,6 +547,7 @@ static UniValue omni_sendtomany(const JSONRPCRequest& request)
         throw JSONRPCError(RPC_TYPE_ERROR, "Error creating send-to-many payload");
     }
     // actual check with proper payload count
+    EnsureNotProcessingBlock();
     RequireBoundedStmReceiverNumber(payloadOutputCount + dummyOutputCount);
     RequireExistingProperty(propertyId);
     RequireBalance(fromAddress, propertyId, amountToSend);
@@ -640,6 +644,7 @@ static UniValue omni_senddexsell(const JSONRPCRequest& request)
     }
 
     // perform checks
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyIdForSale);
     }
@@ -720,6 +725,7 @@ static UniValue omni_senddexaccept(const JSONRPCRequest& request)
     bool override = (request.params.size() > 4) ? request.params[4].get_bool(): false;
 
     // perform checks
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyId);
     }
@@ -796,6 +802,7 @@ static UniValue omni_sendnewdexorder(const JSONRPCRequest& request)
     uint8_t action = CMPTransaction::NEW;
 
     // perform checks
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyIdForSale);
     }
@@ -865,6 +872,7 @@ static UniValue omni_sendupdatedexorder(const JSONRPCRequest& request)
     uint8_t action = CMPTransaction::UPDATE;
 
     // perform checks
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyIdForSale);
     }
@@ -930,6 +938,7 @@ static UniValue omni_sendcanceldexorder(const JSONRPCRequest& request)
     uint8_t action = CMPTransaction::CANCEL;
 
     // perform checks
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyIdForSale);
     }
@@ -996,6 +1005,7 @@ static UniValue omni_senddexpay(const JSONRPCRequest& request)
     if (nAmount <= 0)
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Invalid amount for send");
 
+    EnsureNotProcessingBlock();
     if (!IsFeatureActivated(FEATURE_FREEDEX, GetHeight())) {
         RequirePrimaryToken(propertyId);
     }
@@ -1083,6 +1093,7 @@ static UniValue omni_sendissuancecrowdsale(const JSONRPCRequest& request)
     uint8_t issuerPercentage = ParseIssuerBonus(request.params[13]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequirePropertyName(name);
     RequireExistingProperty(propertyIdDesired);
     RequireSameEcosystem(ecosystem, propertyIdDesired);
@@ -1214,8 +1225,11 @@ static UniValue omni_sendissuancemanaged(const JSONRPCRequest& request)
     std::string url = ParseText(request.params[7]);
     std::string data = ParseText(request.params[8]);
 
-    if (type == 5 && !IsFeatureActivated(FEATURE_NFTS, GetHeight())) {
-        throw JSONRPCError(RPC_INTERNAL_ERROR, "NFTs not activated");
+    if (type == 5) {
+        EnsureNotProcessingBlock();
+        if (!IsFeatureActivated(FEATURE_NFTS, GetHeight())) {
+            throw JSONRPCError(RPC_INTERNAL_ERROR, "NFTs not activated");
+        }
     }
 
     // perform checks
@@ -1275,6 +1289,7 @@ static UniValue omni_sendsto(const JSONRPCRequest& request)
     uint32_t distributionPropertyId = (request.params.size() > 4) ? ParsePropertyId(request.params[4]) : propertyId;
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireBalance(fromAddress, propertyId, amount);
 
     // create a payload for the transaction
@@ -1332,6 +1347,7 @@ static UniValue omni_sendgrant(const JSONRPCRequest& request)
     std::string info = (request.params.size() > 4) ? ParseText(request.params[4]) : "";
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireSenderDelegateBeforeIssuer(propertyId, fromAddress);
@@ -1388,6 +1404,7 @@ static UniValue omni_sendrevoke(const JSONRPCRequest& request)
     std::string memo = (request.params.size() > 3) ? ParseText(request.params[3]): "";
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireBalance(fromAddress, propertyId, amount);
@@ -1440,6 +1457,7 @@ static UniValue omni_sendclosecrowdsale(const JSONRPCRequest& request)
     uint32_t propertyId = ParsePropertyId(request.params[1]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireCrowdsale(propertyId);
     RequireActiveCrowdsale(propertyId);
@@ -1499,6 +1517,7 @@ static UniValue omni_sendtrade(const JSONRPCRequest& request)
     int64_t amountDesired = ParseAmount(request.params[4], isPropertyDivisible(propertyIdDesired));
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyIdForSale);
     RequireExistingProperty(propertyIdDesired);
     RequireBalance(fromAddress, propertyIdForSale, amountForSale);
@@ -1560,6 +1579,7 @@ static UniValue omni_sendcanceltradesbyprice(const JSONRPCRequest& request)
     int64_t amountDesired = ParseAmount(request.params[4], isPropertyDivisible(propertyIdDesired));
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyIdForSale);
     RequireExistingProperty(propertyIdDesired);
     RequireSameEcosystem(propertyIdForSale, propertyIdDesired);
@@ -1617,6 +1637,7 @@ static UniValue omni_sendcanceltradesbypair(const JSONRPCRequest& request)
     uint32_t propertyIdDesired = ParsePropertyId(request.params[2]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyIdForSale);
     RequireExistingProperty(propertyIdDesired);
     RequireSameEcosystem(propertyIdForSale, propertyIdDesired);
@@ -1725,6 +1746,7 @@ static UniValue omni_sendchangeissuer(const JSONRPCRequest& request)
     uint32_t propertyId = ParsePropertyId(request.params[2]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireTokenIssuer(fromAddress, propertyId);
 
@@ -1776,6 +1798,7 @@ static UniValue omni_sendenablefreezing(const JSONRPCRequest& request)
     uint32_t propertyId = ParsePropertyId(request.params[1]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireTokenIssuer(fromAddress, propertyId);
@@ -1829,6 +1852,7 @@ static UniValue omni_senddisablefreezing(const JSONRPCRequest& request)
     uint32_t propertyId = ParsePropertyId(request.params[1]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireTokenIssuer(fromAddress, propertyId);
@@ -1886,6 +1910,7 @@ static UniValue omni_sendfreeze(const JSONRPCRequest& request)
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireSenderDelegateBeforeIssuer(propertyId, fromAddress);
@@ -1944,6 +1969,7 @@ static UniValue omni_sendunfreeze(const JSONRPCRequest& request)
     int64_t amount = ParseAmount(request.params[3], isPropertyDivisible(propertyId));
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireSenderDelegateBeforeIssuer(propertyId, fromAddress);
@@ -1999,6 +2025,7 @@ static UniValue omni_sendadddelegate(const JSONRPCRequest& request)
     std::string delegateAddress = ParseOmniAddress(request.params[2]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireTokenIssuer(fromAddress, propertyId);
@@ -2053,6 +2080,7 @@ static UniValue omni_sendremovedelegate(const JSONRPCRequest& request)
     std::string delegateAddress = ParseOmniAddress(request.params[2]);
 
     // perform checks
+    EnsureNotProcessingBlock();
     RequireExistingProperty(propertyId);
     RequireManagedProperty(propertyId);
     RequireExistingDelegate(propertyId);

@@ -27,20 +27,17 @@ bool ShouldConsensusHashBlock(int block) {
         return true;
     }
 
-    if (!gArgs.IsArgSet("-omnishowblockconsensushash")) {
-        return false;
-    }
-
-    const std::vector<std::string>& vecBlocks = gArgs.GetArgs("-omnishowblockconsensushash");
-    for (std::vector<std::string>::const_iterator it = vecBlocks.begin(); it != vecBlocks.end(); ++it) {
-        int64_t paramBlock = StrToInt64(*it, false);
-        if (paramBlock < 1) continue; // ignore non numeric values
-        if (paramBlock == block) {
-            return true;
+    static const auto vecBlocks = []() {
+        std::set<int> vblocks;
+        for (auto& block : gArgs.GetArgs("-omnishowblockconsensushash")) {
+            auto paramBlock = StrToInt64(block, false);
+            if (paramBlock < 1) continue; // ignore non numeric values
+            vblocks.insert(paramBlock);
         }
-    }
+        return vblocks;
+    }();
 
-    return false;
+    return vecBlocks.count(block);
 }
 
 // Generates a consensus string for hashing based on a tally object
@@ -158,7 +155,7 @@ uint256 GetConsensusHash()
     // Sort alphabetically first
     std::map<std::string, CMPTally> tallyMapSorted;
     for (std::unordered_map<std::string, CMPTally>::iterator uoit = mp_tally_map.begin(); uoit != mp_tally_map.end(); ++uoit) {
-        tallyMapSorted.insert(std::make_pair(uoit->first,uoit->second));
+        tallyMapSorted.emplace(uoit->first, uoit->second);
     }
     for (std::map<std::string, CMPTally>::iterator my_it = tallyMapSorted.begin(); my_it != tallyMapSorted.end(); ++my_it) {
         const std::string& address = my_it->first;
@@ -181,7 +178,7 @@ uint256 GetConsensusHash()
         const std::string& sellCombo = it->first;
         std::string seller = sellCombo.substr(0, sellCombo.size() - 2);
         std::string dataStr = GenerateConsensusString(selloffer, seller);
-        vecDExOffers.push_back(std::make_pair(arith_uint256(selloffer.getHash().ToString()), dataStr));
+        vecDExOffers.emplace_back(UintToArith256(selloffer.getHash()), dataStr);
     }
     std::sort (vecDExOffers.begin(), vecDExOffers.end());
     for (std::vector<std::pair<arith_uint256, std::string> >::iterator it = vecDExOffers.begin(); it != vecDExOffers.end(); ++it) {
@@ -199,7 +196,7 @@ uint256 GetConsensusHash()
         std::string buyer = acceptCombo.substr((acceptCombo.find("+") + 1), (acceptCombo.size()-(acceptCombo.find("+") + 1)));
         std::string dataStr = GenerateConsensusString(accept, buyer);
         std::string sortKey = strprintf("%s-%s", accept.getHash().GetHex(), buyer);
-        vecAccepts.push_back(std::make_pair(sortKey, dataStr));
+        vecAccepts.emplace_back(sortKey, dataStr);
     }
     std::sort (vecAccepts.begin(), vecAccepts.end());
     for (std::vector<std::pair<std::string, std::string> >::iterator it = vecAccepts.begin(); it != vecAccepts.end(); ++it) {
@@ -218,7 +215,7 @@ uint256 GetConsensusHash()
             for (md_Set::const_iterator it = indexes.begin(); it != indexes.end(); ++it) {
                 const CMPMetaDEx& obj = *it;
                 std::string dataStr = GenerateConsensusString(obj);
-                vecMetaDExTrades.push_back(std::make_pair(arith_uint256(obj.getHash().ToString()), dataStr));
+                vecMetaDExTrades.emplace_back(UintToArith256(obj.getHash()), dataStr);
             }
         }
     }
@@ -238,7 +235,7 @@ uint256 GetConsensusHash()
         const CMPCrowd& crowd = it->second;
         uint32_t propertyId = crowd.getPropertyId();
         std::string dataStr = GenerateConsensusString(crowd);
-        vecCrowds.push_back(std::make_pair(propertyId, dataStr));
+        vecCrowds.emplace_back(propertyId, dataStr);
     }
     std::sort (vecCrowds.begin(), vecCrowds.end());
     for (std::vector<std::pair<uint32_t, std::string> >::iterator it = vecCrowds.begin(); it != vecCrowds.end(); ++it) {
@@ -288,7 +285,7 @@ uint256 GetMetaDExHash(const uint32_t propertyId)
                 for (md_Set::const_iterator it = indexes.begin(); it != indexes.end(); ++it) {
                     const CMPMetaDEx& obj = *it;
                     std::string dataStr = GenerateConsensusString(obj);
-                    vecMetaDExTrades.push_back(std::make_pair(arith_uint256(obj.getHash().ToString()), dataStr));
+                    vecMetaDExTrades.emplace_back(UintToArith256(obj.getHash()), dataStr);
                 }
             }
         }
@@ -314,7 +311,7 @@ uint256 GetBalancesHash(const uint32_t hashPropertyId)
 
     std::map<std::string, CMPTally> tallyMapSorted;
     for (std::unordered_map<std::string, CMPTally>::iterator uoit = mp_tally_map.begin(); uoit != mp_tally_map.end(); ++uoit) {
-        tallyMapSorted.insert(std::make_pair(uoit->first,uoit->second));
+        tallyMapSorted.emplace(uoit->first, uoit->second);
     }
     for (std::map<std::string, CMPTally>::iterator my_it = tallyMapSorted.begin(); my_it != tallyMapSorted.end(); ++my_it) {
         const std::string& address = my_it->first;

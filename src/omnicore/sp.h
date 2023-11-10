@@ -39,7 +39,7 @@ private:
 
     // Schema:
     //   txid -> amount invested, crowdsale deadline, user issued tokens, issuer issued tokens
-    std::map<uint256, std::vector<int64_t> > txFundraiserData;
+    std::map<uint256, std::vector<int64_t>> txFundraiserData;
 
 public:
     CMPCrowd();
@@ -57,7 +57,7 @@ public:
     int64_t getIssuerCreated() const { return i_created; }
 
     void insertDatabase(const uint256& txHash, const std::vector<int64_t>& txData);
-    std::map<uint256, std::vector<int64_t> > getDatabase() const { return txFundraiserData; }
+    const auto& getDatabase() const { return txFundraiserData; }
 
     std::string toString(const std::string& address) const;
     void print(const std::string& address, FILE* fp = stdout) const;
@@ -96,7 +96,7 @@ void calculateFundraiser(bool inflateAmount, int64_t amtTransfer, uint8_t bonusP
         int64_t fundraiserSecs, int64_t currentSecs, int64_t numProps, uint8_t issuerPerc, int64_t totalTokens,
         std::pair<int64_t, int64_t>& tokens, bool& close_crowdsale);
 
-void eraseMaxedCrowdsale(const std::string& address, int64_t blockTime, int block, uint256& blockHash);
+void eraseMaxedCrowdsale(const std::string& address, int64_t blockTime, int block, const uint256& blockHash);
 
 unsigned int eraseExpiredCrowdsale(const CBlockIndex* pBlockIndex);
 }

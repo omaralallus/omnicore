@@ -3,9 +3,11 @@
 #include <omnicore/encoding.h>
 #include <omnicore/errors.h>
 #include <omnicore/log.h>
+#include <omnicore/mempool.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/parsing.h>
 #include <omnicore/script.h>
+#include <omnicore/dbtransaction.h>
 #include <omnicore/walletutils.h>
 
 #include <consensus/amount.h>
@@ -255,8 +257,6 @@ static void LockUnrelatedCoins(
         return;
     }
 
-    // NOTE: require: LOCK2(cs_main, pwallet->cs_wallet);
-
     // lock any other output
     std::vector<COutput> vCoins;
     iWallet->availableCoins(vCoins, nullptr, 0);
@@ -282,8 +282,6 @@ static void UnlockCoins(
         interfaces::Wallet* iWallet,
         const std::vector<COutPoint>& vToUnlock)
 {
-    // NOTE: require: LOCK2(cs_main, pwallet->cs_wallet);
-
     for (const COutPoint& output : vToUnlock) {
         iWallet->unlockCoin(output);
     }
@@ -299,8 +297,7 @@ int CreateFundedTransaction(
         const std::string& feeAddress,
         const std::vector<unsigned char>& payload,
         uint256& retTxid,
-        interfaces::Wallet* iWallet,
-        node::NodeContext& node)
+        interfaces::Wallet* iWallet)
 {
     if (!iWallet) {
         return MP_ERR_WALLET_ACCESS;
@@ -422,67 +419,34 @@ int CreateFundedTransaction(
     }
 
     // sign the transaction
-
-    // fetch previous transactions (inputs):
-    CCoinsView viewDummy;
-    CCoinsViewCache view(&viewDummy);
-    {
-        auto mempool = ::ChainstateActive().GetMempool();
-        assert(mempool);
-        LOCK2(cs_main, mempool->cs);
-        CCoinsViewCache &viewChain = ::ChainstateActive().CoinsTip();
-        CCoinsViewMemPool viewMempool(&viewChain, *mempool);
-        view.SetBackend(viewMempool); // temporarily switch cache backend to db+mempool view
-
-        for(const CTxIn& txin : tx.vin) {
-            const auto& prevout = txin.prevout;
-            view.AccessCoin(prevout); // this is certainly allowed to fail
-        }
-
-        view.SetBackend(viewDummy); // switch back to avoid locking mempool for too long
-    }
-
     int nHashType = SIGHASH_ALL;
 
-    for (unsigned int i = 0; i < tx.vin.size(); i++) {
-        CTxIn& txin = tx.vin[i];
-        const Coin& coin = view.AccessCoin(txin.prevout);
-        if (coin.IsSpent()) {
-            PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
-            continue;
-        }
-        const CScript& prevPubKey = coin.out.scriptPubKey;
-        const CAmount& amount = coin.out.nValue;
+    {
+        bool fCoinbase = false;
+        for (size_t i = 0; i < tx.vin.size(); i++) {
+            auto& txin = tx.vin[i];
+            Coin coin;
+            if (!GetCoin(txin.prevout, coin)) {
+                PrintToLog("%s: ERROR: wallet transaction signing failed: input not found or already spent\n", __func__);
+                continue;
+            }
 
-        SignatureData sigdata;
-        if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, amount, nHashType), prevPubKey, sigdata)) {
-            PrintToLog("%s: ERROR: wallet transaction signing failed\n", __func__);
-            return MP_ERR_CREATE_TX;
-        }
+            const auto& out = coin.out;
 
-        UpdateInput(txin, sigdata);
+            SignatureData sigdata;
+            if (!iWallet->produceSignature(MutableTransactionSignatureCreator(tx, i, out.nValue, nHashType), out.scriptPubKey, sigdata)) {
+                PrintToLog("%s: ERROR: wallet transaction signing failed\n", __func__);
+                return MP_ERR_CREATE_TX;
+            }
+
+            UpdateInput(txin, sigdata);
+        }
     }
 
     // send the transaction
 
     CTransactionRef ctx(MakeTransactionRef(std::move(tx)));
-
-    {
-        LOCK(cs_main);
-        auto result = AcceptToMemoryPool(ChainstateActive(), ctx, GetTime(), false, false);
-        if (result.m_result_type != MempoolAcceptResult::ResultType::VALID) {
-            PrintToLog("%s: ERROR: failed to broadcast transaction: %s\n", __func__, result.m_state.GetRejectReason());
-            return MP_ERR_COMMIT_TX;
-        }
-    }
-
-    std::string err_string;
-
-    const TransactionError err = node::BroadcastTransaction(node, ctx, err_string, iWallet->getDefaultMaxTxFee(), true, false);
-    if (TransactionError::OK != err) {
-        LogPrintf("%s: BroadcastTransaction failed error: %s\n", __func__, err_string);
-    }
-
+    iWallet->commitTransaction(ctx, {}, {});
     retTxid = ctx->GetHash();
 
     return 0;

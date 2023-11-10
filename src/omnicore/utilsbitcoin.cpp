@@ -5,10 +5,14 @@
  */
 
 #include <omnicore/omnicore.h>
+#include <omnicore/validationinterface.h>
+#include <omnicore/utilsbitcoin.h>
 
 #include <chain.h>
 #include <chainparams.h>
-#include <validation.h>
+#include <key_io.h>
+#include <stdexcept>
+#include <shutdown.h>
 #include <sync.h>
 
 #include <stdint.h>
@@ -16,40 +20,87 @@
 
 namespace mastercore
 {
-/**
- * @return The current chain length.
- */
+static const COmniValidationInterface& EnsureValidationInterface()
+{
+    if (omniValidationInterface) {
+        return *omniValidationInterface;
+    }
+    throw std::logic_error("COmniValidationInterface isn't initialized");
+}
+
 int GetHeight()
 {
-    LOCK(cs_main);
-    return ::ChainActive().Height();
+    return EnsureValidationInterface().LastBlockHeight();
 }
 
-/**
- * @return The timestamp of the latest block.
- */
+const CChainIndex& GetActiveChain()
+{
+    return EnsureValidationInterface().GetActiveChain();
+}
+
 uint32_t GetLatestBlockTime()
 {
-    LOCK(cs_main);
-    if (::ChainActive().Tip())
-        return ::ChainActive().Tip()->GetBlockTime();
-    else
-        return Params().GenesisBlock().nTime;
+    return EnsureValidationInterface().LastBlockTime();
 }
 
-/**
- * @return The CBlockIndex, or nullptr, if the block isn't available.
- */
-CBlockIndex* GetBlockIndex(const uint256& hash)
+bool IsInitialBlockDownload()
 {
-    CBlockIndex* pBlockIndex = nullptr;
-    LOCK(cs_main);
-    auto it = ::BlockIndex().find(hash);
-    if (it != ::BlockIndex().end()) {
-        pBlockIndex = &it->second;
-    }
+    return EnsureValidationInterface().IsInitialBlockDownload();
+}
 
-    return pBlockIndex;
+bool IsProcessingBlock()
+{
+    return EnsureValidationInterface().IsProcessingBlock();
+}
+
+void MayAbortNode(const std::string& message)
+{
+    if (!gArgs.GetBoolArg("-overrideforcedshutdown", false)) {
+        fs::path persistPath = gArgs.GetDataDirNet() / "MP_persist";
+        if (fs::exists(persistPath)) fs::remove_all(persistPath); // prevent the node being restarted without a reparse after forced shutdown
+        AbortNode(message);
+    }
+}
+
+struct DataVisitor
+{
+    std::vector<unsigned char> operator()(const CNoDestination& noDest) const { return {}; }
+    std::vector<unsigned char> operator()(const PKHash& hash) const { return {hash.begin(), hash.end()}; }
+    std::vector<unsigned char> operator()(const ScriptHash& scriptHash) const { return {scriptHash.begin(), scriptHash.end()}; }
+    std::vector<unsigned char> operator()(const WitnessV0ScriptHash& witnessScriptHash) const { return {witnessScriptHash.begin(), witnessScriptHash.end()}; }
+    std::vector<unsigned char> operator()(const WitnessV0KeyHash& witnessKeyHash) const { return {witnessKeyHash.begin(), witnessKeyHash.end()}; }
+    std::vector<unsigned char> operator()(const WitnessV1Taproot& witnessTaproot) const { return {witnessTaproot.begin(), witnessTaproot.end()}; }
+    std::vector<unsigned char> operator()(const WitnessUnknown& witnessUnknown) const { return {}; }
+};
+
+std::optional<std::pair<unsigned int, uint256>> ScriptToUint(const CScript& scriptPubKey)
+{
+    CTxDestination dest;
+    if (!ExtractDestination(scriptPubKey, dest)) {
+        return {};
+    }
+    auto bytes = std::visit(DataVisitor{}, dest);
+    if (bytes.empty() || bytes.size() > uint256::size()) {
+        return {};
+    }
+    uint256 addressBytes;
+    std::copy(bytes.begin(), bytes.end(), addressBytes.begin());
+    return std::make_pair(dest.index(), addressBytes);
+}
+
+std::optional<std::pair<unsigned int, uint256>> AddressToUint(const std::string& address)
+{
+    auto dest = DecodeDestination(address);
+    if (!IsValidDestination(dest)) {
+        return {};
+    }
+    auto bytes = std::visit(DataVisitor{}, dest);
+    if (bytes.empty() || bytes.size() > uint256::size()) {
+        return {};
+    }
+    uint256 addressBytes;
+    std::copy(bytes.begin(), bytes.end(), addressBytes.begin());
+    return std::make_pair(dest.index(), addressBytes);
 }
 
 bool MainNet()

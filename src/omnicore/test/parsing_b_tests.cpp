@@ -28,7 +28,7 @@ using namespace mastercore;
 BOOST_FIXTURE_TEST_SUITE(omnicore_parsing_b_tests, TestingSetup)
 
 /** Creates a dummy transaction with the given inputs and outputs. */
-static CTransaction TxClassB(const std::vector<CTxOut>& txInputs, const std::vector<CTxOut>& txOuts)
+static CTransaction TxClassB(CCoinsViewCache& view, const std::vector<CTxOut>& txInputs, const std::vector<CTxOut>& txOuts)
 {
     CMutableTransaction mutableTx;
 
@@ -77,7 +77,7 @@ static size_t getPayloadSize(unsigned int nPackets)
 BOOST_AUTO_TEST_CASE(valid_common_class_b)
 {
     int nBlock = 0;
-
+    CCoinsViewCacheOnly view;
     std::vector<CTxOut> txInputs;
     txInputs.push_back(createTxOut(1000000, "1BxtgEa8UcrMzVZaW32zVyJh4Sg4KGFzxA"));
     txInputs.push_back(createTxOut(1000000, "1HG3s4Ext3sTqBTHrgftyUzG3cvx5ZbPCj"));
@@ -90,10 +90,10 @@ BOOST_AUTO_TEST_CASE(valid_common_class_b)
     txOutputs.push_back(PayToBareMultisig_3of5());
     txOutputs.push_back(PayToPubKeyHash_Unrelated());
 
-    CTransaction dummyTx = TxClassB(txInputs, txOutputs);
+    CTransaction dummyTx = TxClassB(view, txInputs, txOutputs);
 
     CMPTransaction metaTx;
-    BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+    BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
     BOOST_CHECK_EQUAL(metaTx.getSender(), "1Pa6zyqnhL6LDJtrkCMi9XmEDNHJ23ffEr");
     BOOST_CHECK_EQUAL(metaTx.getPayload().size(), getPayloadSize(10));
 }
@@ -123,11 +123,12 @@ BOOST_AUTO_TEST_CASE(valid_arbitrary_output_number_class_b)
     std::mt19937 g(rd());
     std::shuffle(txOutputs.begin(), txOutputs.end(), g);
 
-    CTransaction dummyTx = TxClassB(txInputs, txOutputs);
+    CCoinsViewCacheOnly view;
+    CTransaction dummyTx = TxClassB(view, txInputs, txOutputs);
     BOOST_CHECK_EQUAL(dummyTx.vout.size(), nOutputs);
 
     CMPTransaction metaTx;
-    BOOST_CHECK(ParseTransaction(dummyTx, nBlock, 1, metaTx) == 0);
+    BOOST_CHECK(ParseTransaction(view, dummyTx, nBlock, 1, metaTx) == 0);
     BOOST_CHECK_EQUAL(metaTx.getSender(), "3QHw8qKf1vQkMnSVXarq7N4PYzz1G3mAK4");
     BOOST_CHECK_EQUAL(metaTx.getPayload().size(), getPayloadSize(MAX_PACKETS));
 }

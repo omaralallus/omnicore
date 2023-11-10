@@ -2,6 +2,7 @@
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include <cstdint>
 #include <qt/tradehistorydialog.h>
 #include <qt/forms/ui_tradehistorydialog.h>
 
@@ -198,8 +199,7 @@ void TradeHistoryDialog::UpdateTradeHistoryTable(bool forceUpdate)
             QTableWidgetItem *dateCell = new QTableWidgetItem;
             QDateTime txTime;
             if (objTH.blockHeight > 0) {
-                LOCK(cs_main);
-                CBlockIndex* pBlkIdx = ::ChainActive()[objTH.blockHeight];
+                auto* pBlkIdx = GetActiveChain()[objTH.blockHeight];
                 if (nullptr != pBlkIdx) txTime.setTime_t(pBlkIdx->GetBlockTime());
                 dateCell->setData(Qt::DisplayRole, txTime);
             } else {
@@ -299,19 +299,15 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
     if (walletModel)
         walletTransactions = FetchWalletOmniTransactions(walletModel->wallet(), gArgs.GetIntArg("-omniuiwalletscope", 65535L));
 
+    CCoinsViewCacheOnly view;
     // reverse iterate over (now ordered) transactions and populate history map for each one
     for (std::map<std::string,uint256>::reverse_iterator it = walletTransactions.rbegin(); it != walletTransactions.rend(); it++) {
         uint256 hash = it->second;
 
         // use levelDB to perform a fast check on whether it's a bitcoin or Omni tx and whether it's a trade
-        std::string tempStrValue;
-        if (!pDbTransactionList->getTX(hash, tempStrValue)) continue;
-
-        std::vector<std::string> vstr;
-        boost::split(vstr, tempStrValue, boost::is_any_of(":"), boost::token_compress_on);
-        if (vstr.size() > 2) {
-            if (atoi(vstr[2]) != MSC_TYPE_METADEX_TRADE) continue;
-        }
+        uint32_t type;
+        if (!pDbTransactionList->getValidMPTX(hash, nullptr, &type)) continue;
+        if (type != MSC_TYPE_METADEX_TRADE) continue;
 
         // check historyMap, if this tx exists don't waste resources doing anymore work on it
         TradeHistoryMap::iterator hIter = tradeHistoryMap.find(hash);
@@ -336,12 +332,8 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
 
         // tx not in historyMap, retrieve the transaction object
         CTransactionRef wtx;
-        uint256 blockHash;
-        if (!GetTransaction(hash, wtx, Params().GetConsensus(), blockHash)) continue;
-        if (blockHash.IsNull() || nullptr == GetBlockIndex(blockHash)) continue;
-        CBlockIndex* pBlockIndex = GetBlockIndex(blockHash);
-        if (nullptr == pBlockIndex) continue;
-        int blockHeight = pBlockIndex->nHeight;
+        int blockHeight;
+        if (!GetTransaction(hash, wtx, blockHeight)) continue;
 
         // setup some variables
         CMPTransaction mp_obj;
@@ -357,7 +349,7 @@ int TradeHistoryDialog::PopulateTradeHistoryMap()
         bool valid = false;
 
         // parse the transaction
-        if (0 != ParseTransaction(*wtx, blockHeight, 0, mp_obj)) continue;
+        if (0 != ParseTransaction(view, *wtx, blockHeight, 0, mp_obj)) continue;
         if (mp_obj.interpret_Transaction()) {
             valid = pDbTransactionList->getValidMPTX(hash);
             propertyIdForSale = mp_obj.getProperty();

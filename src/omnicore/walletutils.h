@@ -7,15 +7,17 @@ namespace interfaces {
 class Wallet;
 } // namespace interfaces
 
-#include <wallet/ismine.h>             // For isminefilter, isminetype
 #include <script/standard.h>
 
-#include <stdint.h>
 #include <string>
 
 namespace wallet {
 class CWallet;
 class CCoinControl;
+}
+
+namespace node {
+class NodeContext;
 }
 
 namespace mastercore
@@ -33,7 +35,7 @@ bool CheckInput(const CTxOut& txOut, int nHeight, CTxDestination& dest);
 int IsMyAddress(const std::string& address, interfaces::Wallet* iWallet);
 
 /** IsMine wrapper to determine whether the address is in the wallet. */
-int IsMyAddressAllWallets(const std::string& address, const bool matchAny = false, const wallet::isminefilter& filter = wallet::ISMINE_SPENDABLE);
+bool IsMyAddressAllWallets(const std::string& address);
 
 /** Estimate the minimum fee considering user set parameters and the required fee. */
 CAmount GetEstimatedFeePerKb(interfaces::Wallet& iWallet);
@@ -41,6 +43,9 @@ CAmount GetEstimatedFeePerKb(interfaces::Wallet& iWallet);
 /** Output values below this value are considered uneconomic, because it would
 * require more fees to pay than the output is worth. */
 int64_t GetEconomicThreshold(interfaces::Wallet& iWallet, const CTxOut& txOut);
+
+/** Init wallets based on node context */
+void InitWallets(node::NodeContext& node);
 
 #ifdef ENABLE_WALLET
 /** Selects spendable outputs to create a transaction. */
@@ -50,8 +55,5 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
 int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddress, wallet::CCoinControl& coinControl);
 #endif
 }
-
-bool HasWallets();
-std::vector<std::shared_ptr<wallet::CWallet>> GetWallets();
 
 #endif // BITCOIN_OMNICORE_WALLETUTILS_H

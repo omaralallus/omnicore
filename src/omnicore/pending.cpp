@@ -1,5 +1,7 @@
+
 #include <omnicore/pending.h>
 
+#include <omnicore/mempool.h>
 #include <omnicore/log.h>
 #include <omnicore/sp.h>
 
@@ -10,6 +12,7 @@
 #include <uint256.h>
 #include <node/interface_ui.h>
 
+#include <atomic>
 #include <string>
 
 namespace mastercore
@@ -19,6 +22,8 @@ RecursiveMutex cs_pending;
 
 //! Global map of pending transaction objects
 PendingMap my_pending;
+
+std::atomic_bool pendingAdded = false;
 
 /**
  * Adds a transaction to the pending map using supplied parameters.
@@ -45,6 +50,7 @@ void PendingAdd(const uint256& txid, const std::string& sendingAddress, uint16_t
         LOCK(cs_pending);
         my_pending.insert(std::make_pair(txid, pending));
     }
+    pendingAdded.store(true, std::memory_order_release);
     // after adding a transaction to pending the available balance may now be reduced, refresh wallet totals
     CheckWalletUpdate(); // force an update since some outbound pending (eg MetaDEx cancel) may not change balances
     uiInterface.OmniPendingChanged(true);
@@ -57,18 +63,23 @@ void PendingAdd(const uint256& txid, const std::string& sendingAddress, uint16_t
  */
 void PendingDelete(const uint256& txid)
 {
-    LOCK(cs_pending);
-
-    PendingMap::iterator it = my_pending.find(txid);
-    if (it != my_pending.end()) {
-        const CMPPending& pending = it->second;
-        int64_t src_amount = GetTokenBalance(pending.src, pending.prop, PENDING);
-        if (msc_debug_pending) PrintToLog("%s(%s): amount=%d\n", __FUNCTION__, txid.GetHex(), src_amount);
-        if (src_amount) update_tally_map(pending.src, pending.prop, pending.amount, PENDING);
-        my_pending.erase(it);
-
+    bool pending_empty = false;
+    {
+        LOCK(cs_pending);
+        PendingMap::iterator it = my_pending.find(txid);
+        if (it != my_pending.end()) {
+            const CMPPending& pending = it->second;
+            int64_t src_amount = GetTokenBalance(pending.src, pending.prop, PENDING);
+            if (msc_debug_pending) PrintToLog("%s(%s): amount=%d\n", __FUNCTION__, txid.GetHex(), src_amount);
+            if (src_amount) update_tally_map(pending.src, pending.prop, pending.amount, PENDING);
+            my_pending.erase(it);
+            pending_empty = my_pending.empty();
+        }
+    }
+    if (pending_empty) {
+        pendingAdded.store(false, std::memory_order_release);
         // if pending map is now empty following deletion, trigger a status change
-        if (my_pending.empty()) uiInterface.OmniPendingChanged(false);
+        uiInterface.OmniPendingChanged(false);
     }
 }
 
@@ -84,9 +95,7 @@ void PendingCheck()
 
     std::vector<uint256> vecMemPoolTxids;
     std::vector<uint256> txidsForDeletion;
-    if (auto mempool = ::ChainstateActive().GetMempool()) {
-        mempool->queryHashes(vecMemPoolTxids);
-    }
+    MempoolQueryHashes(vecMemPoolTxids);
 
     for (PendingMap::iterator it = my_pending.begin(); it != my_pending.end(); ++it) {
         const uint256& txid = it->first;

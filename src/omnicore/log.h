@@ -18,6 +18,15 @@ void InitDebugLogLevels();
 /** Scrolls log file, if it's getting too big. */
 void ShrinkDebugLog();
 
+/** Closes log file */
+void CloseLogFile();
+
+/** Flag to indicate, whether the Omni Core log file should be reopened. */
+extern std::atomic<bool> fReopenOmniCoreLog;
+
+/** override to print to omni log to console */
+extern std::atomic<bool> fOmniCoreConsoleLog;
+
 // Debug flags
 extern bool msc_debug_parser_data;
 extern bool msc_debug_parser_readonly;

@@ -21,10 +21,9 @@ public:
     CMPTradeList(const fs::path& path, bool fWipe);
     virtual ~CMPTradeList();
 
-    void recordMatchedTrade(const uint256& txid1, const uint256& txid2, const std::string& address1, const std::string& address2, uint32_t prop1, uint32_t prop2, int64_t amount1, int64_t amount2, int blockNum, int64_t fee);
+    void recordMatchedTrade(const uint256& txid1, const uint256& txid2, int block, int64_t amount1, int64_t amount2, int64_t fee);
     void recordNewTrade(const uint256& txid, const std::string& address, uint32_t propertyIdForSale, uint32_t propertyIdDesired, int blockNum, int blockIndex);
-    int deleteAboveBlock(int blockNum);
-    bool exists(const uint256 &txid);
+    int deleteTransactions(const std::set<uint256>& txs, int block);
     void printStats();
     void printAll();
     bool getMatchingTrades(const uint256& txid, uint32_t propertyId, UniValue& tradeArray, int64_t& totalSold, int64_t& totalBought);

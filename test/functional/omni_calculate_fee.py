@@ -11,7 +11,7 @@ class OmniFeeCalculation(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 2
         self.setup_clean_chain = True
-        self.extra_args = [[], ["-omnidebug=all", "-paytxfee=0.00003"]] # 3,000 Sats per KB
+        self.extra_args = [[], ["-omnidebug=all", "-paytxfee=0.00003", "-txindex"]] # 3,000 Sats per KB
 
     def run_test(self):
         self.log.info("test fee calculation")

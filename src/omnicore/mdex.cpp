@@ -308,8 +308,7 @@ static MatchReturnType x_Trade(CMPMetaDEx* const pnew)
             if (msc_debug_metadex1) PrintToLog("==== TRADED !!! %u=%s\n", NewReturn, getTradeReturnType(NewReturn));
 
             // record the trade in MPTradeList
-            pDbTradeList->recordMatchedTrade(pold->getHash(), pnew->getHash(), // < might just pass pold, pnew
-                pold->getAddr(), pnew->getAddr(), pold->getDesProperty(), pnew->getDesProperty(), seller_amountGot, buyer_amountGotAfterFee, pnew->getBlock(), tradingFee);
+            pDbTradeList->recordMatchedTrade(pold->getHash(), pnew->getHash(), pnew->getBlock(), seller_amountGot, buyer_amountGotAfterFee, tradingFee);
 
             if (msc_debug_metadex1) PrintToLog("++ erased old: %s\n", offerIt->ToString());
             // erase the old seller element
@@ -403,11 +402,6 @@ int64_t CMPMetaDEx::getAmountToFill() const
     arith_uint256 iAmountNeededToFill = DivideAndRoundUp((ConvertTo256(amount_remaining) * ConvertTo256(amount_desired)), ConvertTo256(amount_forsale));
     int64_t nAmountNeededToFill = ConvertTo64(iAmountNeededToFill);
     return nAmountNeededToFill;
-}
-
-int64_t CMPMetaDEx::getBlockTime() const
-{
-    return WITH_LOCK(cs_main, return ::ChainActive()[block]->GetBlockTime());
 }
 
 void CMPMetaDEx::setAmountRemaining(int64_t amount, const std::string& label)
@@ -742,7 +736,7 @@ bool mastercore::MetaDEx_isOpen(const uint256& txid, uint32_t propertyIdForSale)
         for (md_PricesMap::iterator it = prices.begin(); it != prices.end(); ++it) {
             md_Set & indexes = (it->second);
             for (md_Set::iterator it = indexes.begin(); it != indexes.end(); ++it) {
-                CMPMetaDEx obj = *it;
+                const CMPMetaDEx& obj = *it;
                 if( obj.getHash().GetHex() == txid.GetHex() ) return true;
             }
         }

@@ -45,7 +45,6 @@ void RequirePropertyName(const std::string& name)
 
 void RequireExistingProperty(uint32_t propertyId)
 {
-    LOCK(cs_tally);
     if (!mastercore::IsPropertyIdValid(propertyId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Property identifier does not exist");
     }
@@ -53,7 +52,6 @@ void RequireExistingProperty(uint32_t propertyId)
 
 void RequireExistingDelegate(uint32_t propertyId)
 {
-    LOCK(cs_tally);
     if (!mastercore::HasDelegate(propertyId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Property does not have a delegate");
     }
@@ -61,7 +59,6 @@ void RequireExistingDelegate(uint32_t propertyId)
 
 void RequireEmptyDelegate(uint32_t propertyId)
 {
-    LOCK(cs_tally);
     if (mastercore::HasDelegate(propertyId)) {
         throw JSONRPCError(RPC_INVALID_PARAMETER, "Property already has a delegate " + mastercore::GetDelegate(propertyId));
     }
@@ -69,7 +66,6 @@ void RequireEmptyDelegate(uint32_t propertyId)
 
 void RequireSenderDelegateBeforeIssuer(uint32_t propertyId, const std::string& address)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");
@@ -87,7 +83,6 @@ void RequireSenderDelegateBeforeIssuer(uint32_t propertyId, const std::string& a
 
 void RequireSenderDelegateOrIssuer(uint32_t propertyId, const std::string& address)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");
@@ -99,7 +94,6 @@ void RequireSenderDelegateOrIssuer(uint32_t propertyId, const std::string& addre
 
 void RequireMatchingDelegate(uint32_t propertyId, const std::string& address)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");
@@ -125,7 +119,6 @@ void RequireDifferentIds(uint32_t propertyId, uint32_t otherId)
 
 void RequireCrowdsale(uint32_t propertyId)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");
@@ -145,7 +138,6 @@ void RequireActiveCrowdsale(uint32_t propertyId)
 
 void RequireManagedProperty(uint32_t propertyId)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");
@@ -157,7 +149,6 @@ void RequireManagedProperty(uint32_t propertyId)
 
 void RequireNonFungibleProperty(uint32_t propertyId)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");
@@ -169,7 +160,6 @@ void RequireNonFungibleProperty(uint32_t propertyId)
 
 void RequireTokenIssuer(const std::string& address, uint32_t propertyId)
 {
-    LOCK(cs_tally);
     CMPSPInfo::Entry sp;
     if (!mastercore::pDbSpInfo->getSP(propertyId, sp)) {
         throw JSONRPCError(RPC_DATABASE_ERROR, "Failed to retrieve property");

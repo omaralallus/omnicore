@@ -1,6 +1,7 @@
 #include <omnicore/walletutils.h>
 
 #include <omnicore/log.h>
+#include <omnicore/mempool.h>
 #include <omnicore/omnicore.h>
 #include <omnicore/rules.h>
 #include <omnicore/script.h>
@@ -13,6 +14,7 @@
 #include <node/context.h>
 #include <key_io.h>
 #include <validation.h>
+#include <policy/fees_args.h>
 #include <policy/policy.h>
 #include <pubkey.h>
 #include <script/standard.h>
@@ -85,10 +87,8 @@ bool CheckFee(interfaces::Wallet& iWallet, const std::string& fromAddress, size_
 
     // calculate the estimated fee per KB based on the currently set confirm target
     FeeCalculation feeCalc;
-    assert(g_context);
-    auto& feeEstimator = g_context->get().fee_estimator;
-    assert(feeEstimator);
-    CFeeRate feeRate = feeEstimator->estimateSmartFee(iWallet.getConfirmTarget(), &feeCalc, true /* FeeEstimateMode::CONSERVATIVE */);
+    static const CBlockPolicyEstimator feeEstimator(FeeestPath(gArgs));
+    CFeeRate feeRate = feeEstimator.estimateSmartFee(iWallet.getConfirmTarget(), &feeCalc, true /* FeeEstimateMode::CONSERVATIVE */);
 
     // if there is not enough data (and zero is estimated) then base minimum on a fairly high/safe 50,000 satoshi fee per KB
     if (feeRate == CFeeRate(0)) {
@@ -147,25 +147,34 @@ int IsMyAddress(const std::string& address, interfaces::Wallet* iWallet)
     return 0;
 }
 
+#if ENABLE_WALLET
+static std::function<std::vector<std::shared_ptr<wallet::CWallet>>()> GetWallets;
+#endif
+
+void InitWallets(node::NodeContext& node)
+{
+#if ENABLE_WALLET
+    if (auto loader = node.wallet_loader) {
+        if (auto context = loader->context()) {
+            GetWallets = std::bind(wallet::GetWallets, std::ref(*context));
+        }
+    }
+#endif
+}
+
 /**
  * IsMine wrapper to determine whether the address is in the wallet.
  */
-int IsMyAddressAllWallets(const std::string& address, const bool matchAny, const wallet::isminefilter& filter)
+bool IsMyAddressAllWallets(const std::string& address)
 {
 #ifdef ENABLE_WALLET
-    if (!HasWallets())
-        return 0;
-
+    if (!GetWallets) return false;
     CTxDestination destination = DecodeDestination(address);
-    for(const std::shared_ptr<CWallet>& wallet : GetWallets()) {
-        isminetype ismine = WITH_LOCK(wallet->cs_wallet, return wallet->IsMine(destination));
-        if (matchAny && ismine != ISMINE_NO)
-            return static_cast<int>(ismine);
-        else if (ismine & filter)
-            return static_cast<int>(ismine);
-    }
+    for(auto& wallet : GetWallets())
+        if (wallet->IsMine(destination))
+            return true;
 #endif
-    return 0;
+    return false;
 }
 
 /**
@@ -228,8 +237,7 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
                 continue;
             }
             if (wtx.depth_in_main_chain == 0) {
-                auto mempool = ::ChainstateActive().GetMempool();
-                if (!mempool || !mempool->exists(GenTxid::Txid(txid))) {
+                if (!GetMempoolTransaction(txid)) {
                     continue;
                 }
             }
@@ -290,94 +298,8 @@ int64_t SelectCoins(interfaces::Wallet& iWallet, const std::string& fromAddress,
 
 int64_t SelectAllCoins(interfaces::Wallet& iWallet, const std::string& fromAddress, CCoinControl& coinControl)
 {
-    // total output funds collected
-    int64_t nTotal = 0;
-    int nHeight = mastercore::GetHeight();
-
-    std::map<uint256, interfaces::WalletTxStatus> tx_status;
-    const std::vector<interfaces::WalletTx>& transactions = iWallet.getWalletTxsDetails(tx_status);
-
-    // iterate over the wallet
-    for (std::vector<interfaces::WalletTx>::const_iterator it = transactions.begin(); it != transactions.end(); ++it) {
-        const CTransactionRef tx = it->tx;
-        const uint256& txid = tx->GetHash();
-
-        auto status = tx_status.find(txid);
-        if (status != tx_status.end()) {
-            const auto& wtx = status->second;
-            if (!wtx.is_trusted) {
-                continue;
-            }
-            if (wtx.is_coinbase && wtx.blocks_to_maturity > 0) {
-                continue;
-            }
-        }
-
-        for (unsigned int n = 0; n < tx->vout.size(); n++) {
-            const CTxOut& txOut = tx->vout[n];
-
-            CTxDestination dest;
-            if (!CheckInput(txOut, nHeight, dest)) {
-                continue;
-            }
-            if (!iWallet.isSpendable(dest)) {
-                continue;
-            }
-            if (iWallet.isSpent(txid, n)) {
-                continue;
-            }
-            if (iWallet.isLockedCoin(COutPoint(txid, n))) {
-                continue;
-            }
-
-            std::string sAddress = EncodeDestination(dest);
-            if (msc_debug_tokens) {
-                PrintToLog("%s: sender: %s, outpoint: %s:%d, value: %d\n", __func__, sAddress, txid.GetHex(), n, txOut.nValue);
-            }
-
-            // only use funds from the sender's address
-            if (fromAddress == sAddress) {
-                COutPoint outpoint(txid, n);
-                coinControl.Select(outpoint);
-
-                nTotal += txOut.nValue;
-            }
-        }
-    }
-
-    return nTotal;
+    return SelectCoins(iWallet, fromAddress, coinControl, INT64_MAX);
 }
 #endif
 
 } // namespace mastercore
-
-#ifdef ENABLE_WALLET
-static wallet::WalletContext* GetWalletContext()
-{
-    assert(g_context);
-    if (auto walletLoader = g_context->get().wallet_loader) {
-        return walletLoader->context();
-    }
-    return nullptr;
-}
-#endif
-
-bool HasWallets()
-{
-#ifdef ENABLE_WALLET
-    if (auto walletContext = GetWalletContext()) {
-        return WITH_LOCK(walletContext->wallets_mutex, return !walletContext->wallets.empty());
-    }
-#endif
-    return false;
-}
-
-std::vector<std::shared_ptr<wallet::CWallet>> GetWallets()
-{
-#ifdef ENABLE_WALLET
-    if (auto walletContext = GetWalletContext()) {
-        return WITH_LOCK(walletContext->wallets_mutex, return walletContext->wallets);
-    }
-#endif
-    return {};
-}

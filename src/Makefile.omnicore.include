@@ -1,9 +1,11 @@
 OMNICORE_H = \
   omnicore/activation.h \
+  omnicore/coinscache.h \
   omnicore/consensushash.h \
   omnicore/convert.h \
   omnicore/createpayload.h \
   omnicore/createtx.h \
+  omnicore/dbaddress.h \
   omnicore/dbbase.h \
   omnicore/dbfees.h \
   omnicore/dbspinfo.h \
@@ -16,6 +18,7 @@ OMNICORE_H = \
   omnicore/errors.h \
   omnicore/log.h \
   omnicore/mdex.h \
+  omnicore/mempool.h \
   omnicore/nftdb.h \
   omnicore/notifications.h \
   omnicore/omnicore.h \
@@ -38,6 +41,7 @@ OMNICORE_H = \
   omnicore/uint256_extensions.h \
   omnicore/utilsbitcoin.h \
   omnicore/utilsui.h \
+  omnicore/validationinterface.h \
   omnicore/version.h \
   omnicore/walletfetchtxs.h \
   omnicore/wallettxbuilder.h \
@@ -45,10 +49,12 @@ OMNICORE_H = \
 
 OMNICORE_CPP = \
   omnicore/activation.cpp \
+  omnicore/coinscache.cpp \
   omnicore/consensushash.cpp \
   omnicore/convert.cpp \
   omnicore/createpayload.cpp \
   omnicore/createtx.cpp \
+  omnicore/dbaddress.cpp \
   omnicore/dbbase.cpp \
   omnicore/dbfees.cpp \
   omnicore/dbspinfo.cpp \
@@ -60,6 +66,7 @@ OMNICORE_CPP = \
   omnicore/encoding.cpp \
   omnicore/log.cpp \
   omnicore/mdex.cpp \
+  omnicore/mempool.cpp \
   omnicore/nftdb.cpp \
   omnicore/notifications.cpp \
   omnicore/misc.cpp \
@@ -84,6 +91,7 @@ OMNICORE_CPP = \
   omnicore/tx.cpp \
   omnicore/utilsbitcoin.cpp \
   omnicore/utilsui.cpp \
+  omnicore/validationinterface.cpp \
   omnicore/version.cpp \
   omnicore/walletfetchtxs.cpp \
   omnicore/wallettxbuilder.cpp \

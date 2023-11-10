@@ -5,9 +5,6 @@
 #include <chainparams.h>
 #include <util/time.h>
 
-#include <boost/algorithm/string.hpp>
-#include <boost/lexical_cast.hpp>
-
 #include <stdint.h>
 #include <set>
 #include <string>
@@ -17,6 +14,7 @@ const int MAX_SEED_BLOCK = 490000;
 
 static std::set<int> GetBlockList()
 {
+    constexpr
     int blocks[] = {249498, 249536, 249559, 249560, 249571, 249590, 249595, 249601, 249603, 249611, 249638, 249639, 249682, 249689, 249704,
                     249716, 249731, 249757, 249763, 249895, 249998, 250039, 250243, 250364, 250471, 250771, 250779, 250780, 250836, 250850,
                     250911, 250939, 250946, 250966, 250988, 251192, 251196, 251201, 251335, 251358, 251391, 251411, 251778, 251807, 251911,

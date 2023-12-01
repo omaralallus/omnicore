@@ -236,7 +236,7 @@ void InitDebugLogLevels()
     for (const auto& d : debugLevels) {
         auto none = d == "none";
         auto all = d == "all";
-#define ENABLE_LOG(x) msc_debug_##x = none ? false : (all || d == #x)
+#define ENABLE_LOG(x) msc_debug_##x = none ? false : (all || d == #x || msc_debug_##x)
         ENABLE_LOG(parser_data);
         ENABLE_LOG(parser_readonly);
         ENABLE_LOG(parser_dex);
